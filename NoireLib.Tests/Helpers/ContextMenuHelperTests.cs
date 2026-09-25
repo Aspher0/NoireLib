@@ -266,6 +266,36 @@ public sealed class ContextMenuHelperTests
     }
 
     [Fact]
+    public void Matches_CharacterScope_KeepsPlayersAndNpcs()
+    {
+        var entry = new ContextMenuEntry { Label = Label, Scope = ContextMenuScope.Character };
+
+        ContextMenuHelper.Matches(entry, Opening(ContextMenuScope.Default) with { TargetKind = ContextMenuTargetKind.Player }).Should().BeTrue();
+        ContextMenuHelper.Matches(entry, Opening(ContextMenuScope.Default) with { TargetKind = ContextMenuTargetKind.Npc }).Should().BeTrue();
+        ContextMenuHelper.Matches(entry, Opening(ContextMenuScope.Default)).Should().BeFalse();
+        ContextMenuHelper.Matches(entry, Opening(ContextMenuScope.Inventory) with { ItemId = 4850 }).Should().BeFalse();
+    }
+
+    [Fact]
+    public void Matches_PlayerScope_KeepsPlayersOnly()
+    {
+        var entry = new ContextMenuEntry { Label = Label, Scope = ContextMenuScope.Player };
+
+        ContextMenuHelper.Matches(entry, Opening(ContextMenuScope.Default) with { TargetKind = ContextMenuTargetKind.Player }).Should().BeTrue();
+        ContextMenuHelper.Matches(entry, Opening(ContextMenuScope.Default) with { TargetKind = ContextMenuTargetKind.Npc }).Should().BeFalse();
+        ContextMenuHelper.Matches(entry, Opening(ContextMenuScope.Default)).Should().BeFalse();
+    }
+
+    [Fact]
+    public void ResolveTarget_AContentIdIsAPlayerEvenWithoutAnObject()
+    {
+        ContextMenuTargetResolver.Resolve(false, false, 0x0040_0000_1234_5678).Should().Be(ContextMenuTargetKind.Player, "a chat sender carries a content id and no object");
+        ContextMenuTargetResolver.Resolve(true, true, 0).Should().Be(ContextMenuTargetKind.Player);
+        ContextMenuTargetResolver.Resolve(false, true, 0).Should().Be(ContextMenuTargetKind.Npc);
+        ContextMenuTargetResolver.Resolve(false, false, 0).Should().Be(ContextMenuTargetKind.None);
+    }
+
+    [Fact]
     public void Decode_SplitsTheQualityOffsetFromTheRowId()
     {
         ContextMenuItemResolver.Decode(4850, out var normal).Should().Be(4850u);

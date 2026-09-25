@@ -81,8 +81,8 @@ public class NoireTweakManagerTests : IDisposable
     /// <summary>
     /// A configuration that resolves to a caller-provided path, so the real load and save paths run without a
     /// running game to supply a plugin configuration directory.<br/>
-    /// It also counts the writes it performs, which is what lets an operation covering several tweaks be held to
-    /// the single write it promises rather than merely to the right end state.
+    /// It also counts the writes it performs. An operation covering several tweaks is held to the single write it
+    /// promises, not merely to the right end state.
     /// </summary>
     private sealed class TempFileTweakManagerConfig : TweakManagerConfigInstance
     {

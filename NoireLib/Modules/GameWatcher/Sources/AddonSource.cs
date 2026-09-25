@@ -90,7 +90,6 @@ internal sealed class AddonSource : GameWatcherSource
         };
     }
 
-    /// <inheritdoc/>
     protected override void OnActivate()
     {
         listening = true;
@@ -113,7 +112,6 @@ internal sealed class AddonSource : GameWatcherSource
         }
     }
 
-    /// <inheritdoc/>
     protected override void OnDeactivate()
     {
         listening = false;
@@ -127,7 +125,6 @@ internal sealed class AddonSource : GameWatcherSource
         visibility.Clear();
     }
 
-    /// <inheritdoc/>
     protected override void OnTick(DateTimeOffset now)
     {
         if (now < nextSafetyPoll)

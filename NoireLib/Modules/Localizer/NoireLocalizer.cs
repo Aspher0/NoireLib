@@ -17,19 +17,14 @@ using System.Text.RegularExpressions;
 namespace NoireLib.Localizer;
 
 /// <summary>
-/// A module that provides easy and complete localization support for plugins.<br/>
-/// Supports locale fallback, runtime locale switching, fluent translation registration,
-/// JSON import/export, and optional EventBus integration.
+/// Localizes a plugin: locale fallback, runtime locale switching, fluent registration, JSON import and export, and
+/// EventBus events.
 /// </summary>
-public class NoireLocalizer : NoireModuleBase<NoireLocalizer, LocalizerConfigInstance>
+public partial class NoireLocalizer : NoireModuleBase<NoireLocalizer, LocalizerConfigInstance>
 {
     #region Private Properties and Fields
 
-    // Writes and reads the translation snapshot exchanged by the JSON import/export methods. Built via
-    // Create(JsonSerializerSettings) rather than JsonConvert or CreateDefault(JsonSerializerSettings), so no
-    // process-global DefaultSettings is merged into how an export or import is handled. Formatting is left unset so
-    // each export chooses it on its own writer. TypeNameHandling stays None so an imported file can never name a type
-    // into existence.
+    // Built with Create: no process-global DefaultSettings leak in. TypeNameHandling stays None: a file never names a type.
     private static readonly JsonSerializer TranslationSerializer = CreateTranslationSerializer();
 
     private static JsonSerializer CreateTranslationSerializer()
@@ -39,7 +34,6 @@ public class NoireLocalizer : NoireModuleBase<NoireLocalizer, LocalizerConfigIns
             TypeNameHandling = TypeNameHandling.None,
         });
 
-        // A localization payload is exactly one JSON document; anything after it means the content is malformed.
         serializer.CheckAdditionalContent = true;
         return serializer;
     }
@@ -50,17 +44,13 @@ public class NoireLocalizer : NoireModuleBase<NoireLocalizer, LocalizerConfigIns
     private readonly Dictionary<string, int> missingTranslationByKey = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, string> localeDisplayNames = new(StringComparer.OrdinalIgnoreCase);
 
-    // Resolved lookup orders keyed by the normalized requested locale. Every translation lookup needs the order for
-    // its locale, so recomputing it per call would walk the whole fallback graph on a path that UI code hits once per
-    // localized string per frame. The order depends only on the requested locale, the explicit fallback chains,
-    // DefaultLocale and the two fallback toggles, so it is not affected by translations being added or removed. Every
-    // path that changes one of those calls InvalidateLookupOrderCache. Guarded by localizationLock; the stored lists
-    // are built once and never mutated afterwards.
+    // UI code looks a key up every frame. An order depends only on the locale settings, never on the translations.
     private readonly Dictionary<string, IReadOnlyList<string>> lookupOrderCache = new(StringComparer.OrdinalIgnoreCase);
 
-    // The requested locales a key has already been reported missing for, keyed by translation key. Backs the
-    // deduplication described on MissingTranslation, which keeps a key missing from per-frame UI text from raising an
-    // event on every frame. Guarded by localizationLock.
+    // Without the default-locale tail: declared texts fall back to their source text.
+    private readonly Dictionary<string, IReadOnlyList<string>> declaredLookupOrderCache = new(StringComparer.OrdinalIgnoreCase);
+
+    // A key missing from per-frame UI text is reported once per locale, not every frame.
     private readonly Dictionary<string, HashSet<string>> announcedMissingLocalesByKey = new(StringComparer.OrdinalIgnoreCase);
 
     private long totalTranslationsAdded;
@@ -75,39 +65,29 @@ public class NoireLocalizer : NoireModuleBase<NoireLocalizer, LocalizerConfigIns
 
     #region Public Properties and Constructors
 
-    /// <summary>
-    /// The associated EventBus instance for publishing localization events.<br/>
-    /// If <see langword="null"/>, events are only exposed through CLR events.
-    /// </summary>
+    /// <summary>The EventBus localization events are published to, or null for CLR events only.</summary>
     public NoireEventBus? EventBus { get; set; }
 
-    /// <summary>
-    /// The default constructor needed for internal purposes.
-    /// </summary>
+    /// <summary>The default constructor needed for internal purposes.</summary>
     public NoireLocalizer() : base() { }
 
-    /// <summary>
-    /// Creates a new instance of the <see cref="NoireLocalizer"/> module.
-    /// </summary>
+    /// <summary>Creates a new instance of the <see cref="NoireLocalizer"/> module.</summary>
     /// <param name="moduleId">The optional module identifier.</param>
-    /// <param name="active">Whether the module should be active upon creation.</param>
-    /// <param name="enableLogging">Whether to enable logging for this module.</param>
-    /// <param name="defaultLocale">The default locale used for fallback, as declared by the plugin.<br/>
-    /// Resolution precedence, highest first:<br/>
-    /// 1. A persisted <see cref="DefaultLocaleSource"/> of <see cref="Localizer.DefaultLocaleSource.Windows"/> or
-    /// <see cref="Localizer.DefaultLocaleSource.GameClient"/>.<br/>
-    /// 2. A default locale selected in a previous session via <see cref="SetDefaultLocale(string)"/> or
-    /// <see cref="UseCustomDefaultLocale(string)"/>.<br/>
-    /// 3. This value.<br/>
-    /// Read again on every construction and never persisted itself, so this is where to declare a default that should
-    /// follow the plugin's code rather than a user's prior choice.</param>
-    /// <param name="currentLocale">The initial current locale. If null, <paramref name="defaultLocale"/> is used.</param>
-    /// <param name="returnKeyWhenMissing">Whether missing keys should return the key itself.</param>
-    /// <param name="allowParentCultureFallback">Whether parent culture fallback should be used.</param>
-    /// <param name="allowDefaultLocaleFallback">Whether fallback to default locale should be used.</param>
-    /// <param name="defaultLocaleSource">The strategy used to resolve the default locale.</param>
-    /// <param name="eventBus">Optional EventBus used to publish localization events.</param>
-    /// <param name="allowCustomLocales">Whether unknown locales should be accepted as custom locales.</param>
+    /// <param name="active">Whether the module is active on creation.</param>
+    /// <param name="enableLogging">Whether this module logs.</param>
+    /// <param name="defaultLocale">
+    /// The default locale the plugin declares. A persisted <see cref="DefaultLocaleSource"/> and a locale chosen in an
+    /// earlier session both take precedence. It is never persisted.
+    /// </param>
+    /// <param name="currentLocale">The initial locale, <paramref name="defaultLocale"/> when null.</param>
+    /// <param name="returnKeyWhenMissing">Whether a missing key returns the key itself.</param>
+    /// <param name="allowParentCultureFallback">Whether parent cultures are tried.</param>
+    /// <param name="allowDefaultLocaleFallback">Whether the default locale is tried.</param>
+    /// <param name="defaultLocaleSource">How the default locale is resolved.</param>
+    /// <param name="eventBus">The EventBus localization events are published to.</param>
+    /// <param name="allowCustomLocales">Whether unknown locales are accepted as custom locales.</param>
+    /// <param name="rejectOutdated">Whether outdated translations are set aside. See <see cref="RejectOutdated"/>.</param>
+    /// <param name="rejectMissingOrExtraTags">Whether translations with wrong placeholders are set aside. See <see cref="RejectMissingOrExtraTags"/>.</param>
     public NoireLocalizer(
         string? moduleId = null,
         bool active = true,
@@ -119,10 +99,15 @@ public class NoireLocalizer : NoireModuleBase<NoireLocalizer, LocalizerConfigIns
         bool allowDefaultLocaleFallback = true,
         DefaultLocaleSource defaultLocaleSource = DefaultLocaleSource.Custom,
         bool allowCustomLocales = false,
-        NoireEventBus? eventBus = null)
-        : base(moduleId, active, enableLogging, defaultLocale, currentLocale, returnKeyWhenMissing, allowParentCultureFallback, allowDefaultLocaleFallback, defaultLocaleSource, allowCustomLocales, eventBus) { }
+        NoireEventBus? eventBus = null,
+        bool rejectOutdated = false,
+        bool rejectMissingOrExtraTags = false)
+        : base(moduleId, active, enableLogging, defaultLocale, currentLocale, returnKeyWhenMissing, allowParentCultureFallback, allowDefaultLocaleFallback, defaultLocaleSource, allowCustomLocales, eventBus)
+    {
+        RejectOutdated = rejectOutdated;
+        RejectMissingOrExtraTags = rejectMissingOrExtraTags;
+    }
 
-    // Constructor for use with AddModule{T}(string?) with . Only used for internal module management.
     internal NoireLocalizer(ModuleId? moduleId, bool active = true, bool enableLogging = true)
         : base(moduleId, active, enableLogging) { }
 
@@ -130,9 +115,7 @@ public class NoireLocalizer : NoireModuleBase<NoireLocalizer, LocalizerConfigIns
 
     #region Module Lifecycle Methods
 
-    /// <summary>
-    /// Initializes the module with optional initialization parameters.
-    /// </summary>
+    /// <summary>Initializes the module with optional initialization parameters.</summary>
     protected override void InitializeModule(params object?[] args)
     {
         if (args.Length > 0 && args[0] is string initDefaultLocale)
@@ -167,6 +150,7 @@ public class NoireLocalizer : NoireModuleBase<NoireLocalizer, LocalizerConfigIns
         EnsureLocale(DefaultLocale);
         EnsureLocale(CurrentLocale);
         AutoRegisterAttributedTranslations();
+        StartDeclaredTexts();
 
         if (EnableLogging)
             NoireLogger.LogInfo(this, $"Localization module initialized. Default locale: '{DefaultLocale}', Current locale: '{CurrentLocale}'.");
@@ -177,6 +161,8 @@ public class NoireLocalizer : NoireModuleBase<NoireLocalizer, LocalizerConfigIns
     /// </summary>
     protected override void OnActivated()
     {
+        NoireLanguages.Bind(this);
+
         if (EnableLogging)
             NoireLogger.LogInfo(this, "Localization module activated.");
     }
@@ -186,6 +172,8 @@ public class NoireLocalizer : NoireModuleBase<NoireLocalizer, LocalizerConfigIns
     /// </summary>
     protected override void OnDeactivated()
     {
+        NoireLanguages.Unbind(this);
+
         if (EnableLogging)
             NoireLogger.LogInfo(this, "Localization module deactivated.");
     }
@@ -196,9 +184,7 @@ public class NoireLocalizer : NoireModuleBase<NoireLocalizer, LocalizerConfigIns
 
     private bool allowParentCultureFallback = true;
 
-    /// <summary>
-    /// Whether to fallback to parent cultures during translation lookup (ex: fr-CA -> fr).
-    /// </summary>
+    /// <summary>Whether to fallback to parent cultures during translation lookup (ex: fr-CA -> fr).</summary>
     public bool AllowParentCultureFallback
     {
         get => allowParentCultureFallback;
@@ -209,12 +195,11 @@ public class NoireLocalizer : NoireModuleBase<NoireLocalizer, LocalizerConfigIns
 
             allowParentCultureFallback = value;
             InvalidateLookupOrderCache();
+            NotifyTextsChanged();
         }
     }
 
-    /// <summary>
-    /// Sets whether parent locale fallback is allowed.
-    /// </summary>
+    /// <summary>Sets whether parent locale fallback is allowed.</summary>
     /// <param name="enabled">True to enable parent locale fallback; otherwise, false.</param>
     /// <returns>The module instance for chaining.</returns>
     public NoireLocalizer SetAllowParentCultureFallback(bool enabled)
@@ -241,9 +226,7 @@ public class NoireLocalizer : NoireModuleBase<NoireLocalizer, LocalizerConfigIns
         }
     }
 
-    /// <summary>
-    /// Sets whether fallback to default locale is allowed.
-    /// </summary>
+    /// <summary>Sets whether fallback to default locale is allowed.</summary>
     /// <param name="enabled">True to enable default locale fallback; otherwise, false.</param>
     /// <returns>The module instance for chaining.</returns>
     public NoireLocalizer SetAllowDefaultLocaleFallback(bool enabled)
@@ -252,14 +235,10 @@ public class NoireLocalizer : NoireModuleBase<NoireLocalizer, LocalizerConfigIns
         return this;
     }
 
-    /// <summary>
-    /// Whether unknown locales should be accepted as custom locales.
-    /// </summary>
+    /// <summary>Whether unknown locales should be accepted as custom locales.</summary>
     public bool AllowCustomLocales { get; set; } = false;
 
-    /// <summary>
-    /// Sets whether unknown locales should be accepted as custom locales.
-    /// </summary>
+    /// <summary>Sets whether unknown locales should be accepted as custom locales.</summary>
     /// <param name="enabled">True to allow unknown custom locales; otherwise, false.</param>
     /// <returns>The module instance for chaining.</returns>
     public NoireLocalizer SetAllowCustomLocales(bool enabled)
@@ -268,14 +247,10 @@ public class NoireLocalizer : NoireModuleBase<NoireLocalizer, LocalizerConfigIns
         return this;
     }
 
-    /// <summary>
-    /// Whether to return the key when a translation is missing.
-    /// </summary>
+    /// <summary>Whether to return the key when a translation is missing.</summary>
     public bool ReturnKeyWhenMissing { get; set; } = false;
 
-    /// <summary>
-    /// Sets whether missing translations return their key.
-    /// </summary>
+    /// <summary>Sets whether missing translations return their key.</summary>
     /// <param name="enabled">True to return the key when missing; otherwise, false.</param>
     /// <returns>The module instance for chaining.</returns>
     public NoireLocalizer SetReturnKeyWhenMissing(bool enabled)
@@ -289,9 +264,7 @@ public class NoireLocalizer : NoireModuleBase<NoireLocalizer, LocalizerConfigIns
     /// </summary>
     public bool AutoCreateMissingKeysInDefaultLocale { get; set; } = false;
 
-    /// <summary>
-    /// Sets whether missing keys should be automatically created in the default locale.
-    /// </summary>
+    /// <summary>Sets whether missing keys should be automatically created in the default locale.</summary>
     /// <param name="enabled">True to auto-create missing keys in default locale; otherwise, false.</param>
     /// <returns>The module instance for chaining.</returns>
     public NoireLocalizer SetAutoCreateMissingKeysInDefaultLocale(bool enabled)
@@ -300,18 +273,12 @@ public class NoireLocalizer : NoireModuleBase<NoireLocalizer, LocalizerConfigIns
         return this;
     }
 
-    /// <summary>
-    /// Missing translation text format when <see cref="ReturnKeyWhenMissing"/> is false.<br/>
-    /// {0} = missing key.
-    /// </summary>
+    /// <summary>The text of a missing translation when <see cref="ReturnKeyWhenMissing"/> is false. {0} is the key.</summary>
     public string MissingTranslationFormat { get; set; } = "[Missing: {0}]";
 
-    /// <summary>
-    /// Sets the missing translation format used when <see cref="ReturnKeyWhenMissing"/> is false.<br/>
-    /// Must include {0} for the missing key placeholder.
-    /// </summary>
-    /// <param name="format">The missing-translation format string.</param>
-    /// <returns>The module instance for chaining.</returns>
+    /// <summary>Sets <see cref="MissingTranslationFormat"/>. The format must hold {0}.</summary>
+    /// <param name="format">The format.</param>
+    /// <returns>This module.</returns>
     public NoireLocalizer SetMissingTranslationFormat(string format)
     {
         if (string.IsNullOrWhiteSpace(format))
@@ -322,11 +289,8 @@ public class NoireLocalizer : NoireModuleBase<NoireLocalizer, LocalizerConfigIns
     }
 
     /// <summary>
-    /// The locale used when no translation can be found in the requested locale chain.<br/>
-    /// Its initial value is resolved when the module is constructed, from the persisted
-    /// <see cref="DefaultLocaleSource"/>, any default locale selected in a previous session, and the module's
-    /// <c>defaultLocale</c> constructor argument, in that order of precedence. Change it with
-    /// <see cref="SetDefaultLocale(string)"/> or one of the <c>Use...AsDefaultLocale</c> methods.
+    /// The locale tried when the requested locale chain has no translation. Resolved at construction from the persisted
+    /// <see cref="DefaultLocaleSource"/>, then an earlier selection, then the <c>defaultLocale</c> argument.
     /// </summary>
     public string DefaultLocale
     {
@@ -340,20 +304,17 @@ public class NoireLocalizer : NoireModuleBase<NoireLocalizer, LocalizerConfigIns
 
             defaultLocale = normalized;
 
-            // The default locale is the tail of every lookup order, so changing it changes all of them.
+            // Every lookup order ends with the default locale.
             InvalidateLookupOrderCache();
         }
     }
 
     /// <summary>
-    /// Selects the default locale and switches <see cref="DefaultLocaleSource"/> to
-    /// <see cref="Localizer.DefaultLocaleSource.Custom"/>.<br/>
-    /// This is a selection, so it is persisted and restored by every later session in preference to the
-    /// <c>defaultLocale</c> constructor argument. To declare a default that follows the plugin's code instead of
-    /// sticking once chosen, pass that argument rather than calling this.
+    /// Selects the default locale, switching <see cref="DefaultLocaleSource"/> to Custom. The choice is persisted and
+    /// outranks the <c>defaultLocale</c> constructor argument in later sessions.
     /// </summary>
-    /// <param name="locale">The locale to set as default.</param>
-    /// <returns>The module instance for chaining.</returns>
+    /// <param name="locale">The default locale.</param>
+    /// <returns>This module.</returns>
     public NoireLocalizer SetDefaultLocale(string locale)
     {
         var normalized = NormalizeLocaleOrThrow(locale, nameof(locale));
@@ -364,18 +325,14 @@ public class NoireLocalizer : NoireModuleBase<NoireLocalizer, LocalizerConfigIns
         return this;
     }
 
-    /// <summary>
-    /// The currently active locale used by simple lookup helpers.
-    /// </summary>
+    /// <summary>The currently active locale used by simple lookup helpers.</summary>
     public string CurrentLocale
     {
         get => currentLocale;
         private set => currentLocale = NormalizeLocaleOrThrow(value, nameof(CurrentLocale));
     }
 
-    /// <summary>
-    /// Sets the active locale used by simple lookup helpers.
-    /// </summary>
+    /// <summary>Sets the active locale used by simple lookup helpers.</summary>
     /// <param name="locale">The locale to activate.</param>
     /// <returns>The module instance for chaining.</returns>
     public NoireLocalizer SetCurrentLocale(string locale)
@@ -388,6 +345,8 @@ public class NoireLocalizer : NoireModuleBase<NoireLocalizer, LocalizerConfigIns
 
         if (!string.Equals(previous, normalized, StringComparison.OrdinalIgnoreCase))
         {
+            NotifyTextsChanged();
+
             var evt = new LocalizationLocaleChangedEvent(previous, normalized);
             LocaleChanged?.Invoke(evt);
             PublishEvent(evt);
@@ -397,9 +356,7 @@ public class NoireLocalizer : NoireModuleBase<NoireLocalizer, LocalizerConfigIns
         return this;
     }
 
-    /// <summary>
-    /// Registers translations from an attributed provider class instance.
-    /// </summary>
+    /// <summary>Registers translations from an attributed provider class instance.</summary>
     /// <typeparam name="TProvider">The provider class type.</typeparam>
     /// <param name="provider">The provider instance.</param>
     /// <param name="overwrite">Whether existing translations should be overwritten.</param>
@@ -413,9 +370,7 @@ public class NoireLocalizer : NoireModuleBase<NoireLocalizer, LocalizerConfigIns
         return RegisterAttributedTranslations(typeof(TProvider), provider, overwrite);
     }
 
-    /// <summary>
-    /// Registers translations from an attributed provider class.
-    /// </summary>
+    /// <summary>Registers translations from an attributed provider class.</summary>
     /// <typeparam name="TProvider">The provider class type.</typeparam>
     /// <param name="overwrite">Whether existing translations should be overwritten.</param>
     /// <returns>The module instance for chaining.</returns>
@@ -423,9 +378,7 @@ public class NoireLocalizer : NoireModuleBase<NoireLocalizer, LocalizerConfigIns
         where TProvider : class
         => RegisterAttributedTranslations(typeof(TProvider), providerInstance: null, overwrite);
 
-    /// <summary>
-    /// Registers translations from an attributed provider class type.
-    /// </summary>
+    /// <summary>Registers translations from an attributed provider class type.</summary>
     /// <param name="providerType">The attributed provider type.</param>
     /// <param name="providerInstance">Optional provider instance used for instance members.</param>
     /// <param name="overwrite">Whether existing translations should be overwritten.</param>
@@ -446,18 +399,14 @@ public class NoireLocalizer : NoireModuleBase<NoireLocalizer, LocalizerConfigIns
         return this;
     }
 
-    /// <summary>
-    /// Defines how the default locale should be resolved.
-    /// </summary>
+    /// <summary>Defines how the default locale should be resolved.</summary>
     public DefaultLocaleSource DefaultLocaleSource
     {
         get => defaultLocaleSource;
         private set => defaultLocaleSource = value;
     }
 
-    /// <summary>
-    /// Sets the default locale source strategy and applies it immediately.
-    /// </summary>
+    /// <summary>Sets the default locale source strategy and applies it immediately.</summary>
     /// <param name="source">The default locale source strategy.</param>
     /// <returns>The module instance for chaining.</returns>
     public NoireLocalizer SetDefaultLocaleSource(DefaultLocaleSource source)
@@ -468,28 +417,20 @@ public class NoireLocalizer : NoireModuleBase<NoireLocalizer, LocalizerConfigIns
         return this;
     }
 
-    /// <summary>
-    /// Configures the module to use an explicit custom locale as the default locale.<br/>
-    /// Like <see cref="SetDefaultLocale(string)"/>, which this forwards to, the locale is persisted as a selection and
-    /// restored by later sessions in preference to the <c>defaultLocale</c> constructor argument.
-    /// </summary>
+    /// <summary>Selects a custom default locale, persisted as <see cref="SetDefaultLocale(string)"/> does.</summary>
     /// <param name="locale">The custom default locale.</param>
-    /// <returns>The module instance for chaining.</returns>
+    /// <returns>This module.</returns>
     public NoireLocalizer UseCustomDefaultLocale(string locale)
     {
         return SetDefaultLocale(locale);
     }
 
-    /// <summary>
-    /// Configures the module to use the current Windows locale as default locale.
-    /// </summary>
+    /// <summary>Configures the module to use the current Windows locale as default locale.</summary>
     /// <returns>The module instance for chaining.</returns>
     public NoireLocalizer UseWindowsLocaleAsDefaultLocale()
         => SetDefaultLocaleSource(DefaultLocaleSource.Windows);
 
-    /// <summary>
-    /// Configures the module to use the game client language as default locale.
-    /// </summary>
+    /// <summary>Configures the module to use the game client language as default locale.</summary>
     /// <returns>The module instance for chaining.</returns>
     public NoireLocalizer UseGameClientLocaleAsDefaultLocale()
         => SetDefaultLocaleSource(DefaultLocaleSource.GameClient);
@@ -498,27 +439,18 @@ public class NoireLocalizer : NoireModuleBase<NoireLocalizer, LocalizerConfigIns
 
     #region Public Events
 
-    /// <summary>
-    /// Event raised when the current locale changes.
-    /// </summary>
+    /// <summary>Event raised when the current locale changes.</summary>
     public event Action<LocalizationLocaleChangedEvent>? LocaleChanged;
 
-    /// <summary>
-    /// Event raised when a locale gets registered for the first time.
-    /// </summary>
+    /// <summary>Event raised when a locale gets registered for the first time.</summary>
     public event Action<LocalizationLocaleRegisteredEvent>? LocaleRegistered;
 
-    /// <summary>
-    /// Event raised when a translation is added or updated.
-    /// </summary>
+    /// <summary>Event raised when a translation is added or updated.</summary>
     public event Action<LocalizationTranslationChangedEvent>? TranslationChanged;
 
     /// <summary>
-    /// Event raised the first time a translation lookup fails for a given key and requested locale; later failures
-    /// for the same pair are counted but stay silent, avoiding one event per frame for text drawn every frame.
-    /// Fires again for the same key under a different requested locale.<br/>
-    /// <see cref="GetMissingTranslationCounts"/> and <see cref="GetStatistics"/> report the full miss counts. The
-    /// per-key-and-locale record resets with <see cref="ClearAllTranslations"/>.
+    /// Raised the first time a lookup fails for a key and requested locale. Later misses are only counted, see
+    /// <see cref="GetMissingTranslationCounts"/>. <see cref="ClearAllTranslations"/> resets the record.
     /// </summary>
     public event Action<LocalizationMissingTranslationEvent>? MissingTranslation;
 
@@ -526,9 +458,7 @@ public class NoireLocalizer : NoireModuleBase<NoireLocalizer, LocalizerConfigIns
 
     #region Public Methods
 
-    /// <summary>
-    /// Ensures a locale exists in the localization store.
-    /// </summary>
+    /// <summary>Ensures a locale exists in the localization store.</summary>
     /// <param name="locale">The locale to ensure.</param>
     /// <returns>The module instance for chaining.</returns>
     public NoireLocalizer EnsureLocale(string locale)
@@ -549,7 +479,7 @@ public class NoireLocalizer : NoireModuleBase<NoireLocalizer, LocalizerConfigIns
                 localeDisplayNames[normalized] = GetCultureDisplayName(normalized);
         }
 
-        // Raised outside the lock so that a handler can call back into the module without deadlocking.
+        // Outside the lock: a handler may call back into the module.
         if (created)
         {
             var evt = new LocalizationLocaleRegisteredEvent(normalized);
@@ -560,9 +490,7 @@ public class NoireLocalizer : NoireModuleBase<NoireLocalizer, LocalizerConfigIns
         return this;
     }
 
-    /// <summary>
-    /// Configures explicit fallback locales for a given locale.
-    /// </summary>
+    /// <summary>Configures explicit fallback locales for a given locale.</summary>
     /// <param name="locale">The locale to configure.</param>
     /// <param name="fallbackLocales">The fallback locales to attempt after the requested locale.</param>
     /// <returns>The module instance for chaining.</returns>
@@ -587,25 +515,21 @@ public class NoireLocalizer : NoireModuleBase<NoireLocalizer, LocalizerConfigIns
             else
                 fallbackLocalesByLocale[normalized] = normalizedFallbacks;
 
-            // Not only the order for this locale: another locale can reach it through its own chain, so every cached
-            // order may now be stale.
-            lookupOrderCache.Clear();
+            // Every cached order: another locale may reach this one through its own chain.
+            ClearLookupOrdersLocked();
         }
 
+        NotifyTextsChanged();
         return this;
     }
 
-    /// <summary>
-    /// Gets a fluent writer for a locale.
-    /// </summary>
+    /// <summary>Gets a fluent writer for a locale.</summary>
     /// <param name="locale">The locale to write translations for.</param>
     /// <returns>A fluent writer bound to <paramref name="locale"/>.</returns>
     public LocaleWriter ForLocale(string locale)
         => new(this, NormalizeLocaleOrThrow(locale, nameof(locale)));
 
-    /// <summary>
-    /// Sets a human-readable display name for a locale.
-    /// </summary>
+    /// <summary>Sets a human-readable display name for a locale.</summary>
     /// <param name="locale">The locale key.</param>
     /// <param name="displayName">The locale display name to use in UI components.</param>
     /// <returns>The module instance for chaining.</returns>
@@ -620,12 +544,11 @@ public class NoireLocalizer : NoireModuleBase<NoireLocalizer, LocalizerConfigIns
         lock (localizationLock)
             localeDisplayNames[normalized] = displayName.Trim();
 
+        NotifyTextsChanged();
         return this;
     }
 
-    /// <summary>
-    /// Sets multiple locale display names.
-    /// </summary>
+    /// <summary>Sets multiple locale display names.</summary>
     /// <param name="localeNames">Locale key and display-name pairs.</param>
     /// <returns>The module instance for chaining.</returns>
     public NoireLocalizer SetLocaleNames(IReadOnlyDictionary<string, string> localeNames)
@@ -639,9 +562,7 @@ public class NoireLocalizer : NoireModuleBase<NoireLocalizer, LocalizerConfigIns
         return this;
     }
 
-    /// <summary>
-    /// Gets the display name for a locale.
-    /// </summary>
+    /// <summary>Gets the display name for a locale.</summary>
     /// <param name="locale">The locale key.</param>
     /// <returns>The configured display name, or a culture-derived name when none was manually configured.</returns>
     public string GetLocaleName(string locale)
@@ -657,9 +578,7 @@ public class NoireLocalizer : NoireModuleBase<NoireLocalizer, LocalizerConfigIns
         return GetCultureDisplayName(normalized);
     }
 
-    /// <summary>
-    /// Adds or updates a single translation entry.
-    /// </summary>
+    /// <summary>Adds or updates a single translation entry.</summary>
     public NoireLocalizer AddTranslation(string locale, string key, string value, bool overwrite = true)
     {
         if (string.IsNullOrWhiteSpace(key))
@@ -691,6 +610,8 @@ public class NoireLocalizer : NoireModuleBase<NoireLocalizer, LocalizerConfigIns
 
         if (!existed || wasUpdated)
         {
+            NotifyTextsChanged();
+
             var evt = new LocalizationTranslationChangedEvent(normalizedLocale, normalizedKey, value ?? string.Empty, existed, overwrite);
             TranslationChanged?.Invoke(evt);
             PublishEvent(evt);
@@ -699,9 +620,7 @@ public class NoireLocalizer : NoireModuleBase<NoireLocalizer, LocalizerConfigIns
         return this;
     }
 
-    /// <summary>
-    /// Adds or updates multiple translations for a locale.
-    /// </summary>
+    /// <summary>Adds or updates multiple translations for a locale.</summary>
     public NoireLocalizer AddTranslations(string locale, IReadOnlyDictionary<string, string> values, bool overwrite = true)
     {
         if (values == null)
@@ -713,9 +632,7 @@ public class NoireLocalizer : NoireModuleBase<NoireLocalizer, LocalizerConfigIns
         return this;
     }
 
-    /// <summary>
-    /// Adds or updates multiple translations for a locale.
-    /// </summary>
+    /// <summary>Adds or updates multiple translations for a locale.</summary>
     public NoireLocalizer AddTranslations(string locale, params (string Key, string Value)[] values)
     {
         if (values == null)
@@ -727,9 +644,7 @@ public class NoireLocalizer : NoireModuleBase<NoireLocalizer, LocalizerConfigIns
         return this;
     }
 
-    /// <summary>
-    /// Removes a translation key from all locales.
-    /// </summary>
+    /// <summary>Removes a translation key from all locales.</summary>
     public NoireLocalizer RemoveKey(string key)
     {
         if (string.IsNullOrWhiteSpace(key))
@@ -741,12 +656,11 @@ public class NoireLocalizer : NoireModuleBase<NoireLocalizer, LocalizerConfigIns
                 localeTranslations.Remove(key.Trim());
         }
 
+        NotifyTextsChanged();
         return this;
     }
 
-    /// <summary>
-    /// Clears all translations from a locale.
-    /// </summary>
+    /// <summary>Clears all translations from a locale.</summary>
     public NoireLocalizer ClearLocale(string locale)
     {
         var normalized = NormalizeLocaleOrThrow(locale, nameof(locale));
@@ -756,12 +670,11 @@ public class NoireLocalizer : NoireModuleBase<NoireLocalizer, LocalizerConfigIns
                 localeTranslations.Clear();
         }
 
+        NotifyTextsChanged();
         return this;
     }
 
-    /// <summary>
-    /// Clears all locales and all translations.
-    /// </summary>
+    /// <summary>Clears all locales and all translations.</summary>
     public NoireLocalizer ClearAllTranslations()
     {
         lock (localizationLock)
@@ -770,36 +683,29 @@ public class NoireLocalizer : NoireModuleBase<NoireLocalizer, LocalizerConfigIns
             fallbackLocalesByLocale.Clear();
             missingTranslationByKey.Clear();
 
-            // The explicit fallback chains are gone with the rest, so the orders built from them are stale.
-            lookupOrderCache.Clear();
+            ClearLookupOrdersLocked();
 
-            // Clearing the store resets the missing-key ledger with it, so a key that is still missing afterwards is
-            // reported once more rather than staying silent against an empty set of translations.
+            // A key still missing afterwards is reported again.
             announcedMissingLocalesByKey.Clear();
         }
 
         EnsureLocale(DefaultLocale);
         EnsureLocale(CurrentLocale);
+        NotifyTextsChanged();
 
         return this;
     }
 
-    /// <summary>
-    /// Retrieves a translation for <paramref name="key"/> in <see cref="CurrentLocale"/> and applies indexed formatting.<br/>
-    /// To look up in an explicit locale, use <see cref="GetForLocale(string, string, object?[])"/>.
-    /// </summary>
+    /// <summary>A translation in <see cref="CurrentLocale"/>, with indexed formatting.</summary>
     /// <param name="key">The translation key.</param>
-    /// <param name="formatArgs">Positional arguments substituted into the {0}, {1}, ... placeholders in the value.</param>
+    /// <param name="formatArgs">The values of the {0}, {1}, ... placeholders.</param>
     public string Get(string key, params object?[] formatArgs)
         => GetForLocale(CurrentLocale, key, formatArgs);
 
-    /// <summary>
-    /// Retrieves a translation for <paramref name="key"/> in the specified locale and applies indexed formatting.<br/>
-    /// This is the explicit-locale counterpart of <see cref="Get(string, object?[])"/>, which uses <see cref="CurrentLocale"/>.
-    /// </summary>
-    /// <param name="locale">The locale to look the translation up in.</param>
+    /// <summary>A translation in a given locale, with indexed formatting.</summary>
+    /// <param name="locale">The locale to look in.</param>
     /// <param name="key">The translation key.</param>
-    /// <param name="formatArgs">Positional arguments substituted into the {0}, {1}, ... placeholders in the value.</param>
+    /// <param name="formatArgs">The values of the {0}, {1}, ... placeholders.</param>
     public string GetForLocale(string locale, string key, params object?[] formatArgs)
     {
         var raw = GetRaw(locale, key);
@@ -817,10 +723,7 @@ public class NoireLocalizer : NoireModuleBase<NoireLocalizer, LocalizerConfigIns
         }
     }
 
-    /// <summary>
-    /// Retrieves a translation for <paramref name="key"/> and applies named token formatting.<br/>
-    /// Tokens are written as {TokenName} in translation values.
-    /// </summary>
+    /// <summary>A translation with named tokens, written {TokenName} in the value.</summary>
     public string Get(string key, IReadOnlyDictionary<string, object?> namedArgs, string? locale = null)
     {
         if (namedArgs == null)
@@ -830,15 +733,11 @@ public class NoireLocalizer : NoireModuleBase<NoireLocalizer, LocalizerConfigIns
         return ReplaceNamedTokens(raw, namedArgs);
     }
 
-    /// <summary>
-    /// Retrieves a translation without applying format arguments.
-    /// </summary>
+    /// <summary>Retrieves a translation without applying format arguments.</summary>
     public string GetRaw(string key)
         => GetRaw(CurrentLocale, key);
 
-    /// <summary>
-    /// Retrieves a translation in the specified locale without applying format arguments.
-    /// </summary>
+    /// <summary>Retrieves a translation in the specified locale without applying format arguments.</summary>
     public string GetRaw(string locale, string key)
     {
         var normalizedLocale = NormalizeLocaleOrThrow(locale, nameof(locale));
@@ -887,24 +786,22 @@ public class NoireLocalizer : NoireModuleBase<NoireLocalizer, LocalizerConfigIns
         return false;
     }
 
-    /// <summary>
-    /// Gets all currently registered locales.
-    /// </summary>
+    /// <summary>Gets all currently registered locales.</summary>
     public IReadOnlyList<string> GetLocales()
     {
         lock (localizationLock)
             return translationsByLocale.Keys.OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToList();
     }
 
-    /// <summary>
-    /// Draws an ImGui combo box to switch between all available locales.
-    /// </summary>
-    /// <param name="label">The visible label for the combo box.</param>
+    /// <summary>Draws an ImGui combo box to switch between all available locales.</summary>
+    /// <param name="label">The visible label for the combo box, or <see langword="null"/> for <see cref="NoireStrings.LanguageLabel"/>.</param>
     /// <param name="width">Optional combo width in pixels. Set to 0 to use automatic sizing.</param>
     /// <param name="showLocaleCode">Whether to append locale code to displayed options.</param>
     /// <returns>True if the locale was changed through the combo, otherwise false.</returns>
-    public bool DrawLocaleCombo(string label = "Language", float width = 220f, bool showLocaleCode = true)
+    public bool DrawLocaleCombo(string? label = null, float width = 220f, bool showLocaleCode = true)
     {
+        label ??= NoireStrings.LanguageLabel;
+
         var locales = GetLocales();
         if (locales.Count == 0)
             return false;
@@ -944,9 +841,7 @@ public class NoireLocalizer : NoireModuleBase<NoireLocalizer, LocalizerConfigIns
         return changed;
     }
 
-    /// <summary>
-    /// Gets all keys found across all locales.
-    /// </summary>
+    /// <summary>Gets all keys found across all locales.</summary>
     public IReadOnlyList<string> GetAllKeys()
     {
         lock (localizationLock)
@@ -960,9 +855,7 @@ public class NoireLocalizer : NoireModuleBase<NoireLocalizer, LocalizerConfigIns
         }
     }
 
-    /// <summary>
-    /// Gets all translation key/value pairs for a specific locale.
-    /// </summary>
+    /// <summary>Gets all translation key/value pairs for a specific locale.</summary>
     public IReadOnlyDictionary<string, string> GetLocaleTranslations(string locale)
     {
         var normalized = NormalizeLocaleOrThrow(locale, nameof(locale));
@@ -975,10 +868,7 @@ public class NoireLocalizer : NoireModuleBase<NoireLocalizer, LocalizerConfigIns
         }
     }
 
-    /// <summary>
-    /// Exports all translations to a JSON string.<br/>
-    /// Format: { "locale": { "key": "value" } }
-    /// </summary>
+    /// <summary>Exports every translation as JSON: { "locale": { "key": "value" } }.</summary>
     public string ExportToJson(bool indented = true)
     {
         Dictionary<string, Dictionary<string, string>> snapshot;
@@ -1003,31 +893,24 @@ public class NoireLocalizer : NoireModuleBase<NoireLocalizer, LocalizerConfigIns
         return builder.ToString();
     }
 
-    /// <summary>
-    /// Exports all translations to a JSON file.<br/>
-    /// Missing directories in <paramref name="filePath"/> are created.
-    /// </summary>
-    /// <param name="filePath">The full path of the file to write.</param>
-    /// <param name="indented">Whether the written JSON should be indented.</param>
-    /// <returns>The module instance for chaining.</returns>
-    /// <exception cref="IOException">Thrown when the file could not be written.</exception>
+    /// <summary>Exports every translation to a JSON file, creating missing directories.</summary>
+    /// <param name="filePath">The file to write.</param>
+    /// <param name="indented">Whether the JSON is indented.</param>
+    /// <returns>This module.</returns>
+    /// <exception cref="IOException">When the file could not be written.</exception>
     public NoireLocalizer ExportToJsonFile(string filePath, bool indented = true)
     {
         if (string.IsNullOrWhiteSpace(filePath))
             throw new ArgumentException("File path cannot be null or whitespace.", nameof(filePath));
 
-        // FileHelper creates the directory structure, applies the library's UTF-8 default, and reports failure rather
-        // than throwing, so the sentinel is turned back into an exception here.
+        // FileHelper reports failure instead of throwing.
         if (!FileHelper.WriteTextToFile(filePath, ExportToJson(indented)))
             throw new IOException($"Failed to write the localization file: {filePath}");
 
         return this;
     }
 
-    /// <summary>
-    /// Imports translations from a JSON string.<br/>
-    /// Expected format: { "locale": { "key": "value" } }
-    /// </summary>
+    /// <summary>Imports translations from JSON: { "locale": { "key": "value" } }.</summary>
     public NoireLocalizer ImportFromJson(string json, bool overwrite = true, bool clearExisting = false)
     {
         if (string.IsNullOrWhiteSpace(json))
@@ -1053,9 +936,7 @@ public class NoireLocalizer : NoireModuleBase<NoireLocalizer, LocalizerConfigIns
         return this;
     }
 
-    /// <summary>
-    /// Imports translations from a JSON file.
-    /// </summary>
+    /// <summary>Imports translations from a JSON file.</summary>
     /// <param name="filePath">The full path of the file to read.</param>
     /// <param name="overwrite">Whether existing translations should be overwritten.</param>
     /// <param name="clearExisting">Whether all existing locales and translations should be cleared first.</param>
@@ -1070,17 +951,14 @@ public class NoireLocalizer : NoireModuleBase<NoireLocalizer, LocalizerConfigIns
         if (!FileHelper.FileExists(filePath))
             throw new FileNotFoundException("Localization file not found.", filePath);
 
-        // FileHelper reports a read failure as null rather than throwing, and the file existing a moment ago does not
-        // mean it can be read now.
+        // FileHelper reports a failed read as null. The file may have gone since it was checked.
         var content = FileHelper.ReadTextFromFile(filePath)
             ?? throw new IOException($"Failed to read the localization file: {filePath}");
 
         return ImportFromJson(content, overwrite, clearExisting);
     }
 
-    /// <summary>
-    /// Returns current localization statistics.
-    /// </summary>
+    /// <summary>Returns current localization statistics.</summary>
     public LocalizationStatistics GetStatistics()
     {
         lock (localizationLock)
@@ -1098,9 +976,7 @@ public class NoireLocalizer : NoireModuleBase<NoireLocalizer, LocalizerConfigIns
         }
     }
 
-    /// <summary>
-    /// Returns a snapshot of missing translation counters by key.
-    /// </summary>
+    /// <summary>Returns a snapshot of missing translation counters by key.</summary>
     public IReadOnlyDictionary<string, int> GetMissingTranslationCounts()
     {
         lock (localizationLock)
@@ -1247,15 +1123,7 @@ public class NoireLocalizer : NoireModuleBase<NoireLocalizer, LocalizerConfigIns
 
     private static IReadOnlyList<Type> DiscoverAutoRegisterLocalizationProviderTypes(Assembly pluginAssembly)
     {
-        Type[] assemblyTypes;
-        try
-        {
-            assemblyTypes = pluginAssembly.GetTypes();
-        }
-        catch (ReflectionTypeLoadException ex)
-        {
-            assemblyTypes = ex.Types.Where(t => t != null).Cast<Type>().ToArray();
-        }
+        var assemblyTypes = GetLoadableTypes(pluginAssembly);
 
         const BindingFlags memberFlags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance;
 
@@ -1267,33 +1135,56 @@ public class NoireLocalizer : NoireModuleBase<NoireLocalizer, LocalizerConfigIns
             .ToList();
     }
 
-    // Discards every cached lookup order. Called from each path that changes what BuildLookupOrderLocked would
-    // produce: the explicit fallback chains, DefaultLocale, and the AllowParentCultureFallback and
-    // AllowDefaultLocaleFallback toggles. Paths that only add or remove translations do not need it, because an order
-    // is a list of locales to try and does not depend on what any of them contain.
+    private static Type[] GetLoadableTypes(Assembly assembly)
+    {
+        try
+        {
+            return assembly.GetTypes();
+        }
+        catch (ReflectionTypeLoadException ex)
+        {
+            return ex.Types.Where(t => t != null).Cast<Type>().ToArray();
+        }
+    }
+
+    // Called by every path that changes the fallback chains, DefaultLocale or the two fallback toggles.
     private void InvalidateLookupOrderCache()
     {
         lock (localizationLock)
-            lookupOrderCache.Clear();
+            ClearLookupOrdersLocked();
     }
 
-    // Returns the lookup order for a normalized locale, computing it on first use. The caller must hold
-    // localizationLock.
+    // Caller holds localizationLock.
+    private void ClearLookupOrdersLocked()
+    {
+        lookupOrderCache.Clear();
+        declaredLookupOrderCache.Clear();
+    }
+
+    // Caller holds localizationLock.
     private IReadOnlyList<string> GetLookupOrderLocked(string locale)
     {
         if (lookupOrderCache.TryGetValue(locale, out var cachedOrder))
             return cachedOrder;
 
-        var order = BuildLookupOrderLocked(locale);
+        var order = BuildLookupOrderLocked(locale, includeDefaultLocale: true);
         lookupOrderCache[locale] = order;
         return order;
     }
 
-    // Computes the ordered list of locales a lookup walks for , from the requested locale through its parent cultures
-    // and explicit fallbacks to DefaultLocale and its parents. The caller must hold localizationLock: this reads the
-    // explicit fallback chains directly instead of copying them, and it invokes nothing that could call back into the
-    // module.
-    private IReadOnlyList<string> BuildLookupOrderLocked(string locale)
+    // Caller holds localizationLock.
+    private IReadOnlyList<string> GetDeclaredLookupOrderLocked(string locale)
+    {
+        if (declaredLookupOrderCache.TryGetValue(locale, out var cachedOrder))
+            return cachedOrder;
+
+        var order = BuildLookupOrderLocked(locale, includeDefaultLocale: false);
+        declaredLookupOrderCache[locale] = order;
+        return order;
+    }
+
+    // Caller holds localizationLock: the fallback chains are read in place.
+    private IReadOnlyList<string> BuildLookupOrderLocked(string locale, bool includeDefaultLocale)
     {
         var currentDefaultLocale = DefaultLocale;
         var order = new List<string>();
@@ -1324,6 +1215,9 @@ public class NoireLocalizer : NoireModuleBase<NoireLocalizer, LocalizerConfigIns
             }
         }
 
+        if (!includeDefaultLocale)
+            return order;
+
         if (AllowDefaultLocaleFallback && visited.Add(currentDefaultLocale))
             order.Add(currentDefaultLocale);
 
@@ -1348,8 +1242,7 @@ public class NoireLocalizer : NoireModuleBase<NoireLocalizer, LocalizerConfigIns
 
         lock (localizationLock)
         {
-            // Counted on every miss, so that GetMissingTranslationCounts and the statistics keep exact totals even
-            // though the event below is raised only once.
+            // Counted on every miss: the totals stay exact though the event fires once.
             missingTranslationByKey[key] = missingTranslationByKey.GetValueOrDefault(key) + 1;
 
             if (!announcedMissingLocalesByKey.TryGetValue(key, out var announcedLocales))
@@ -1364,8 +1257,6 @@ public class NoireLocalizer : NoireModuleBase<NoireLocalizer, LocalizerConfigIns
         if (AutoCreateMissingKeysInDefaultLocale)
             AddTranslation(DefaultLocale, key, key, overwrite: false);
 
-        // Only the first failure per key and requested locale is announced, matching MissingTranslation's contract;
-        // the attempted-locale list is allocated only here, on that same first-failure path.
         if (isFirstMiss)
         {
             var evt = new LocalizationMissingTranslationEvent(locale, key, attemptedLocales.ToList());
@@ -1405,6 +1296,12 @@ public class NoireLocalizer : NoireModuleBase<NoireLocalizer, LocalizerConfigIns
 
         var normalized = locale.Trim().Replace('_', '-');
 
+        if (string.Equals(normalized, NoireLanguages.Pseudo, StringComparison.OrdinalIgnoreCase))
+            return NoireLanguages.Pseudo;
+
+        if (string.Equals(normalized, NoireLanguages.PseudoLong, StringComparison.OrdinalIgnoreCase))
+            return NoireLanguages.PseudoLong;
+
         try
         {
             return CultureInfo.GetCultureInfo(normalized).Name;
@@ -1424,9 +1321,7 @@ public class NoireLocalizer : NoireModuleBase<NoireLocalizer, LocalizerConfigIns
     {
         DefaultLocaleSource = LocalizerConfig.DefaultLocaleSource;
 
-        // Only a stored selection outranks the default locale this module was constructed with. CustomDefaultLocale
-        // carries a locale from the moment a configuration exists, so restoring it whenever it is populated would
-        // overwrite that argument with a value nobody picked, and no caller could ever set a default locale.
+        // Only a stored selection. CustomDefaultLocale is populated as soon as a configuration exists.
         if (LocalizerConfig.HasCustomDefaultLocaleSelection && !string.IsNullOrWhiteSpace(LocalizerConfig.CustomDefaultLocale))
             DefaultLocale = NormalizeLocaleOrThrow(LocalizerConfig.CustomDefaultLocale, nameof(LocalizerConfig.CustomDefaultLocale));
 
@@ -1434,20 +1329,15 @@ public class NoireLocalizer : NoireModuleBase<NoireLocalizer, LocalizerConfigIns
             CurrentLocale = NormalizeLocaleOrThrow(LocalizerConfig.SelectedLocale, nameof(LocalizerConfig.SelectedLocale));
     }
 
-    // Writes the persisted locale settings and saves them as one change.
     private void PersistConfiguration(bool recordDefaultLocaleSelection = false)
     {
-        // Written through the instance rather than through the generated static accessor, whose [AutoSave] setters save
-        // the whole file on each assignment: the values below belong to one change and are worth exactly one write, not
-        // one write each preceded by a read-back comparison.
+        // Through the instance: the static [AutoSave] accessor would write the file once per value.
         var config = LocalizerConfig.Instance;
 
         config.SelectedLocale = CurrentLocale;
         config.DefaultLocaleSource = DefaultLocaleSource;
 
-        // Only SetDefaultLocale selects a custom default locale. Storing the locale in effect on every save would
-        // instead record whatever the active source last resolved to, and the next session would restore that as a
-        // selection nobody made.
+        // Only an explicit selection is recorded, never the locale a source last resolved to.
         if (recordDefaultLocaleSelection)
         {
             config.CustomDefaultLocale = DefaultLocale;
@@ -1513,17 +1403,17 @@ public class NoireLocalizer : NoireModuleBase<NoireLocalizer, LocalizerConfigIns
 
     #endregion
 
-    /// <summary>
-    /// Disposes the module resources.
-    /// </summary>
+    /// <summary>Disposes the module resources.</summary>
     protected override void DisposeInternal()
     {
+        StopDeclaredTexts();
+
         lock (localizationLock)
         {
             translationsByLocale.Clear();
             fallbackLocalesByLocale.Clear();
             missingTranslationByKey.Clear();
-            lookupOrderCache.Clear();
+            ClearLookupOrdersLocked();
             announcedMissingLocalesByKey.Clear();
         }
 

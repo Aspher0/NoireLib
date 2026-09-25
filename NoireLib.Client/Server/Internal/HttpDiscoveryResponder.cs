@@ -34,9 +34,7 @@ internal sealed class HttpDiscoveryResponder : IDisposable
 
     public int Port { get; private set; }
 
-    /// <summary>
-    /// Whether this process answers probes, or another process on this machine already does.
-    /// </summary>
+    // False when another process on this machine already answers probes.
     public bool IsResponding { get; private set; }
 
     public void Start()

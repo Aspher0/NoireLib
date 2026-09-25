@@ -1,24 +1,17 @@
 using System;
+using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 
 namespace NoireLib.Internal.Helpers;
 
-/// <summary>
-/// A <see cref="TimingHelperBase"/> whose interval is a <see cref="TimeSpan"/>, counted in milliseconds off the
-/// process clock. This is the base of <see cref="NoireLib.Helpers.Throttler"/> and
-/// <see cref="NoireLib.Helpers.Debouncer"/>.
-/// </summary>
+/// <summary>A timing helper whose interval is a TimeSpan, counted off the process clock. Base of Throttler and Debouncer.</summary>
 public abstract class TimeTimingHelperBase : TimingHelperBase
 {
-    /// <summary>
-    /// The TimeSpan delay associated with the timing helper.
-    /// </summary>
+    /// <summary>The TimeSpan delay associated with the timing helper.</summary>
     protected TimeSpan _delay;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="TimeTimingHelperBase"/> class.
-    /// </summary>
+    /// <summary>Initializes a new instance of the <see cref="TimeTimingHelperBase"/> class.</summary>
     /// <param name="delay">The delay as a <see cref="TimeSpan"/>.</param>
     /// <exception cref="ArgumentException">Thrown when delay is less than or equal to zero.</exception>
     protected TimeTimingHelperBase(TimeSpan delay)
@@ -35,23 +28,14 @@ public abstract class TimeTimingHelperBase : TimingHelperBase
     /// <inheritdoc/>
     protected override long IntervalTicks => (long)_delay.TotalMilliseconds;
 
-    /// <summary>
-    /// Gets the current delay.
-    /// </summary>
+    /// <summary>Gets the current delay.</summary>
     /// <returns>The current delay as a <see cref="TimeSpan"/>.</returns>
     public TimeSpan GetDelay()
     {
         ThrowIfDisposed();
 
-        _lock.Wait();
-        try
-        {
-            return _delay;
-        }
-        finally
-        {
-            _lock.Release();
-        }
+        // Lock-free: callers read this per call from the framework thread, and a TimeSpan is one 64-bit field.
+        return new TimeSpan(Volatile.Read(ref Unsafe.As<TimeSpan, long>(ref _delay)));
     }
 
     /// <summary>
@@ -69,7 +53,7 @@ public abstract class TimeTimingHelperBase : TimingHelperBase
         _lock.Wait();
         try
         {
-            _delay = delay;
+            Volatile.Write(ref Unsafe.As<TimeSpan, long>(ref _delay), delay.Ticks);
         }
         finally
         {

@@ -1,0 +1,14 @@
+<Project>
+
+  <!--
+    Imported on its own into every project using the NoireLib NuGet package: the language file step of
+    NoireLib.LanguageTemplate.targets, with the tool the package carries. See that file.
+  -->
+
+  <PropertyGroup>
+    <NoireLanguageTemplateTool Condition="'$(NoireLanguageTemplateTool)' == ''">$(MSBuildThisFileDirectory)..\tools\noirelangtemplate\noirelangtemplate.dll</NoireLanguageTemplateTool>
+  </PropertyGroup>
+
+  <Import Project="$(MSBuildThisFileDirectory)NoireLib.LanguageTemplate.targets" />
+
+</Project>

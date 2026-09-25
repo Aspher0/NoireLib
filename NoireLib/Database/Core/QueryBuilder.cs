@@ -4,9 +4,7 @@ using System.Linq;
 
 namespace NoireLib.Database;
 
-/// <summary>
-/// Builds and executes SQL queries for a model type.
-/// </summary>
+/// <summary>Builds and executes SQL queries for a model type.</summary>
 public sealed class QueryBuilder<TModel> where TModel : NoireDbModelBase<TModel>, new()
 {
     #region Private Fields/Properties and Constructor
@@ -37,9 +35,9 @@ public sealed class QueryBuilder<TModel> where TModel : NoireDbModelBase<TModel>
     #region Public Methods
 
     /// <summary>
-    /// Sets the selected columns for the query.
+    /// Sets the selected columns for the query, written as SQL text so expressions such as <c>table.*</c> are allowed.
     /// </summary>
-    /// <param name="columns">The columns to select.</param>
+    /// <param name="columns">The columns or SQL expressions to select.</param>
     /// <returns>The query builder instance for chaining.</returns>
     public QueryBuilder<TModel> Select(params string[] columns)
     {
@@ -48,9 +46,7 @@ public sealed class QueryBuilder<TModel> where TModel : NoireDbModelBase<TModel>
         return this;
     }
 
-    /// <summary>
-    /// Adds a basic where clause with an equals operator.
-    /// </summary>
+    /// <summary>Adds a basic where clause with an equals operator.</summary>
     /// <param name="column">The column name.</param>
     /// <param name="value">The comparison value.</param>
     /// <returns>The query builder instance for chaining.</returns>
@@ -59,9 +55,7 @@ public sealed class QueryBuilder<TModel> where TModel : NoireDbModelBase<TModel>
         return Where(column, "=", value, "AND");
     }
 
-    /// <summary>
-    /// Adds a basic where clause.
-    /// </summary>
+    /// <summary>Adds a basic where clause.</summary>
     /// <param name="column">The column name.</param>
     /// <param name="operatorValue">The comparison operator.</param>
     /// <param name="value">The comparison value.</param>
@@ -74,9 +68,7 @@ public sealed class QueryBuilder<TModel> where TModel : NoireDbModelBase<TModel>
         return this;
     }
 
-    /// <summary>
-    /// Adds where clauses for the provided criteria.
-    /// </summary>
+    /// <summary>Adds where clauses for the provided criteria.</summary>
     /// <param name="criteria">The filter criteria. Represented as a dictionary of column names to values.</param>
     /// <returns>The query builder instance for chaining.</returns>
     public QueryBuilder<TModel> Where(IReadOnlyDictionary<string, object?> criteria)
@@ -87,9 +79,7 @@ public sealed class QueryBuilder<TModel> where TModel : NoireDbModelBase<TModel>
         return this;
     }
 
-    /// <summary>
-    /// Adds a basic OR where clause with an equals operator.
-    /// </summary>
+    /// <summary>Adds a basic OR where clause with an equals operator.</summary>
     /// <param name="column">The column name.</param>
     /// <param name="value">The comparison value.</param>
     /// <returns>The query builder instance for chaining.</returns>
@@ -98,9 +88,7 @@ public sealed class QueryBuilder<TModel> where TModel : NoireDbModelBase<TModel>
         return Where(column, "=", value, "OR");
     }
 
-    /// <summary>
-    /// Adds a basic OR where clause.
-    /// </summary>
+    /// <summary>Adds a basic OR where clause.</summary>
     /// <param name="column">The column name.</param>
     /// <param name="operatorValue">The comparison operator.</param>
     /// <param name="value">The comparison value.</param>
@@ -110,9 +98,7 @@ public sealed class QueryBuilder<TModel> where TModel : NoireDbModelBase<TModel>
         return Where(column, operatorValue, value, "OR");
     }
 
-    /// <summary>
-    /// Adds a raw where clause.
-    /// </summary>
+    /// <summary>Adds a raw where clause.</summary>
     /// <param name="sql">The raw SQL clause.</param>
     /// <param name="bindings">The binding values.</param>
     /// <param name="boolean">The boolean operator.</param>
@@ -124,9 +110,7 @@ public sealed class QueryBuilder<TModel> where TModel : NoireDbModelBase<TModel>
         return this;
     }
 
-    /// <summary>
-    /// Adds a raw OR where clause.
-    /// </summary>
+    /// <summary>Adds a raw OR where clause.</summary>
     /// <param name="sql">The raw SQL clause.</param>
     /// <param name="bindings">The binding values.</param>
     /// <returns>The query builder instance for chaining.</returns>
@@ -135,9 +119,7 @@ public sealed class QueryBuilder<TModel> where TModel : NoireDbModelBase<TModel>
         return WhereRaw(sql, bindings, "OR");
     }
 
-    /// <summary>
-    /// Adds a where-in clause.
-    /// </summary>
+    /// <summary>Adds a where-in clause.</summary>
     /// <param name="column">The column name.</param>
     /// <param name="values">The comparison values.</param>
     /// <param name="boolean">The boolean operator.</param>
@@ -150,9 +132,7 @@ public sealed class QueryBuilder<TModel> where TModel : NoireDbModelBase<TModel>
         return this;
     }
 
-    /// <summary>
-    /// Adds a where-not-in clause.
-    /// </summary>
+    /// <summary>Adds a where-not-in clause.</summary>
     /// <param name="column">The column name.</param>
     /// <param name="values">The comparison values.</param>
     /// <param name="boolean">The boolean operator.</param>
@@ -162,9 +142,7 @@ public sealed class QueryBuilder<TModel> where TModel : NoireDbModelBase<TModel>
         return WhereIn(column, values, boolean, true);
     }
 
-    /// <summary>
-    /// Adds a null check clause.
-    /// </summary>
+    /// <summary>Adds a null check clause.</summary>
     /// <param name="column">The column name.</param>
     /// <param name="boolean">The boolean operator.</param>
     /// <param name="not">Whether to negate the clause.</param>
@@ -175,9 +153,7 @@ public sealed class QueryBuilder<TModel> where TModel : NoireDbModelBase<TModel>
         return this;
     }
 
-    /// <summary>
-    /// Adds a not-null check clause.
-    /// </summary>
+    /// <summary>Adds a not-null check clause.</summary>
     /// <param name="column">The column name.</param>
     /// <param name="boolean">The boolean operator.</param>
     /// <returns>The query builder instance for chaining.</returns>
@@ -186,9 +162,7 @@ public sealed class QueryBuilder<TModel> where TModel : NoireDbModelBase<TModel>
         return WhereNull(column, boolean, true);
     }
 
-    /// <summary>
-    /// Adds a between clause.
-    /// </summary>
+    /// <summary>Adds a between clause.</summary>
     /// <param name="column">The column name.</param>
     /// <param name="values">The range values.</param>
     /// <param name="boolean">The boolean operator.</param>
@@ -201,9 +175,7 @@ public sealed class QueryBuilder<TModel> where TModel : NoireDbModelBase<TModel>
         return this;
     }
 
-    /// <summary>
-    /// Adds a not-between clause.
-    /// </summary>
+    /// <summary>Adds a not-between clause.</summary>
     /// <param name="column">The column name.</param>
     /// <param name="values">The range values.</param>
     /// <param name="boolean">The boolean operator.</param>
@@ -213,9 +185,7 @@ public sealed class QueryBuilder<TModel> where TModel : NoireDbModelBase<TModel>
         return WhereBetween(column, values, boolean, true);
     }
 
-    /// <summary>
-    /// Adds a like clause.
-    /// </summary>
+    /// <summary>Adds a like clause.</summary>
     /// <param name="column">The column name.</param>
     /// <param name="value">The pattern value.</param>
     /// <param name="boolean">The boolean operator.</param>
@@ -225,9 +195,7 @@ public sealed class QueryBuilder<TModel> where TModel : NoireDbModelBase<TModel>
         return Where(column, "LIKE", value, boolean);
     }
 
-    /// <summary>
-    /// Adds an OR like clause.
-    /// </summary>
+    /// <summary>Adds an OR like clause.</summary>
     /// <param name="column">The column name.</param>
     /// <param name="value">The pattern value.</param>
     /// <returns>The query builder instance for chaining.</returns>
@@ -236,9 +204,7 @@ public sealed class QueryBuilder<TModel> where TModel : NoireDbModelBase<TModel>
         return WhereLike(column, value, "OR");
     }
 
-    /// <summary>
-    /// Adds a nested where clause built by the provided callback.
-    /// </summary>
+    /// <summary>Adds a nested where clause built by the provided callback.</summary>
     /// <param name="callback">The callback that configures the nested query.</param>
     /// <param name="boolean">The boolean operator.</param>
     /// <returns>The query builder instance for chaining.</returns>
@@ -255,9 +221,7 @@ public sealed class QueryBuilder<TModel> where TModel : NoireDbModelBase<TModel>
         return this;
     }
 
-    /// <summary>
-    /// Adds a nested OR where clause built by the provided callback.
-    /// </summary>
+    /// <summary>Adds a nested OR where clause built by the provided callback.</summary>
     /// <param name="callback">The callback that configures the nested query.</param>
     /// <returns>The query builder instance for chaining.</returns>
     public QueryBuilder<TModel> OrWhereNested(Action<QueryBuilder<TModel>> callback)
@@ -265,9 +229,7 @@ public sealed class QueryBuilder<TModel> where TModel : NoireDbModelBase<TModel>
         return WhereNested(callback, "OR");
     }
 
-    /// <summary>
-    /// Adds a join clause.
-    /// </summary>
+    /// <summary>Adds a join clause.</summary>
     /// <param name="table">The table to join.</param>
     /// <param name="first">The left column.</param>
     /// <param name="operatorValue">The join operator.</param>
@@ -280,9 +242,7 @@ public sealed class QueryBuilder<TModel> where TModel : NoireDbModelBase<TModel>
         return this;
     }
 
-    /// <summary>
-    /// Adds a left join clause.
-    /// </summary>
+    /// <summary>Adds a left join clause.</summary>
     /// <param name="table">The table to join.</param>
     /// <param name="first">The left column.</param>
     /// <param name="operatorValue">The join operator.</param>
@@ -293,9 +253,7 @@ public sealed class QueryBuilder<TModel> where TModel : NoireDbModelBase<TModel>
         return Join(table, first, operatorValue, second, "LEFT");
     }
 
-    /// <summary>
-    /// Adds a right join clause.
-    /// </summary>
+    /// <summary>Adds a right join clause.</summary>
     /// <param name="table">The table to join.</param>
     /// <param name="first">The left column.</param>
     /// <param name="operatorValue">The join operator.</param>
@@ -306,9 +264,7 @@ public sealed class QueryBuilder<TModel> where TModel : NoireDbModelBase<TModel>
         return Join(table, first, operatorValue, second, "RIGHT");
     }
 
-    /// <summary>
-    /// Adds an order by clause.
-    /// </summary>
+    /// <summary>Adds an order by clause.</summary>
     /// <param name="column">The column name.</param>
     /// <param name="direction">The sort direction.</param>
     /// <returns>The query builder instance for chaining.</returns>
@@ -322,9 +278,7 @@ public sealed class QueryBuilder<TModel> where TModel : NoireDbModelBase<TModel>
         return this;
     }
 
-    /// <summary>
-    /// Adds a descending order by clause.
-    /// </summary>
+    /// <summary>Adds a descending order by clause.</summary>
     /// <param name="column">The column name.</param>
     /// <returns>The query builder instance for chaining.</returns>
     public QueryBuilder<TModel> OrderByDesc(string column)
@@ -332,9 +286,7 @@ public sealed class QueryBuilder<TModel> where TModel : NoireDbModelBase<TModel>
         return OrderBy(column, "DESC");
     }
 
-    /// <summary>
-    /// Adds an ascending order by clause.
-    /// </summary>
+    /// <summary>Adds an ascending order by clause.</summary>
     /// <param name="column">The column name.</param>
     /// <returns>The query builder instance for chaining.</returns>
     public QueryBuilder<TModel> OrderByAsc(string column)
@@ -342,10 +294,17 @@ public sealed class QueryBuilder<TModel> where TModel : NoireDbModelBase<TModel>
         return OrderBy(column, "ASC");
     }
 
-    /// <summary>
-    /// Adds a group by clause.
-    /// </summary>
-    /// <param name="columns">The columns to group by.</param>
+    /// <summary>Adds a raw order by clause for an SQL expression.</summary>
+    /// <param name="sql">The raw SQL expression, including its direction.</param>
+    /// <returns>The query builder instance for chaining.</returns>
+    public QueryBuilder<TModel> OrderByRaw(string sql)
+    {
+        _orders.Add(new OrderClause(sql, string.Empty, IsRaw: true));
+        return this;
+    }
+
+    /// <summary>Adds a group by clause, written as SQL text so expressions are allowed.</summary>
+    /// <param name="columns">The columns or SQL expressions to group by.</param>
     /// <returns>The query builder instance for chaining.</returns>
     public QueryBuilder<TModel> GroupBy(params string[] columns)
     {
@@ -353,9 +312,7 @@ public sealed class QueryBuilder<TModel> where TModel : NoireDbModelBase<TModel>
         return this;
     }
 
-    /// <summary>
-    /// Adds a having clause.
-    /// </summary>
+    /// <summary>Adds a having clause.</summary>
     /// <param name="column">The column name.</param>
     /// <param name="operatorValue">The comparison operator.</param>
     /// <param name="value">The comparison value.</param>
@@ -368,9 +325,7 @@ public sealed class QueryBuilder<TModel> where TModel : NoireDbModelBase<TModel>
         return this;
     }
 
-    /// <summary>
-    /// Adds an OR having clause.
-    /// </summary>
+    /// <summary>Adds an OR having clause.</summary>
     /// <param name="column">The column name.</param>
     /// <param name="operatorValue">The comparison operator.</param>
     /// <param name="value">The comparison value.</param>
@@ -380,9 +335,28 @@ public sealed class QueryBuilder<TModel> where TModel : NoireDbModelBase<TModel>
         return Having(column, operatorValue, value, "OR");
     }
 
-    /// <summary>
-    /// Sets the query limit.
-    /// </summary>
+    /// <summary>Adds a raw having clause for an SQL expression such as an aggregate.</summary>
+    /// <param name="sql">The raw SQL clause.</param>
+    /// <param name="bindings">The binding values.</param>
+    /// <param name="boolean">The boolean operator.</param>
+    /// <returns>The query builder instance for chaining.</returns>
+    public QueryBuilder<TModel> HavingRaw(string sql, IReadOnlyList<object?> bindings, string boolean = "AND")
+    {
+        _havings.Add(new HavingClause(string.Empty, string.Empty, null, boolean, RawSql: sql));
+        _havingBindings.AddRange(bindings);
+        return this;
+    }
+
+    /// <summary>Adds a raw OR having clause.</summary>
+    /// <param name="sql">The raw SQL clause.</param>
+    /// <param name="bindings">The binding values.</param>
+    /// <returns>The query builder instance for chaining.</returns>
+    public QueryBuilder<TModel> OrHavingRaw(string sql, IReadOnlyList<object?> bindings)
+    {
+        return HavingRaw(sql, bindings, "OR");
+    }
+
+    /// <summary>Sets the query limit.</summary>
     /// <param name="value">The maximum row count.</param>
     /// <returns>The query builder instance for chaining.</returns>
     public QueryBuilder<TModel> Limit(int value)
@@ -391,9 +365,7 @@ public sealed class QueryBuilder<TModel> where TModel : NoireDbModelBase<TModel>
         return this;
     }
 
-    /// <summary>
-    /// Sets the query offset.
-    /// </summary>
+    /// <summary>Sets the query offset.</summary>
     /// <param name="value">The offset value.</param>
     /// <returns>The query builder instance for chaining.</returns>
     public QueryBuilder<TModel> Offset(int value)
@@ -402,9 +374,7 @@ public sealed class QueryBuilder<TModel> where TModel : NoireDbModelBase<TModel>
         return this;
     }
 
-    /// <summary>
-    /// Sets the table alias.
-    /// </summary>
+    /// <summary>Sets the table alias.</summary>
     /// <param name="alias">The alias name.</param>
     /// <returns>The query builder instance for chaining.</returns>
     public QueryBuilder<TModel> As(string alias)
@@ -413,9 +383,7 @@ public sealed class QueryBuilder<TModel> where TModel : NoireDbModelBase<TModel>
         return this;
     }
 
-    /// <summary>
-    /// Builds the SQL query and parameters.
-    /// </summary>
+    /// <summary>Builds the SQL query and parameters.</summary>
     /// <returns>A tuple containing the SQL string and parameter list.</returns>
     public (string Sql, IReadOnlyList<object?> Parameters) ToSql()
     {
@@ -453,9 +421,7 @@ public sealed class QueryBuilder<TModel> where TModel : NoireDbModelBase<TModel>
         return (sql, parameters);
     }
 
-    /// <summary>
-    /// Executes the query and returns all matching models.
-    /// </summary>
+    /// <summary>Executes the query and returns all matching models.</summary>
     /// <returns>A list of matching models.</returns>
     public List<TModel> Get()
     {
@@ -473,9 +439,7 @@ public sealed class QueryBuilder<TModel> where TModel : NoireDbModelBase<TModel>
         return models;
     }
 
-    /// <summary>
-    /// Executes the query and returns the first matching model.
-    /// </summary>
+    /// <summary>Executes the query and returns the first matching model.</summary>
     /// <returns>The first matching model, or null if no matches.</returns>
     public TModel? First()
     {
@@ -490,9 +454,7 @@ public sealed class QueryBuilder<TModel> where TModel : NoireDbModelBase<TModel>
         return NoireDbModelBase<TModel>.FromDatabaseRow(result);
     }
 
-    /// <summary>
-    /// Executes the query and returns the value of a single column.
-    /// </summary>
+    /// <summary>Executes the query and returns the value of a single column.</summary>
     /// <param name="column">The column name.</param>
     /// <returns>The column value, or null if no matches.</returns>
     public object? Value(string column)
@@ -503,14 +465,12 @@ public sealed class QueryBuilder<TModel> where TModel : NoireDbModelBase<TModel>
         return _db.FetchScalar(query.Sql, query.Parameters);
     }
 
-    /// <summary>
-    /// Executes a count aggregate.
-    /// </summary>
-    /// <param name="column">The column to count.</param>
+    /// <summary>Executes a count aggregate.</summary>
+    /// <param name="column">The column to count, or <c>*</c> for every row.</param>
     /// <returns>The count result.</returns>
     public int Count(string column = "*")
     {
-        Select($"COUNT({column}) as count");
+        Select($"COUNT({NoireDatabase.EscapeAggregateColumn(column)}) as count");
         NoireDbModelBase<TModel>.EnsureTable();
         var query = ToSql();
         var result = _db.Fetch(query.Sql, query.Parameters);
@@ -520,14 +480,12 @@ public sealed class QueryBuilder<TModel> where TModel : NoireDbModelBase<TModel>
         return Convert.ToInt32(value);
     }
 
-    /// <summary>
-    /// Executes an average aggregate.
-    /// </summary>
+    /// <summary>Executes an average aggregate.</summary>
     /// <param name="column">The column to average.</param>
     /// <returns>The average result.</returns>
     public double Avg(string column)
     {
-        Select($"AVG({column}) as avg");
+        Select($"AVG({NoireDatabase.EscapeAggregateColumn(column)}) as avg");
         NoireDbModelBase<TModel>.EnsureTable();
         var query = ToSql();
         var result = _db.Fetch(query.Sql, query.Parameters);
@@ -537,14 +495,12 @@ public sealed class QueryBuilder<TModel> where TModel : NoireDbModelBase<TModel>
         return Convert.ToDouble(value);
     }
 
-    /// <summary>
-    /// Executes a sum aggregate.
-    /// </summary>
+    /// <summary>Executes a sum aggregate.</summary>
     /// <param name="column">The column to sum.</param>
     /// <returns>The sum result.</returns>
     public double Sum(string column)
     {
-        Select($"SUM({column}) as sum");
+        Select($"SUM({NoireDatabase.EscapeAggregateColumn(column)}) as sum");
         NoireDbModelBase<TModel>.EnsureTable();
         var query = ToSql();
         var result = _db.Fetch(query.Sql, query.Parameters);
@@ -554,14 +510,12 @@ public sealed class QueryBuilder<TModel> where TModel : NoireDbModelBase<TModel>
         return Convert.ToDouble(value);
     }
 
-    /// <summary>
-    /// Executes a minimum aggregate.
-    /// </summary>
+    /// <summary>Executes a minimum aggregate.</summary>
     /// <param name="column">The column to aggregate.</param>
     /// <returns>The minimum result, or null if no matches.</returns>
     public object? Min(string column)
     {
-        Select($"MIN({column}) as min");
+        Select($"MIN({NoireDatabase.EscapeAggregateColumn(column)}) as min");
         NoireDbModelBase<TModel>.EnsureTable();
         var query = ToSql();
         var result = _db.Fetch(query.Sql, query.Parameters);
@@ -571,14 +525,12 @@ public sealed class QueryBuilder<TModel> where TModel : NoireDbModelBase<TModel>
         return value;
     }
 
-    /// <summary>
-    /// Executes a maximum aggregate.
-    /// </summary>
+    /// <summary>Executes a maximum aggregate.</summary>
     /// <param name="column">The column to aggregate.</param>
     /// <returns>The maximum result, or null if no matches.</returns>
     public object? Max(string column)
     {
-        Select($"MAX({column}) as max");
+        Select($"MAX({NoireDatabase.EscapeAggregateColumn(column)}) as max");
         NoireDbModelBase<TModel>.EnsureTable();
         var query = ToSql();
         var result = _db.Fetch(query.Sql, query.Parameters);
@@ -588,18 +540,14 @@ public sealed class QueryBuilder<TModel> where TModel : NoireDbModelBase<TModel>
         return value;
     }
 
-    /// <summary>
-    /// Determines whether the query returns any rows.
-    /// </summary>
+    /// <summary>Determines whether the query returns any rows.</summary>
     /// <returns>True if any rows match the query; otherwise, false.</returns>
     public bool Exists()
     {
         return Count() > 0;
     }
 
-    /// <summary>
-    /// Updates rows matching the current query.
-    /// </summary>
+    /// <summary>Updates rows matching the current query.</summary>
     /// <param name="values">The values to update.</param>
     /// <returns>The number of rows affected.</returns>
     public int Update(IReadOnlyDictionary<string, object?> values)
@@ -622,9 +570,7 @@ public sealed class QueryBuilder<TModel> where TModel : NoireDbModelBase<TModel>
         return _db.Execute(sql, parameters);
     }
 
-    /// <summary>
-    /// Deletes rows matching the current query.
-    /// </summary>
+    /// <summary>Deletes rows matching the current query.</summary>
     /// <returns>The number of rows affected.</returns>
     public int Delete()
     {
@@ -641,9 +587,7 @@ public sealed class QueryBuilder<TModel> where TModel : NoireDbModelBase<TModel>
         return _db.Execute(sql, parameters);
     }
 
-    /// <summary>
-    /// Inserts a row into the current table.
-    /// </summary>
+    /// <summary>Inserts a row into the current table.</summary>
     /// <param name="values">The values to insert.</param>
     /// <returns>The ID of the inserted row.</returns>
     public long Insert(IReadOnlyDictionary<string, object?> values)
@@ -652,9 +596,7 @@ public sealed class QueryBuilder<TModel> where TModel : NoireDbModelBase<TModel>
         return _db.Insert(_table, values);
     }
 
-    /// <summary>
-    /// Executes the query and returns paginated results.
-    /// </summary>
+    /// <summary>Executes the query and returns paginated results.</summary>
     /// <param name="perPage">The number of items per page.</param>
     /// <param name="page">The page number.</param>
     /// <returns>A paginated result containing the items and pagination metadata.</returns>
@@ -688,9 +630,7 @@ public sealed class QueryBuilder<TModel> where TModel : NoireDbModelBase<TModel>
         );
     }
 
-    /// <summary>
-    /// Retrieves values for a column, optionally keyed by another column.
-    /// </summary>
+    /// <summary>Retrieves values for a column, optionally keyed by another column.</summary>
     /// <param name="column">The value column.</param>
     /// <param name="key">The key column.</param>
     /// <returns>A list of values or key-value pairs.</returns>
@@ -721,13 +661,10 @@ public sealed class QueryBuilder<TModel> where TModel : NoireDbModelBase<TModel>
         return output;
     }
 
-    /// <summary>
-    /// Processes the query results in chunks.<br/>
-    /// The callback receives the current chunk and the page number; return true or null to continue, false to stop.
-    /// </summary>
+    /// <summary>Processes the results in chunks. The callback returns false to stop.</summary>
     /// <param name="count">The chunk size.</param>
-    /// <param name="callback">The callback invoked for each chunk.</param>
-    /// <returns>True if all chunks were processed; false if processing was stopped early.</returns>
+    /// <param name="callback">Called with each chunk and its page number.</param>
+    /// <returns>Whether every chunk was processed.</returns>
     public bool Chunk(int count, Func<List<TModel>, int, bool?> callback)
     {
         var page = 1;
@@ -833,7 +770,7 @@ public sealed class QueryBuilder<TModel> where TModel : NoireDbModelBase<TModel>
         if (_orders.Count == 0)
             return string.Empty;
 
-        var orders = _orders.Select(order => $"{NoireDatabase.EscapeColumn(order.Column)} {order.Direction}");
+        var orders = _orders.Select(order => order.IsRaw ? order.Column : $"{NoireDatabase.EscapeColumn(order.Column)} {order.Direction}");
         return "ORDER BY " + string.Join(", ", orders);
     }
 
@@ -850,7 +787,7 @@ public sealed class QueryBuilder<TModel> where TModel : NoireDbModelBase<TModel>
             if (index > 0)
                 sql.Add(having.Boolean);
 
-            sql.Add($"{NoireDatabase.EscapeColumn(having.Column)} {having.Operator} ?");
+            sql.Add(having.RawSql != null ? $"({having.RawSql})" : $"{NoireDatabase.EscapeColumn(having.Column)} {having.Operator} ?");
         }
 
         return "HAVING " + string.Join(" ", sql);
@@ -886,9 +823,9 @@ public sealed class QueryBuilder<TModel> where TModel : NoireDbModelBase<TModel>
 
     private sealed record JoinClause(string Type, string Table, string? First = null, string? Operator = null, string? Second = null);
 
-    private sealed record OrderClause(string Column, string Direction);
+    private sealed record OrderClause(string Column, string Direction, bool IsRaw = false);
 
-    private sealed record HavingClause(string Column, string Operator, object? Value, string Boolean);
+    private sealed record HavingClause(string Column, string Operator, object? Value, string Boolean, string? RawSql = null);
 
     private sealed record WhereClause(WhereClauseType Type, string Boolean, string? Column = null, string? Operator = null, object? Value = null, IReadOnlyList<object?>? Values = null, string? RawSql = null, QueryBuilder<TModel>? NestedQuery = null);
 
@@ -908,9 +845,7 @@ public sealed class QueryBuilder<TModel> where TModel : NoireDbModelBase<TModel>
     #endregion
 }
 
-/// <summary>
-/// Represents pagination metadata for a query.
-/// </summary>
+/// <summary>Represents pagination metadata for a query.</summary>
 /// <param name="Total">The total number of items.</param>
 /// <param name="PerPage">The number of items per page.</param>
 /// <param name="CurrentPage">The current page number.</param>
@@ -921,9 +856,7 @@ public sealed class QueryBuilder<TModel> where TModel : NoireDbModelBase<TModel>
 /// <param name="To">The ending item index.</param>
 public sealed record PaginationMetadata(int Total, int PerPage, int CurrentPage, int LastPage, int? NextPage, int? PrevPage, int From, int To);
 
-/// <summary>
-/// Represents a paginated query result.
-/// </summary>
+/// <summary>Represents a paginated query result.</summary>
 /// <typeparam name="TModel">The model type.</typeparam>
 /// <param name="Items">The result items.</param>
 /// <param name="Pagination">The pagination metadata.</param>

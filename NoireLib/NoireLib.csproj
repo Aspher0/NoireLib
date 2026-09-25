@@ -155,4 +155,21 @@
         <Compile Remove="Modules\GameWatcher\Actions Integration\**" />
         <None Remove="Modules\GameWatcher\Actions Integration\**" />
     </ItemGroup>
+
+    <ItemGroup>
+        <None Remove="build\NoireLib.targets" />
+        <None Include="build\NoireLib.targets" Pack="true" PackagePath="build" />
+        <None Include="..\NoireLib.LanguageTemplate\NoireLib.LanguageTemplate.targets" Pack="true" PackagePath="build" Link="build\NoireLib.LanguageTemplate.targets" />
+    </ItemGroup>
+
+    <PropertyGroup>
+        <TargetsForTfmSpecificContentInPackage>$(TargetsForTfmSpecificContentInPackage);NoirePackLanguageTemplateTool</TargetsForTfmSpecificContentInPackage>
+    </PropertyGroup>
+
+    <Target Name="NoirePackLanguageTemplateTool">
+        <Exec Command="dotnet build &quot;$(MSBuildThisFileDirectory)..\NoireLib.LanguageTemplate\NoireLib.LanguageTemplate.csproj&quot; -c Release --nologo -v q" />
+        <ItemGroup>
+            <TfmSpecificPackageFile Include="$(MSBuildThisFileDirectory)..\NoireLib.LanguageTemplate\bin\Release\net10.0-windows\noirelangtemplate.dll;$(MSBuildThisFileDirectory)..\NoireLib.LanguageTemplate\bin\Release\net10.0-windows\noirelangtemplate.runtimeconfig.json" PackagePath="tools\noirelangtemplate" />
+        </ItemGroup>
+    </Target>
 </Project>

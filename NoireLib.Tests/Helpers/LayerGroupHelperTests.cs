@@ -112,6 +112,37 @@ public class LayerGroupHelperTests
     }
 
     [Fact]
+    public void Read_PopRangeCarriesItsSpawnOffsets()
+    {
+        var file = NavFileBuilder.Lgb(new NavFileBuilder.Layer
+        {
+            Id = 1,
+            Name = "arrivals",
+            Instances =
+            {
+                new NavFileBuilder.Instance
+                {
+                    Type = 40,
+                    Id = 6,
+                    Body = 0x40 + 2 * 12,
+                    Words =
+                    {
+                        [0x30] = 1, [0x34] = 0x40 - 0x34, [0x38] = 2,
+                        [0x40] = BitConverter.SingleToInt32Bits(1.5f), [0x44] = BitConverter.SingleToInt32Bits(-0.25f), [0x48] = BitConverter.SingleToInt32Bits(2f),
+                        [0x4C] = BitConverter.SingleToInt32Bits(-3f), [0x50] = 0, [0x54] = BitConverter.SingleToInt32Bits(0.5f),
+                    },
+                },
+                new NavFileBuilder.Instance { Type = 40, Id = 7, Words = { [0x30] = 1, [0x34] = 0x7FFF, [0x38] = 20 } },
+            },
+        });
+
+        var entries = LayerGroupHelper.Read(file).Single().Entries;
+
+        entries[0].SpawnOffsets.Should().Equal(new Vector3(1.5f, -0.25f, 2f), new Vector3(-3f, 0f, 0.5f));
+        entries[1].SpawnOffsets.Should().BeEmpty("a list running past the end of the file is not read");
+    }
+
+    [Fact]
     public void Read_SharedGroupCarriesItsDoorFields()
     {
         var entry = LayerGroupHelper.Read(NavFileBuilder.Lgb(new NavFileBuilder.Layer
@@ -204,6 +235,66 @@ public class LayerGroupHelperTests
         var flat = LayerGroupHelper.Flatten("level.lgb", Read(files), layer => layer.Name == "keep", LayerGroupHelper.DefaultMaxDepth);
 
         flat.Select(e => e.InstanceId).Should().Equal(1u, 3u);
+    }
+
+    [Fact]
+    public void Read_WaterRangeAndMapRangeCarryTheirPriorityShapeAndFlags()
+    {
+        var entries = LayerGroupHelper.Read(NavFileBuilder.Lgb(new NavFileBuilder.Layer
+            {
+                Id = 1,
+                Name = "ranges",
+                Instances =
+                {
+                    new NavFileBuilder.Instance { Type = 86, Id = 1, Body = 0x40, Words = { [0x30] = 2, [0x34] = 150 | (1 << 16), [0x3C] = 0x100 } },
+                    new NavFileBuilder.Instance { Type = 43, Id = 2, Body = 0x6C, Words = { [0x30] = 3, [0x34] = unchecked((ushort)-5) | (1 << 16), [0x64] = 1 << 24, [0x68] = 1 | (1 << 8) } },
+                    new NavFileBuilder.Instance { Type = 43, Id = 3, Body = 0x6C, Words = { [0x30] = 1, [0x34] = 100, [0x64] = 1 << 16 } },
+                },
+            }))
+            .Single().Entries;
+
+        entries[0].Type.Should().Be(LayerGroupHelper.WaterRangeEntryType);
+        entries[0].Shape.Should().Be(TriggerBoxShape.TriggerBoxShapeSphere);
+        entries[0].Priority.Should().Be(150);
+        entries[0].WaterRangeFlags.Should().Be(0x100u);
+
+        entries[1].Type.Should().Be(LayerEntryType.MapRange);
+        entries[1].Shape.Should().Be(TriggerBoxShape.TriggerBoxShapeCylinder);
+        entries[1].Priority.Should().Be(-5);
+        entries[1].FlyingDisabled.Should().BeTrue();
+        entries[1].MountsAndOrnamentsDisabled.Should().BeTrue();
+        entries[1].LalafellOnly.Should().BeTrue();
+
+        entries[2].FlyingDisabled.Should().BeFalse("0x66 is the flight height message's slab, not a ban");
+        entries[2].MountsAndOrnamentsDisabled.Should().BeFalse();
+        entries[2].LalafellOnly.Should().BeFalse();
+        entries[2].WaterRangeFlags.Should().Be(0u);
+    }
+
+    [Fact]
+    public void Read_ARangeCutShortOfItsBody_ReadsNothing()
+    {
+        var file = NavFileBuilder.Lgb(new NavFileBuilder.Layer
+        {
+            Id = 1,
+            Name = "ranges",
+            Instances = { new NavFileBuilder.Instance { Type = 43, Id = 2, Body = 0x6C, Words = { [0x64] = 1 << 24 } } },
+        });
+
+        var withBody = LayerGroupHelper.Read(file).Single().Entries.Should().ContainSingle().Subject;
+        withBody.FlyingDisabled.Should().BeTrue();
+
+        // The layer's name follows the last body: cutting it and four more bytes ends the file inside the flags.
+        var cut = "ranges".Length + 1 + 4;
+        LayerGroupHelper.Read(file.AsSpan(0, file.Length - cut)).Single().Entries.Should().BeEmpty();
+
+        var water = NavFileBuilder.Lgb(new NavFileBuilder.Layer
+        {
+            Id = 1,
+            Name = "ranges",
+            Instances = { new NavFileBuilder.Instance { Type = 86, Id = 1, Body = 0x40, Words = { [0x3C] = 1 } } },
+        });
+        LayerGroupHelper.Read(water.AsSpan(0, water.Length - cut)).Single().Entries.Should().BeEmpty("a water range needs its flags");
     }
 
     private static Func<string, IReadOnlyList<LayerGroupLayer>> Read(Dictionary<string, byte[]> files)

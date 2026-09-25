@@ -37,7 +37,6 @@ internal struct CharacterFieldSet
     public uint OnlineStatusId;
     public SubjectFlags Flags;
 
-    /// <summary>Derives the comparable field set from a stored snapshot (no allocation).</summary>
     public static CharacterFieldSet FromSnapshot(CharacterSnapshot snapshot) => new()
     {
         EntityId = snapshot.EntityId,
@@ -72,10 +71,7 @@ internal struct CharacterFieldSet
 // unit-testable against fabricated values.
 internal static class CharacterDiffEngine
 {
-    /// <summary>
-    /// Computes the aspects that differ between two field sets. The caller intersects the result with the
-    /// union interest mask.
-    /// </summary>
+    // The caller intersects the result with the union interest mask.
     public static CharacterAspect ComputeChangedAspects(in CharacterFieldSet prev, in CharacterFieldSet cur)
     {
         var changed = CharacterAspect.None;
@@ -131,14 +127,9 @@ internal static class CharacterCapture
 {
     private const ulong NoTargetSentinel = 0xE0000000;
 
-    /// <summary>Converts a raw target object id to a nullable entity id.</summary>
     public static uint? ResolveTargetEntityId(ulong targetObjectId)
         => targetObjectId is 0 or NoTargetSentinel ? null : (uint)targetObjectId;
 
-    /// <summary>
-    /// Enumerates the characters an iteration class requires: local player only, all players,
-    /// or players + battle NPCs + companions.
-    /// </summary>
     public static IEnumerable<ICharacter> EnumerateSubjects(Scope.IterationClass iterationClass)
     {
         switch (iterationClass)
@@ -180,10 +171,7 @@ internal static class CharacterCapture
         }
     }
 
-    /// <summary>
-    /// Reads the precomputed relationship flags from the native character (party/alliance/friend relation
-    /// flags maintained by the client) plus the local-player identity check.
-    /// </summary>
+    // The party, alliance and friend flags the client maintains on the native character.
     public static unsafe SubjectFlags ReadFlags(ICharacter chara, uint localEntityId)
     {
         var flags = SubjectFlags.None;
@@ -208,7 +196,7 @@ internal static class CharacterCapture
         return flags;
     }
 
-    /// <summary>Builds the light pre-match probe for a character (name read lazily from Dalamud's cached SeString).</summary>
+    // The name is read lazily from Dalamud's cached SeString.
     public static unsafe SubjectProbe BuildProbe(ICharacter chara, SubjectFlags flags)
     {
         var native = (NativeCharacter*)chara.Address;
@@ -224,7 +212,7 @@ internal static class CharacterCapture
         };
     }
 
-    /// <summary>Reads the allocation-free scalar field set used by the compare-first gate.</summary>
+    // Allocation-free: the compare-first gate reads it every tick.
     public static unsafe CharacterFieldSet ReadFields(ICharacter chara, SubjectFlags flags)
     {
         var native = (NativeCharacter*)chara.Address;
@@ -260,7 +248,7 @@ internal static class CharacterCapture
         };
     }
 
-    /// <summary>Materializes a full snapshot for a character. Only called when something changed (or for baselines/queries).</summary>
+    // Only called when something changed, or for baselines and queries.
     public static unsafe CharacterSnapshot Capture(ICharacter chara, SubjectFlags flags, DateTimeOffset now)
     {
         var native = (NativeCharacter*)chara.Address;
@@ -307,7 +295,6 @@ internal static class CharacterCapture
         };
     }
 
-    /// <summary>The local player's entity id, or 0 while logged out.</summary>
     public static uint LocalEntityId()
         => NoireService.ObjectTable.LocalPlayer?.EntityId ?? 0;
 }

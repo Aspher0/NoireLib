@@ -699,11 +699,7 @@ public static class NoireIPC
                 : throw new ArgumentNullException(nameof(target), $"An instance is required to register method '{method.DeclaringType?.FullName}.{method.Name}'.");
     }
 
-    /// <summary>Builds the provider delegate for a property that publishes its value. It reads the property on every call.</summary>
-    /// <param name="target">The instance the property is read from, or null for a static property.</param>
-    /// <param name="property">The property to publish.</param>
-    /// <returns>A <see cref="Func{TResult}"/> over the property type.</returns>
-    /// <exception cref="InvalidOperationException">If the property has no getter, or needs an instance and none was given.</exception>
+    // Reads the property on every call. Throws when it has no getter, or needs an instance and none was given.
     internal static Delegate CreateProviderDelegateForProperty(object? target, PropertyInfo property)
     {
         ArgumentNullException.ThrowIfNull(property);
@@ -726,9 +722,7 @@ public static class NoireIPC
                 : throw new InvalidOperationException($"An instance is required to publish property '{property.DeclaringType?.FullName}.{property.Name}'.");
     }
 
-    /// <summary>Whether an annotated property consumes a channel: a delegate or wrapper type consumes, anything else publishes.</summary>
-    /// <param name="property">The annotated property.</param>
-    /// <returns>True when the property is a consumer.</returns>
+    // A delegate or wrapper type consumes a channel. Anything else publishes.
     internal static bool IsConsumerProperty(PropertyInfo property)
     {
         ArgumentNullException.ThrowIfNull(property);

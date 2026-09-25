@@ -12,9 +12,6 @@ public static class FrameDebounceHelper
 {
     private static readonly ConcurrentDictionary<string, FrameDebouncer> _debouncers = new();
 
-    /// <summary>
-    /// Throws an exception if the NoireLib is not initialized.
-    /// </summary>
     static FrameDebounceHelper()
     {
         if (!NoireService.IsInitialized())

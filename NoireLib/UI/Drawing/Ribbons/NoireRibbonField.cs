@@ -5,8 +5,8 @@ using System.Numerics;
 namespace NoireLib.UI;
 
 /// <summary>
-/// An animated backdrop of translucent ribbons over a gradient under a vignette. Leans toward the pointer and ripples on demand.<br/>
-/// Lay it out once per frame with <see cref="Update(Vector2, Vector2, Vector2?)"/>, then paint any number of views with <see cref="Draw(ImDrawListPtr, Vector2, Vector2, float, float)"/>. Draw thread only.
+/// An animated backdrop of translucent ribbons over a gradient under a vignette, leaning toward the pointer. Lay it out
+/// once per frame with <see cref="Update(Vector2, Vector2, Vector2?)"/>, then paint any number of views with <see cref="Draw(ImDrawListPtr, Vector2, Vector2, float, float)"/>. Draw thread only.
 /// </summary>
 public sealed class NoireRibbonField
 {
@@ -82,14 +82,14 @@ public sealed class NoireRibbonField
 
     private int paintClock;
 
+    // Indices counted from the first vertex: a replay is one reservation and one block copy.
     private sealed class RibbonPaint
     {
-        public Vector2[] Positions = [];
-        public uint[] Colors = [];
-        public int[] MeshRows = [];
-        public int[] MeshColumns = [];
-        public int Meshes;
+        public ImDrawVert[] Vertices = [];
+        public ushort[] Indices = [];
         public int VertexCount;
+        public int IndexCount;
+        public Vector2 White = new(float.NaN, float.NaN);
         public int Version = -1;
         public Vector2 Min = new(float.NaN, float.NaN);
         public Vector2 Max;
@@ -119,6 +119,15 @@ public sealed class NoireRibbonField
     {
         public Vector2[] Positions = [];
         public uint[] Colors = [];
+
+        // Finished vertices at one view position: an unmoved view copies them as a block.
+        public ImDrawVert[] Baked = [];
+        public int BakedCount = -1;
+        public Vector2 BakedOrigin = new(float.NaN, float.NaN);
+        public Vector2 BakedWhite = new(float.NaN, float.NaN);
+        public ushort[] Pattern = [];
+        public int PatternRows = -1;
+        public int PatternColumns = -1;
         public int Rows = -1;
         public int Columns = -1;
         public Vector2 Size = new(float.NaN, float.NaN);
@@ -158,10 +167,7 @@ public sealed class NoireRibbonField
     /// <summary>What the field computes with, read every frame.</summary>
     public RibbonFieldOptions Options { get; }
 
-    /// <summary>
-    /// Whether time, pointer smoothing and color smoothing are stopped, for reduced motion. Freezing clears every
-    /// wave, and <see cref="Wave"/> does nothing while frozen.
-    /// </summary>
+    /// <summary>Whether time and smoothing are stopped, for reduced motion. Freezing clears every wave.</summary>
     public bool Frozen
     {
         get => frozen;
@@ -191,9 +197,7 @@ public sealed class NoireRibbonField
 
     #region State
 
-    /// <summary>
-    /// Sets the color odd ribbons blend toward, reached smoothly.
-    /// </summary>
+    /// <summary>Sets the color odd ribbons blend toward, reached smoothly.</summary>
     /// <param name="color">The color, or <see langword="null"/> for <see cref="RibbonFieldOptions.RestLeanColor"/>.</param>
     public void Lean(Vector4? color) => leanTarget = color.HasValue ? new Vector3(color.Value.X, color.Value.Y, color.Value.Z) : null;
 
@@ -222,9 +226,7 @@ public sealed class NoireRibbonField
             Lean(color);
     }
 
-    /// <summary>
-    /// Returns the clock, the pointer, the lean color and the waves to their initial state.
-    /// </summary>
+    /// <summary>Returns the clock, the pointer, the lean color and the waves to their initial state.</summary>
     public void Reset()
     {
         time = 0f;
@@ -254,12 +256,10 @@ public sealed class NoireRibbonField
         Update(min, max, mouse);
     }
 
-    /// <summary>
-    /// Lays the field out for this frame. Advances time once per frame however often it is called.
-    /// </summary>
+    /// <summary>Lays the field out for this frame. Time advances once per frame however often this is called.</summary>
     /// <param name="min">The field's top left, in screen pixels.</param>
     /// <param name="max">The field's bottom right, in screen pixels.</param>
-    /// <param name="mouse">The pointer in screen pixels, or <see langword="null"/> when it is over none of the field's views.</param>
+    /// <param name="mouse">The pointer in screen pixels, or null when it is over no view.</param>
     public void Update(Vector2 min, Vector2 max, Vector2? mouse)
     {
         var options = Options;
@@ -369,15 +369,13 @@ public sealed class NoireRibbonField
 
         if (waveCount == 0
             && laidOut
-            && layoutTime == time
-            && layoutPointer == pointer
-            && layoutLean == leanColor
             && layoutMin == min
             && layoutSize == size
             && layoutScale == NoireUI.Scale
             && layoutRibbons == ribbonCount
             && layoutOptions == Fingerprint(options)
-            && ReferenceEquals(layoutSource, ribbons))
+            && ReferenceEquals(layoutSource, ribbons)
+            && ((layoutTime == time && layoutPointer == pointer && layoutLean == leanColor) || WithinDrift(options, size)))
         {
             return;
         }
@@ -472,6 +470,44 @@ public sealed class NoireRibbonField
         }
     }
 
+    // The bound is the fastest a sine term, the thickness swing and the lean can move an edge.
+    private bool WithinDrift(RibbonFieldOptions options, Vector2 size)
+    {
+        var allowed = options.MaxDriftPixels;
+
+        if (allowed <= 0f || float.IsNaN(layoutTime))
+            return false;
+
+        var lean = leanColor - layoutLean;
+
+        if (MathF.Max(MathF.Abs(lean.X), MathF.Max(MathF.Abs(lean.Y), MathF.Abs(lean.Z))) * 255f > 0.5f)
+            return false;
+
+        var height = size.Y;
+        var rate = 0f;
+
+        var ribbons = options.Ribbons;
+
+        for (var k = 0; k < ribbons.Count; k++)
+        {
+            var ribbon = ribbons[k];
+            var wave = MathF.Abs(ribbon.Amplitude) * MathF.Abs(ribbon.Speed)
+                * (1f + (MathF.Abs(options.SecondaryAmplitude) * MathF.Abs(options.SecondarySpeed)));
+            var swing = MathF.Abs(ribbon.Width) * MathF.Abs(options.ThicknessSwing) * MathF.Abs(options.ThicknessSpeed);
+
+            rate = MathF.Max(rate, height * (wave + swing));
+        }
+
+        var moved = pointer - layoutPointer;
+        var screen = options.LeanSpace == RibbonLeanSpace.Screen;
+        var across = screen ? MathF.Abs(moved.X) / MathF.Max(1f, size.X) : MathF.Abs(moved.X);
+        var down = screen ? MathF.Abs(moved.Y) : MathF.Abs(moved.Y) * height;
+        var steepest = MathF.Sqrt(2f * MathF.Max(0f, options.LeanSharpness) / MathF.E);
+        var leaning = MathF.Abs(options.LeanStrength) * (down + (across * steepest * height));
+
+        return ((time - layoutTime) * rate) + leaning <= allowed;
+    }
+
     #endregion
 
     #region Drawing
@@ -504,13 +540,11 @@ public sealed class NoireRibbonField
         DrawVignette(drawList, min, max, rounding, opacity);
     }
 
-    /// <summary>
-    /// Paints only the background gradient. See <see cref="Draw(ImDrawListPtr, Vector2, Vector2, float, float)"/>.
-    /// </summary>
+    /// <summary>Paints only the background gradient.</summary>
     /// <param name="drawList">The draw list.</param>
     /// <param name="min">The view's top left, in screen pixels.</param>
     /// <param name="max">The view's bottom right, in screen pixels.</param>
-    /// <param name="rounding">The view's corner radius in real pixels.</param>
+    /// <param name="rounding">The view's corner radius, in real pixels.</param>
     /// <param name="opacity">A multiplier on the layer's opacity.</param>
     public void DrawBackground(ImDrawListPtr drawList, Vector2 min, Vector2 max, float rounding, float opacity = 1f)
     {
@@ -525,13 +559,11 @@ public sealed class NoireRibbonField
         EmitGrid(drawList, count, 1, vignette: false, opacity);
     }
 
-    /// <summary>
-    /// Paints only the vignette. See <see cref="Draw(ImDrawListPtr, Vector2, Vector2, float, float)"/>.
-    /// </summary>
+    /// <summary>Paints only the vignette.</summary>
     /// <param name="drawList">The draw list.</param>
     /// <param name="min">The view's top left, in screen pixels.</param>
     /// <param name="max">The view's bottom right, in screen pixels.</param>
-    /// <param name="rounding">The view's corner radius in real pixels.</param>
+    /// <param name="rounding">The view's corner radius, in real pixels.</param>
     /// <param name="opacity">A multiplier on the layer's opacity.</param>
     public void DrawVignette(ImDrawListPtr drawList, Vector2 min, Vector2 max, float rounding, float opacity = 1f)
     {
@@ -549,13 +581,11 @@ public sealed class NoireRibbonField
         EmitGrid(drawList, count, columns, vignette: true, opacity);
     }
 
-    /// <summary>
-    /// Paints only the ribbons and their centre lines. See <see cref="Draw(ImDrawListPtr, Vector2, Vector2, float, float)"/>.
-    /// </summary>
+    /// <summary>Paints only the ribbons and their centre lines.</summary>
     /// <param name="drawList">The draw list.</param>
     /// <param name="min">The view's top left, in screen pixels.</param>
     /// <param name="max">The view's bottom right, in screen pixels.</param>
-    /// <param name="rounding">The view's corner radius in real pixels.</param>
+    /// <param name="rounding">The view's corner radius, in real pixels.</param>
     /// <param name="opacity">A multiplier on the layer's opacity.</param>
     public void DrawRibbons(ImDrawListPtr drawList, Vector2 min, Vector2 max, float rounding, float opacity = 1f)
     {
@@ -568,9 +598,10 @@ public sealed class NoireRibbonField
 
         recording = null;
 
-        if (frozen)
+        // A frozen field, or one allowed to lag, replays the last layout until it is laid out again.
+        if (frozen || Options.MaxDriftPixels > 0f)
         {
-            var slot = RibbonSlot(min, max, rounding, opacity, out var cached);
+            var slot = RibbonSlot(min, max, rounding, opacity, WhitePixel(drawList), out var cached);
 
             if (cached)
             {
@@ -578,8 +609,8 @@ public sealed class NoireRibbonField
                 return;
             }
 
-            slot.Meshes = 0;
             slot.VertexCount = 0;
+            slot.IndexCount = 0;
             recording = slot;
         }
 
@@ -635,7 +666,7 @@ public sealed class NoireRibbonField
 
         if (recording != null)
         {
-            Stamp(recording, min, max, rounding, opacity);
+            Stamp(recording, min, max, rounding, opacity, WhitePixel(drawList));
             recording = null;
         }
     }
@@ -643,27 +674,32 @@ public sealed class NoireRibbonField
     // Kept as computed. A reservation crossing into a new draw command renumbers its indices.
     private RibbonPaint? recording;
 
-    private void Keep(int rows, int count)
+    private static unsafe void KeepMesh(RibbonPaint slot, ImDrawVert* vertices, int vertexCount, ushort* indices, int indexCount, ushort baseVertex)
     {
-        var slot = recording;
+        Keep(ref slot.Vertices, slot.VertexCount + vertexCount);
+        Keep(ref slot.Indices, slot.IndexCount + indexCount);
 
-        if (slot == null)
-            return;
+        fixed (ImDrawVert* to = slot.Vertices)
+        {
+            var bytes = (long)vertexCount * sizeof(ImDrawVert);
+            Buffer.MemoryCopy(vertices, to + slot.VertexCount, bytes, bytes);
+        }
 
-        var vertexCount = count * rows;
+        var shift = slot.VertexCount - baseVertex;
 
-        Keep(ref slot.Positions, slot.VertexCount + vertexCount);
-        Keep(ref slot.Colors, slot.VertexCount + vertexCount);
-        Keep(ref slot.MeshRows, slot.Meshes + 1);
-        Keep(ref slot.MeshColumns, slot.Meshes + 1);
+        fixed (ushort* to = slot.Indices)
+        {
+            for (var i = 0; i < indexCount; i++)
+                to[slot.IndexCount + i] = (ushort)(indices[i] + shift);
+        }
 
-        slot.MeshRows[slot.Meshes] = rows;
-        slot.MeshColumns[slot.Meshes] = count;
-        slot.Meshes++;
+        slot.VertexCount += vertexCount;
+        slot.IndexCount += indexCount;
     }
 
-    private void Stamp(RibbonPaint slot, Vector2 min, Vector2 max, float rounding, float opacity)
+    private void Stamp(RibbonPaint slot, Vector2 min, Vector2 max, float rounding, float opacity, Vector2 white)
     {
+        slot.White = white;
         slot.Version = layoutVersion;
         slot.Min = min;
         slot.Max = max;
@@ -671,37 +707,40 @@ public sealed class NoireRibbonField
         slot.Opacity = opacity;
     }
 
-    private void ReplayRibbons(ImDrawListPtr drawList, RibbonPaint slot)
+    private unsafe void ReplayRibbons(ImDrawListPtr drawList, RibbonPaint slot)
     {
         using var scope = UiDraw.BeginMethod();
 
-        var white = ImGui.GetFontTexUvWhitePixel();
-        var at = 0;
+        drawList.PrimReserve(slot.IndexCount, slot.VertexCount);
 
-        for (var m = 0; m < slot.Meshes; m++)
+        // Read after the reservation, never before: reserving can roll the index offset over.
+        var native = drawList.Handle;
+        var baseVertex = native->VtxCurrentIdx;
+        var indices = native->IdxWritePtr;
+
+        fixed (ImDrawVert* from = slot.Vertices)
         {
-            var rows = slot.MeshRows[m];
-            var count = slot.MeshColumns[m];
-            var vertexCount = count * rows;
-            var indexCount = (count - 1) * (rows - 1) * 6;
-
-            drawList.PrimReserve(indexCount, vertexCount);
-
-            var baseVertex = (ushort)drawList.VtxCurrentIdx;
-            var vertices = drawList.VtxBuffer.AsSpan()[^vertexCount..];
-            var indices = drawList.IdxBuffer.AsSpan()[^indexCount..];
-
-            for (var v = 0; v < vertexCount; v++)
-                vertices[v] = new ImDrawVert { Pos = slot.Positions[at + v], Uv = white, Col = slot.Colors[at + v] };
-
-            WriteMeshIndices(indices, count, rows, baseVertex);
-            NoireShapes.AdvancePrimWrite(drawList, vertexCount, indexCount);
-
-            at += vertexCount;
+            var bytes = (long)slot.VertexCount * sizeof(ImDrawVert);
+            Buffer.MemoryCopy(from, native->VtxWritePtr, bytes, bytes);
         }
+
+        fixed (ushort* from = slot.Indices)
+            NoireShapes.RebaseIndices(from, indices, slot.IndexCount, baseVertex);
+
+        NoireShapes.AdvancePrimWrite(drawList, slot.VertexCount, slot.IndexCount);
     }
 
-    private RibbonPaint RibbonSlot(Vector2 min, Vector2 max, float rounding, float opacity, out bool cached)
+    // A replay is one reservation, which the 16-bit index buffer caps.
+    private const int MaxReplayVertices = 60000;
+
+    // What ImGui.GetFontTexUvWhitePixel answers, read from the draw list instead of across the native boundary.
+    private static unsafe Vector2 WhitePixel(ImDrawListPtr drawList)
+    {
+        var shared = drawList.Handle->Data;
+        return shared != null ? shared->TexUvWhitePixel : ImGui.GetFontTexUvWhitePixel();
+    }
+
+    private RibbonPaint RibbonSlot(Vector2 min, Vector2 max, float rounding, float opacity, Vector2 white, out bool cached)
     {
         var oldest = paints[0];
 
@@ -712,7 +751,9 @@ public sealed class NoireRibbonField
                 && slot.Max == max
                 && slot.Radius == rounding
                 && slot.Opacity == opacity
-                && slot.VertexCount > 0)
+                && slot.White == white
+                && slot.VertexCount > 0
+                && slot.VertexCount <= MaxReplayVertices)
             {
                 slot.Used = ++paintClock;
                 cached = true;
@@ -858,10 +899,11 @@ public sealed class NoireRibbonField
                 Ensure(ref slot.Colors, vertexCount);
                 FillGrid(rowCount, columns, true, opacity, slot.Positions, slot.Colors);
                 Stamp(slot, rowCount, columns, opacity);
+                slot.BakedCount = -1;
             }
 
             slot.Used = ++vignetteClock;
-            EmitGridBuffer(drawList, rowCount, columns, slot.Positions, slot.Colors);
+            EmitGridBuffer(drawList, rowCount, columns, slot.Positions, slot.Colors, slot);
             return;
         }
 
@@ -869,7 +911,7 @@ public sealed class NoireRibbonField
         Ensure(ref gridCol, vertexCount);
 
         FillGrid(rowCount, columns, false, opacity, gridPos, gridCol);
-        EmitGridBuffer(drawList, rowCount, columns, gridPos, gridCol);
+        EmitGridBuffer(drawList, rowCount, columns, gridPos, gridCol, null);
     }
 
     // Relative to the view's top left. A view that only moved can be replayed.
@@ -923,13 +965,16 @@ public sealed class NoireRibbonField
         }
     }
 
-    private void EmitGridBuffer(ImDrawListPtr drawList, int rowCount, int columns, Vector2[] positions, uint[] colors)
+    private unsafe void EmitGridBuffer(ImDrawListPtr drawList, int rowCount, int columns, Vector2[] positions, uint[] colors, VignetteGrid? baked)
     {
         var perRow = columns + 1;
         var rowsPerChunk = Math.Max(2, MaxChunkVertices / perRow);
-        var white = ImGui.GetFontTexUvWhitePixel();
+        var white = WhitePixel(drawList);
         var origin = viewMin;
         var start = 0;
+
+        if (baked != null)
+            Bake(baked, rowCount * perRow, positions, colors, origin, white, Math.Min(rowsPerChunk, rowCount), columns);
 
         while (start < rowCount - 1)
         {
@@ -940,45 +985,100 @@ public sealed class NoireRibbonField
 
             drawList.PrimReserve(indexCount, vertexCount);
 
-            var baseVertex = drawList.VtxCurrentIdx;
-            var vertices = drawList.VtxBuffer.AsSpan()[^vertexCount..];
-            var indices = drawList.IdxBuffer.AsSpan()[^indexCount..];
+            var native = drawList.Handle;
+            var baseVertex = native->VtxCurrentIdx;
+            var vertex = native->VtxWritePtr;
+            var indices = native->IdxWritePtr;
 
             var source = start * perRow;
 
-            for (var v = 0; v < vertexCount; v++)
+            if (baked != null)
             {
-                vertices[v] = new ImDrawVert
+                fixed (ImDrawVert* from = baked.Baked)
                 {
-                    Pos = origin + positions[source + v],
-                    Uv = white,
-                    Col = colors[source + v],
-                };
+                    var bytes = (long)vertexCount * sizeof(ImDrawVert);
+                    Buffer.MemoryCopy(from + source, vertex, bytes, bytes);
+                }
+            }
+            else
+            {
+                fixed (Vector2* from = positions)
+                fixed (uint* tint = colors)
+                {
+                    for (var v = 0; v < vertexCount; v++)
+                    {
+                        vertex[v].Pos = origin + from[source + v];
+                        vertex[v].Uv = white;
+                        vertex[v].Col = tint[source + v];
+                    }
+                }
             }
 
-            var written = 0;
-
-            for (var r = 0; r < chunkRows - 1; r++)
+            if (baked != null)
             {
-                for (var c = 0; c < columns; c++)
-                {
-                    var a = (ushort)(baseVertex + (r * perRow) + c);
-                    var b = (ushort)(a + 1);
-                    var d = (ushort)(a + perRow);
-                    var e = (ushort)(d + 1);
-
-                    indices[written++] = a;
-                    indices[written++] = b;
-                    indices[written++] = e;
-                    indices[written++] = a;
-                    indices[written++] = e;
-                    indices[written++] = d;
-                }
+                // Every chunk's triangles are the pattern's first rows, counted from the chunk's own first vertex.
+                fixed (ushort* pattern = baked.Pattern)
+                    NoireShapes.RebaseIndices(pattern, indices, indexCount, baseVertex);
+            }
+            else
+            {
+                WriteGridIndices(indices, chunkRows, columns, perRow, (ushort)baseVertex);
             }
 
             NoireShapes.AdvancePrimWrite(drawList, vertexCount, indexCount);
             start = end;
         }
+    }
+
+    private static unsafe void WriteGridIndices(ushort* indices, int chunkRows, int columns, int perRow, ushort baseVertex)
+    {
+        var written = 0;
+
+        for (var r = 0; r < chunkRows - 1; r++)
+        {
+            for (var c = 0; c < columns; c++)
+            {
+                var a = (ushort)(baseVertex + (r * perRow) + c);
+                var b = (ushort)(a + 1);
+                var d = (ushort)(a + perRow);
+                var e = (ushort)(d + 1);
+
+                indices[written++] = a;
+                indices[written++] = b;
+                indices[written++] = e;
+                indices[written++] = a;
+                indices[written++] = e;
+                indices[written++] = d;
+            }
+        }
+    }
+
+    // Rebuilt only when the view moved or the grid changed.
+    private static unsafe void Bake(VignetteGrid slot, int vertexCount, Vector2[] positions, uint[] colors, Vector2 origin, Vector2 white, int chunkRows, int columns)
+    {
+        if (slot.PatternRows != chunkRows || slot.PatternColumns != columns)
+        {
+            var count = Math.Max(0, chunkRows - 1) * columns * 6;
+            Ensure(ref slot.Pattern, count);
+
+            fixed (ushort* pattern = slot.Pattern)
+                WriteGridIndices(pattern, chunkRows, columns, columns + 1, 0);
+
+            slot.PatternRows = chunkRows;
+            slot.PatternColumns = columns;
+        }
+
+        if (slot.BakedCount == vertexCount && slot.BakedOrigin == origin && slot.BakedWhite == white)
+            return;
+
+        Ensure(ref slot.Baked, vertexCount);
+
+        for (var v = 0; v < vertexCount; v++)
+            slot.Baked[v] = new ImDrawVert { Pos = origin + positions[v], Uv = white, Col = colors[v] };
+
+        slot.BakedCount = vertexCount;
+        slot.BakedOrigin = origin;
+        slot.BakedWhite = white;
     }
 
     private VignetteGrid VignetteSlot(int rowCount, int columns, float opacity, out bool cached)
@@ -1189,7 +1289,7 @@ public sealed class NoireRibbonField
     }
 
     // A column is added wherever a row crosses the view's edge. Rows pushed outside collapse onto the edge.
-    private void EmitMesh(ImDrawListPtr drawList, int columns, int rows, uint rgb)
+    private unsafe void EmitMesh(ImDrawListPtr drawList, int columns, int rows, uint rgb)
     {
         var capacity = columns * 5;
 
@@ -1204,13 +1304,25 @@ public sealed class NoireRibbonField
 
         Span<float> crossings = stackalloc float[MaxMeshRows * 2];
         var count = 0;
+        var inside = Inside(0, rows);
 
         for (var i = 0; i < columns; i++)
         {
-            ClipColumn(ref count, rows, colX[i], i, 0f, colEdgeTop[i], colEdgeBottom[i]);
+            if (inside)
+                CopyColumn(ref count, rows, colX[i], i);
+            else
+                ClipColumn(ref count, rows, colX[i], i, 0f, colEdgeTop[i], colEdgeBottom[i]);
 
             if (i == columns - 1)
                 break;
+
+            // Two columns clear of the view's edges on every row cannot have a row crossing an edge between them.
+            var insideNext = Inside(i + 1, rows);
+            var bothInside = inside && insideNext;
+            inside = insideNext;
+
+            if (bothInside)
+                continue;
 
             var edgeTop0 = colEdgeTop[i];
             var edgeBottom0 = colEdgeBottom[i];
@@ -1248,56 +1360,50 @@ public sealed class NoireRibbonField
             }
         }
 
+        // A ribbon clipped away entirely draws nothing, which a recording of the others loses nothing by.
         if (count < 2)
-        {
-            recording = null;
             return;
-        }
 
         var vertexCount = count * rows;
         var indexCount = (count - 1) * (rows - 1) * 6;
 
         drawList.PrimReserve(indexCount, vertexCount);
 
-        var baseVertex = (ushort)drawList.VtxCurrentIdx;
-        var vertices = drawList.VtxBuffer.AsSpan()[^vertexCount..];
-        var indices = drawList.IdxBuffer.AsSpan()[^indexCount..];
-        var white = ImGui.GetFontTexUvWhitePixel();
+        var native = drawList.Handle;
+        var vertex = native->VtxWritePtr;
+        var first = vertex;
+        var white = WhitePixel(drawList);
 
-        Keep(rows, count);
-
-        var slot = recording;
-        var kept = slot != null ? slot.VertexCount : 0;
-
-        for (var i = 0; i < count; i++)
+        fixed (float* xs = outX)
+        fixed (float* ys = outY)
+        fixed (float* alphas = outAlpha)
         {
-            var x = outX[i];
-
-            for (var r = 0; r < rows; r++)
+            for (var i = 0; i < count; i++)
             {
-                var at = (r * outStride) + i;
-                var position = new Vector2(x, outY[at]);
-                var colour = rgb | (Alpha(outAlpha[at]) << 24);
-                var v = (i * rows) + r;
+                var x = xs[i];
 
-                vertices[v] = new ImDrawVert { Pos = position, Uv = white, Col = colour };
-
-                if (slot != null)
+                for (var r = 0; r < rows; r++)
                 {
-                    slot.Positions[kept + v] = position;
-                    slot.Colors[kept + v] = colour;
+                    var at = (r * outStride) + i;
+
+                    vertex->Pos = new Vector2(x, ys[at]);
+                    vertex->Uv = white;
+                    vertex->Col = rgb | (Alpha(alphas[at]) << 24);
+                    vertex++;
                 }
             }
         }
 
-        if (slot != null)
-            slot.VertexCount = kept + vertexCount;
+        var baseVertex = (ushort)native->VtxCurrentIdx;
+        WriteMeshIndices(native->IdxWritePtr, count, rows, baseVertex);
 
-        WriteMeshIndices(indices, count, rows, baseVertex);
+        if (recording != null)
+            KeepMesh(recording, first, vertexCount, native->IdxWritePtr, indexCount, baseVertex);
+
         NoireShapes.AdvancePrimWrite(drawList, vertexCount, indexCount);
     }
 
-    private static void WriteMeshIndices(Span<ushort> indices, int count, int rows, ushort baseVertex)
+    private static unsafe void WriteMeshIndices(ushort* indices, int count, int rows, ushort baseVertex)
     {
         var written = 0;
 
@@ -1324,6 +1430,38 @@ public sealed class NoireRibbonField
     {
         if ((before < 0f && after > 0f) || (before > 0f && after < 0f))
             crossings[found++] = before / (before - after);
+    }
+
+    // Whether every row of a column lies strictly between the view's edges, where clipping changes nothing.
+    private bool Inside(int i, int rows)
+    {
+        var edgeTop = colEdgeTop[i];
+        var edgeBottom = colEdgeBottom[i];
+
+        for (var r = 0; r < rows; r++)
+        {
+            var y = meshY[(r * meshStride) + i];
+
+            if (!(y > edgeTop && y < edgeBottom))
+                return false;
+        }
+
+        return true;
+    }
+
+    private void CopyColumn(ref int count, int rows, float x, int i)
+    {
+        for (var r = 0; r < rows; r++)
+        {
+            var from = (r * meshStride) + i;
+            var to = (r * outStride) + count;
+
+            outY[to] = meshY[from];
+            outAlpha[to] = meshAlpha[from];
+        }
+
+        outX[count] = x;
+        count++;
     }
 
     private void ClipColumn(ref int count, int rows, float x, int i, float t, float edgeTop, float edgeBottom)

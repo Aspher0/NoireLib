@@ -13,17 +13,14 @@ internal sealed class FateSource : GameWatcherSource
 
     public FateSource(NoireGameWatcher owner) : base(owner, SourceKind.Fate) { }
 
-    /// <inheritdoc/>
     protected override TimeSpan DefaultPollCadence => TimeSpan.FromSeconds(1);
 
-    /// <inheritdoc/>
     protected override void OnActivate()
     {
         baseline.Clear();
         SeedBaseline();
     }
 
-    /// <inheritdoc/>
     protected override void OnDeactivate()
         => baseline.Clear();
 
@@ -38,7 +35,6 @@ internal sealed class FateSource : GameWatcherSource
         }
     }
 
-    /// <inheritdoc/>
     protected override void OnTick(DateTimeOffset now)
     {
         var survivors = new HashSet<ushort>();
@@ -106,17 +102,13 @@ internal sealed class WeatherSource : GameWatcherSource
 
     public WeatherSource(NoireGameWatcher owner) : base(owner, SourceKind.Weather) { }
 
-    /// <inheritdoc/>
     protected override TimeSpan DefaultPollCadence => TimeSpan.FromSeconds(1);
 
-    /// <inheritdoc/>
     protected override void OnActivate()
         => lastWeatherId = ReadCurrentWeather();
 
-    /// <inheritdoc/>
     protected override void OnDeactivate() { }
 
-    /// <inheritdoc/>
     protected override void OnTick(DateTimeOffset now)
     {
         var weatherId = ReadCurrentWeather();
@@ -144,20 +136,16 @@ internal sealed class EorzeaTimeSource : GameWatcherSource
 
     public EorzeaTimeSource(NoireGameWatcher owner) : base(owner, SourceKind.EorzeaTime) { }
 
-    /// <inheritdoc/>
     protected override TimeSpan DefaultPollCadence => TimeSpan.FromSeconds(1);
 
-    /// <inheritdoc/>
     protected override void OnActivate()
     {
         lastHour = ComputeEorzeaHour(DateTimeOffset.UtcNow);
         lastIsNight = IsNight(lastHour);
     }
 
-    /// <inheritdoc/>
     protected override void OnDeactivate() { }
 
-    /// <inheritdoc/>
     protected override void OnTick(DateTimeOffset now)
     {
         var hour = ComputeEorzeaHour(now);
@@ -190,10 +178,8 @@ internal sealed class ToastSource : GameWatcherSource
 {
     public ToastSource(NoireGameWatcher owner) : base(owner, SourceKind.Toast) { }
 
-    /// <inheritdoc/>
     public override bool IsPolling => false;
 
-    /// <inheritdoc/>
     protected override void OnActivate()
     {
         NoireService.ToastGui.Toast += OnToast;
@@ -201,7 +187,6 @@ internal sealed class ToastSource : GameWatcherSource
         NoireService.ToastGui.ErrorToast += OnErrorToast;
     }
 
-    /// <inheritdoc/>
     protected override void OnDeactivate()
     {
         NoireService.ToastGui.Toast -= OnToast;

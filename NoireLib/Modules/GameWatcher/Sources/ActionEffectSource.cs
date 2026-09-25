@@ -17,17 +17,13 @@ internal sealed class ActionEffectSource : GameWatcherSource
     private readonly object historyLock = new();
     private NoireHook<ActionEffectHandler.Delegates.Receive>? receiveHook;
 
-    /// <summary>Creates the source for a watcher.</summary>
-    /// <param name="owner">The watcher this source reports to.</param>
     public ActionEffectSource(NoireGameWatcher owner) : base(owner, SourceKind.ActionEffect) { }
 
-    /// <inheritdoc/>
     public override bool IsPolling => false;
 
     // Rolling statistics over every observed action effect since the last activation.
     internal ActionEffectStatistics Statistics { get; } = new();
 
-    /// <inheritdoc/>
     protected override unsafe void OnActivate()
     {
         Statistics.Reset();
@@ -35,13 +31,11 @@ internal sealed class ActionEffectSource : GameWatcherSource
         receiveHook.Enable();
     }
 
-    /// <inheritdoc/>
     protected override void OnDeactivate()
     {
         receiveHook?.Disable();
     }
 
-    /// <inheritdoc/>
     public override void DisposeSource()
     {
         receiveHook?.Dispose();

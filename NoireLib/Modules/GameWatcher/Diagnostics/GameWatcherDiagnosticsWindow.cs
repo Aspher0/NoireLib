@@ -220,7 +220,6 @@ public class GameWatcherDiagnosticsWindow : NoireModuleWindowBase<NoireGameWatch
 
 internal static class DiagnosticsExtensions
 {
-    /// <summary>Whether a read-only dictionary is empty (helper for the diagnostics window).</summary>
     public static bool IsEmpty<TKey, TValue>(this System.Collections.Generic.IReadOnlyDictionary<TKey, TValue> dictionary)
         => dictionary.Count == 0;
 }

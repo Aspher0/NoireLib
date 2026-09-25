@@ -214,7 +214,7 @@ TaskBuilder.Create()
 
 #### 2. Predicate-Based Condition
 
-Task completes when a condition function returns true. The condition is evaluated every frame:
+Task completes when a condition function returns true. The condition is evaluated every frame; a frame in which no task changes state allocates nothing on the queue's side:
 
 ```csharp
 TaskBuilder.Create()
@@ -449,7 +449,7 @@ BatchBuilder.Create("critical-batch")
 - `CancelBatch`: Cancel the entire batch immediately.
 - `CancelBatchAndQueue`: Cancel the batch and stop the entire queue.
 
-The mode applies however the task came to be cancelled: `CancelTask`, a skip, or a cancellation that ran a post-cancellation delay first. A batch whose every task ends up cancelled reports itself `Cancelled` rather than `Completed`, so its `OnCancelled` runs and not its `OnCompleted`.
+The mode applies however the task came to be cancelled: `CancelTask`, a skip, or a cancellation that ran a post-cancellation delay first. A batch whose every task ends up cancelled reports itself `Cancelled` rather than `Completed`: its `OnCancelled` runs and not its `OnCompleted`.
 
 ```csharp
 BatchBuilder.Create("cancel-safe-batch")
@@ -757,7 +757,7 @@ task?.Cancel();
 
 ### Resolving Work by Writing Status Directly
 
-`QueuedTask.Status` and `TaskBatch.Status` are public and settable, so a task or batch can be resolved by assigning to it, from anywhere, including from inside a completion condition or any other callback:
+`QueuedTask.Status` and `TaskBatch.Status` are public and settable: a task or batch can be resolved by assigning to it, from anywhere, including from inside a completion condition or any other callback:
 
 ```csharp
 TaskBuilder.Create("conditional")
@@ -774,7 +774,7 @@ TaskBuilder.Create("conditional")
     .EnqueueTo(queue);
 ```
 
-The queue reconciles such a write at the end of the pass it happened in, so it is observationally the same as calling the matching queue method: the task's `OnCompleted`, `OnCancelled` or `OnFailed` runs, the corresponding event is published, and the statistics agree with the callback. A task written `Failed` without an exception is given one, so `FailureException` is never null on a failed task. A batch written to a terminal status resolves the tasks it still holds rather than leaving them unfinished.
+The queue reconciles such a write at the end of the pass it happened in: it is observationally the same as calling the matching queue method: the task's `OnCompleted`, `OnCancelled` or `OnFailed` runs, the corresponding event is published, and the statistics agree with the callback. A task written `Failed` without an exception is given one: `FailureException` is never null on a failed task. A batch written to a terminal status resolves the tasks it still holds rather than leaving them unfinished.
 
 Writing a status states an outcome; it does not ask the queue to run the policies attached to that outcome. `StopQueueOnFail`, `StopQueueOnCancel` and the parent-batch modes are not applied by a direct write. Call `CancelTask`, `FailBatch` or the other queue methods when you want those to run.
 
@@ -853,7 +853,7 @@ int skipped = taskQueue.SkipNextTasks(3, boundaryType: ContextDefinition.SameCon
 bool skipped = taskQueue.SkipCurrentTask();
 ```
 
-A skip resolves any task that has not finished, not only tasks still `Queued`. A non-blocking task that has already started and is waiting on its completion condition is therefore skippable too. The current task is held back unless `includeCurrentTask` is set, so it is never resolved twice.
+A skip resolves any task that has not finished, not only tasks still `Queued`. A non-blocking task that has already started and is waiting on its completion condition is therefore skippable too. The current task is held back unless `includeCurrentTask` is set: it is never resolved twice.
 
 Because a skip resolves its target by cancelling it, a task inside a batch counts as a cancelled task for that batch, and the batch's `TaskCancellationMode` applies. A batch set to `CancelBatch` or `CancelBatchAndQueue` is therefore taken down by skipping one of its tasks. Leave the mode at `ContinueRemaining` to skip a single task without disturbing its batch.
 

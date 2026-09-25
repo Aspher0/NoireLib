@@ -26,6 +26,13 @@ public class NoireConfigGenerator : IIncrementalGenerator
         "GetConfigFileName",
     };
 
+    // Member names the settings class declares itself.
+    private const string SettingsDefaultsField = "NoireDefaults";
+    private const string SettingsAllField = "All";
+
+    private static readonly SymbolDisplayFormat SettingTypeFormat =
+        SymbolDisplayFormat.FullyQualifiedFormat.AddMiscellaneousOptions(SymbolDisplayMiscellaneousOptions.IncludeNullableReferenceTypeModifier);
+
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
         var classDeclarations = context.SyntaxProvider
@@ -76,10 +83,19 @@ public class NoireConfigGenerator : IIncrementalGenerator
             staticClassName = classSymbol.Name + "Static";
         }
 
+        string? settingsClassName = null;
+
+        foreach (var named in configAttribute.NamedArguments)
+        {
+            if (named.Key == "SettingsClassName" && named.Value.Value is string settingsName && !string.IsNullOrWhiteSpace(settingsName))
+                settingsClassName = settingsName;
+        }
+
         var classAutoSave = classSymbol.GetAttributes()
             .Any(a => a.AttributeClass?.ToDisplayString() == AutoSaveAttributeFullName);
 
         var properties = new List<PropertyInfo>();
+        var settings = new List<SettingInfo>();
         foreach (var member in classSymbol.GetMembers().OfType<IPropertySymbol>())
         {
             if (member.DeclaredAccessibility != Accessibility.Public)
@@ -94,6 +110,9 @@ public class NoireConfigGenerator : IIncrementalGenerator
             var hasSetter = member.SetMethod is { DeclaredAccessibility: Accessibility.Public };
 
             properties.Add(new PropertyInfo(member.Name, member.Type.ToDisplayString(), hasAutoSave, hasSetter));
+
+            if (settingsClassName != null && IsSetting(member))
+                settings.Add(new SettingInfo(member.Name, member.Type.ToDisplayString(SettingTypeFormat)));
         }
 
         var methods = new List<MethodInfo>();
@@ -119,7 +138,52 @@ public class NoireConfigGenerator : IIncrementalGenerator
             staticClassName,
             classSymbol.Name,
             properties,
-            methods);
+            methods,
+            settingsClassName,
+            classSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+            settings);
+    }
+
+    // A public read/write instance property of a simple type: a value the settings UI can edit and a share code can carry.
+    private static bool IsSetting(IPropertySymbol property)
+    {
+        if (PropertiesToIgnore.Contains(property.Name) || property.Name is SettingsDefaultsField or SettingsAllField)
+            return false;
+
+        if (property.GetMethod is not { DeclaredAccessibility: Accessibility.Public }
+            || property.SetMethod is not { DeclaredAccessibility: Accessibility.Public, IsInitOnly: false })
+            return false;
+
+        var type = property.Type;
+
+        if (type is INamedTypeSymbol { OriginalDefinition.SpecialType: SpecialType.System_Nullable_T } nullable)
+            type = nullable.TypeArguments[0];
+
+        if (type.TypeKind == TypeKind.Enum)
+            return true;
+
+        switch (type.SpecialType)
+        {
+            case SpecialType.System_Boolean:
+            case SpecialType.System_Char:
+            case SpecialType.System_SByte:
+            case SpecialType.System_Byte:
+            case SpecialType.System_Int16:
+            case SpecialType.System_UInt16:
+            case SpecialType.System_Int32:
+            case SpecialType.System_UInt32:
+            case SpecialType.System_Int64:
+            case SpecialType.System_UInt64:
+            case SpecialType.System_Single:
+            case SpecialType.System_Double:
+            case SpecialType.System_Decimal:
+            case SpecialType.System_String:
+            case SpecialType.System_DateTime:
+                return true;
+        }
+
+        var name = type.ToDisplayString();
+        return name is "System.TimeSpan" or "System.Numerics.Vector2" or "System.Numerics.Vector3" or "System.Numerics.Vector4";
     }
 
     private void Execute(SourceProductionContext context, ClassInfo? classInfo)
@@ -129,6 +193,60 @@ public class NoireConfigGenerator : IIncrementalGenerator
 
         var source = GenerateSource(classInfo);
         context.AddSource($"{classInfo.StaticClassName}.g.cs", SourceText.From(source, Encoding.UTF8));
+
+        if (classInfo.SettingsClassName != null)
+            context.AddSource($"{classInfo.SettingsClassName}.g.cs", SourceText.From(GenerateSettingsSource(classInfo), Encoding.UTF8));
+    }
+
+    private static string GenerateSettingsSource(ClassInfo classInfo)
+    {
+        const string setting = "global::NoireLib.Configuration.NoireSetting";
+        const string rules = "global::NoireLib.Configuration.NoireRules";
+        var config = classInfo.InstanceFullName;
+        var instance = $"global::NoireLib.Configuration.NoireConfigManager.GetConfig<{config}>()!";
+        var sb = new StringBuilder();
+
+        sb.AppendLine("// <auto-generated/>");
+        sb.AppendLine("#nullable enable");
+        sb.AppendLine();
+        sb.AppendLine($"namespace {classInfo.Namespace}");
+        sb.AppendLine("{");
+        sb.AppendLine("/// <summary>");
+        sb.AppendLine($"/// The settings of the {classInfo.InstanceClassName} configuration, one per simple property.");
+        sb.AppendLine("/// </summary>");
+        sb.AppendLine($"public static partial class {classInfo.SettingsClassName}");
+        sb.AppendLine("{");
+        sb.AppendLine($"private static readonly {config} {SettingsDefaultsField} = new {config}();");
+        sb.AppendLine();
+
+        foreach (var info in classInfo.Settings)
+        {
+            sb.AppendLine("/// <summary>");
+            sb.AppendLine($"/// The {info.Name} setting.");
+            sb.AppendLine("/// </summary>");
+            sb.AppendLine($"public static readonly {setting}<{info.TypeName}> {info.Name} = new {setting}<{info.TypeName}>(");
+            sb.AppendLine($"\"{info.Name}\",");
+            sb.AppendLine($"{SettingsDefaultsField}.{info.Name},");
+            sb.AppendLine($"{rules}<{info.TypeName}>.Of(typeof({config}), \"{info.Name}\"),");
+            sb.AppendLine($"static () => {instance}.{info.Name},");
+            sb.AppendLine($"static value => {{ var instance = {instance}; instance.{info.Name} = value; instance.RequestSave(); }});");
+            sb.AppendLine();
+        }
+
+        sb.AppendLine("/// <summary>");
+        sb.AppendLine("/// Every setting above, in declaration order.");
+        sb.AppendLine("/// </summary>");
+        sb.AppendLine($"public static readonly global::NoireLib.Configuration.INoireSetting[] {SettingsAllField} = new global::NoireLib.Configuration.INoireSetting[]");
+        sb.AppendLine("{");
+
+        foreach (var info in classInfo.Settings)
+            sb.AppendLine($"{info.Name},");
+
+        sb.AppendLine("};");
+        sb.AppendLine("}");
+        sb.AppendLine("}");
+
+        return FormatCSharpCode(sb.ToString());
     }
 
     private static string GenerateSource(ClassInfo classInfo)
@@ -301,14 +419,33 @@ public class NoireConfigGenerator : IIncrementalGenerator
         public string InstanceClassName { get; }
         public List<PropertyInfo> Properties { get; }
         public List<MethodInfo> Methods { get; }
+        public string? SettingsClassName { get; }
+        public string InstanceFullName { get; }
+        public List<SettingInfo> Settings { get; }
 
-        public ClassInfo(string @namespace, string staticClassName, string instanceClassName, List<PropertyInfo> properties, List<MethodInfo> methods)
+        public ClassInfo(string @namespace, string staticClassName, string instanceClassName, List<PropertyInfo> properties, List<MethodInfo> methods,
+            string? settingsClassName, string instanceFullName, List<SettingInfo> settings)
         {
             Namespace = @namespace;
             StaticClassName = staticClassName;
             InstanceClassName = instanceClassName;
             Properties = properties;
             Methods = methods;
+            SettingsClassName = settingsClassName;
+            InstanceFullName = instanceFullName;
+            Settings = settings;
+        }
+    }
+
+    private class SettingInfo
+    {
+        public string Name { get; }
+        public string TypeName { get; }
+
+        public SettingInfo(string name, string typeName)
+        {
+            Name = name;
+            TypeName = typeName;
         }
     }
 

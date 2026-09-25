@@ -16,19 +16,19 @@ internal sealed class GameAssetService : IDisposable
 {
     public enum Shading
     {
-        /// <summary>Opaque and lit, with the dye confined to the color map's dyeable alpha, like the game.</summary>
+        // Opaque and lit, the dye confined to the color map's dyeable alpha, like the game.
         Game,
 
-        /// <summary>Lit, drawing the base color texture untouched.</summary>
+        // Base color texture untouched.
         Lit,
 
-        /// <summary>Lit, with the material's diffuse constant multiplied over every pixel.</summary>
+        // Diffuse constant multiplied over every pixel.
         LitDiffuse,
 
-        /// <summary>No shading at all, showing the texture's own colors.</summary>
+        // The texture's own colors.
         Unlit,
 
-        /// <summary>Unlit, with the diffuse constant over every pixel.</summary>
+        // Diffuse constant over every pixel.
         UnlitDiffuse,
     }
 
@@ -40,7 +40,7 @@ internal sealed class GameAssetService : IDisposable
 
     private int nextSlot;
 
-    /// <summary>Draws spawned meshes into the game's G-buffer, lit and occluded like the game's own geometry.</summary>
+    // Draws into the game's G-buffer, lit and occluded like the game's own geometry.
     public bool GameLit { get; set; }
 
     private Dictionary<string, GameMaterial> pendingMaterials = new(StringComparer.Ordinal);
@@ -49,7 +49,7 @@ internal sealed class GameAssetService : IDisposable
 
     public string ModelPath { get; set; } = "bgcommon/hou/indoor/general/0001/bgparts/fun_b0_m0001.mdl";
 
-    /// <summary>Name fragment a level file's layers must contain. Empty loads every layer.</summary>
+    // Empty loads every layer.
     public string LayerFilter { get; set; } = string.Empty;
     public int Lod { get; set; }
     public int Variant { get; set; } = 1;
@@ -64,7 +64,6 @@ internal sealed class GameAssetService : IDisposable
     public bool ImportVertexColors { get; set; }
     public bool KeepCpuData { get; set; } = true;
 
-    /// <summary>Exposes each mesh to the click separately.</summary>
     public bool UnjoinMeshes { get; set; }
 
     private bool appliedUnjoinMeshes;
@@ -94,7 +93,6 @@ internal sealed class GameAssetService : IDisposable
 
     private string loadedFrom = string.Empty;
 
-    /// <summary>Spawns the last load's result and re-applies changed settings.</summary>
     public void Update()
     {
         ConsumeLoaded();
@@ -405,7 +403,7 @@ internal sealed class GameAssetService : IDisposable
         DisposePending();
     }
 
-    /// <summary>Submits spawned meshes to G-buffer injection each frame while <see cref="GameLit"/> is on.</summary>
+    // Every frame while GameLit is on.
     public void SubmitGameLit()
     {
         if (!GameLit)

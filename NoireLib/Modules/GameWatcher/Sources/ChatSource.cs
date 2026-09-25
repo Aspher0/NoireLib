@@ -16,17 +16,14 @@ internal sealed class ChatSource : GameWatcherSource
 
     public ChatSource(NoireGameWatcher owner) : base(owner, SourceKind.Chat) { }
 
-    /// <inheritdoc/>
     public override bool IsPolling => false;
 
-    /// <inheritdoc/>
     protected override void OnActivate()
     {
         duplicateTracker.Clear();
         NoireService.ChatGui.ChatMessage += OnChatMessage;
     }
 
-    /// <inheritdoc/>
     protected override void OnDeactivate()
     {
         NoireService.ChatGui.ChatMessage -= OnChatMessage;

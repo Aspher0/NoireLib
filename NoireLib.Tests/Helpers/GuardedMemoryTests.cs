@@ -4,10 +4,7 @@ using Xunit;
 
 namespace NoireLib.Tests;
 
-/// <summary>
-/// Ported from BypassEmote. Both rules under test are pure and separate from the VirtualQuery call, so whether
-/// an address is safe to dereference can be pinned without a running process.
-/// </summary>
+/// <summary>Both rules are pure and separate from VirtualQuery: address safety is pinned without a process.</summary>
 public class GuardedMemoryTests
 {
     private const uint MemCommit = 0x1000;

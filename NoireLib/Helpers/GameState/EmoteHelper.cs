@@ -198,6 +198,45 @@ public static class EmoteHelper
     public static bool CanUseEmoteWhile(uint emoteId, Enums.EmoteCondition conditions)
         => (GetEmoteConditions(emoteId) & conditions) == conditions;
 
+    private const string EmoteUldPath = "ui/uld/emote.uld";
+    private const uint ConditionIconPartList = 15;
+
+    /// <summary>Every single emote state, in the order the Emote window shows their icons.</summary>
+    public static IReadOnlyList<EmoteCondition> ConditionIconOrder { get; } =
+    [
+        EmoteCondition.Standing,
+        EmoteCondition.Swimming,
+        EmoteCondition.Diving,
+        EmoteCondition.SittingOnGround,
+        EmoteCondition.SittingInChair,
+        EmoteCondition.Mounted,
+        EmoteCondition.HoldingUmbrella,
+        EmoteCondition.HoldingTorch,
+        EmoteCondition.WearingFashionAccessory,
+        EmoteCondition.Fishing,
+    ];
+
+    /// <summary>The icon the Emote window shows for one emote state.</summary>
+    /// <param name="condition">A single state; <see cref="EmoteCondition.None"/> and combinations have no icon.</param>
+    /// <returns>The icon, or null when the state has none or its texture has not finished loading.</returns>
+    public static UldPartTexture? GetConditionIcon(EmoteCondition condition)
+        => ConditionIconPart(condition) is { } part ? UldHelper.PartTexture(EmoteUldPath, ConditionIconPartList, part) : null;
+
+    private static int? ConditionIconPart(EmoteCondition condition) => condition switch
+    {
+        EmoteCondition.SittingOnGround => 0,
+        EmoteCondition.SittingInChair => 1,
+        EmoteCondition.Mounted => 2,
+        EmoteCondition.Fishing => 3,
+        EmoteCondition.Standing => 4,
+        EmoteCondition.Swimming => 5,
+        EmoteCondition.Diving => 6,
+        EmoteCondition.HoldingUmbrella => 7,
+        EmoteCondition.WearingFashionAccessory => 8,
+        EmoteCondition.HoldingTorch => 9,
+        _ => null,
+    };
+
     /// <summary>The category an emote belongs to.</summary>
     /// <param name="emote">The emote to read.</param>
     /// <returns>The category, or <see cref="Enums.EmoteCategory.Unknown"/> for an unrecognised row.</returns>
@@ -221,9 +260,7 @@ public static class EmoteHelper
     /// <summary>The sentinel an emote option's target id carries when there is no target.</summary>
     public const ulong NoEmoteTargetId = GameObjectHelper.NoTargetId;
 
-    // The rows the game swaps in when the target is out of reach, transcribed from its own table. It applies these in
-    // the play path, after Character::ResolveTargetedEmoteId has answered, so the resolver never reports them.
-    // Distances are hitbox to hitbox, height ignored.
+    // Transcribed from the game's own table, applied after ResolveTargetedEmoteId answered. Hitbox to hitbox, height ignored.
     private static readonly (uint Emote, uint OutOfRange, float MaxDistance)[] OutOfRangeEmotes =
     [
         (86u, 87u, 15f),   // Snowball, what /throw becomes
@@ -297,19 +334,16 @@ public static class EmoteHelper
         return agent != null && agent->CanUseEmote((ushort)emoteId);
     }
 
-    /// <summary>
-    /// The conditions an emote puts on where the character is standing, and nothing else. Reproduced here because
-    /// <see cref="CanUseEmote(uint)"/> tests the unlock inline and so cannot answer for an unlearnt emote.
-    /// </summary>
+    /// <summary>Whether the character's footing allows an emote. Answers for unlearnt emotes, unlike <see cref="CanUseEmote(uint)"/>.</summary>
     /// <param name="chara">The character that would play it.</param>
     /// <param name="emoteRowId">The emote row, as resolved for the target.</param>
-    /// <returns>True when nothing about the character's footing stands in the way.</returns>
+    /// <returns>Whether nothing about the footing stands in the way.</returns>
     public static bool MeetsEnvironmentFor(ICharacter chara, uint emoteRowId)
     {
         if (chara == null)
             return true;
 
-        // /splash and its out-of-range twin; the game's gate consults the primary water flag alone, so this does too.
+        // The game's gate reads the primary water flag alone.
         if (emoteRowId is 178u or 179u)
             return CharacterHelper.IsStandingInWater(chara);
 
@@ -324,15 +358,12 @@ public static class EmoteHelper
     public static string? EnvironmentRequirementFor(uint emoteRowId)
         => emoteRowId is 178u or 179u ? "water underfoot" : null;
 
-    /// <summary>
-    /// Plays an emote as the local player through the game's own emote agent, so its targeting, history and unlock
-    /// handling all apply. A targeted emote lands on someone only when the option carries their id.
-    /// </summary>
+    /// <summary>Plays an emote as the local player through the game's emote agent, with its targeting, history and unlocks.</summary>
     /// <param name="emoteRowId">The emote row to play.</param>
-    /// <param name="targetId">The target's game object id, or <see cref="NoEmoteTargetId"/> for none.</param>
-    /// <param name="addToHistory">Whether the emote joins the player's recent-emote history.</param>
-    /// <param name="liveUpdateHistory">Whether an open emote window updates its history as this plays.</param>
-    /// <returns>True when the agent accepted the call.</returns>
+    /// <param name="targetId">The target's game object id, or <see cref="NoEmoteTargetId"/>.</param>
+    /// <param name="addToHistory">Whether the emote joins the recent-emote history.</param>
+    /// <param name="liveUpdateHistory">Whether an open emote window updates its history.</param>
+    /// <returns>Whether the agent accepted the call.</returns>
     public static unsafe bool ExecuteEmote(
         uint emoteRowId, ulong targetId = NoEmoteTargetId, bool addToHistory = true, bool liveUpdateHistory = true)
     {
@@ -436,7 +467,7 @@ public static class EmoteHelper
         if (isFishing)
             return EmoteCondition.Fishing;
 
-        // The game reports one PoseType.Accessory for every accessory, so the kind carried has to decide.
+        // The game reports one PoseType.Accessory for every accessory: the carried kind decides.
         if (ornamentKind is { } kind)
             return OrnamentHelper.ConditionForOrnamentKind(kind);
 
@@ -451,16 +482,11 @@ public static class EmoteHelper
     /// <summary>How long the game holds every emote on a shared cooldown after one is played.</summary>
     public const long EmoteCooldownMs = 500;
 
-    // The EmoteManager field the game stamps with the QPC-millisecond clock when an emote plays. ClientStructs does
-    // not declare it, so re-check it after a game patch.
+    // Stamped with the QPC-millisecond clock when an emote plays. Not in ClientStructs: re-check after a patch.
     private const int EmoteManagerLastEmoteMsOffset = 0x18;
 
-    /// <summary>
-    /// Whether the game's shared emote cooldown is still running, which is the one gate
-    /// <see cref="CanUseEmote(uint)"/> cannot be asked for separately. Every failure reads as no cooldown, so offset
-    /// drift after a game patch lets the emote through rather than swallowing it.
-    /// </summary>
-    /// <returns>True while the cooldown is active.</returns>
+    /// <summary>Whether the shared emote cooldown runs. A failed read reports none, letting the emote through.</summary>
+    /// <returns>Whether the cooldown is active.</returns>
     public static unsafe bool IsEmoteCooldownActive()
     {
         try
@@ -508,9 +534,7 @@ public static class EmoteHelper
     public static bool IsPlayingEmote(ICharacter chara, uint emoteRowId)
         => emoteRowId != 0 && GetPlayingEmoteId(chara) == emoteRowId;
 
-    /// <summary>
-    /// Every distinct non-zero ActionTimeline row id an emote declares, in slot order.
-    /// </summary>
+    /// <summary>Every distinct non-zero ActionTimeline row id an emote declares, in slot order.</summary>
     /// <param name="emoteRowId">The emote row id.</param>
     /// <returns>The timeline ids, or an empty list when the emote cannot be resolved.</returns>
     public static IReadOnlyList<ushort> GetActionTimelineIds(uint emoteRowId)
@@ -547,7 +571,6 @@ public static class EmoteHelper
     /// <returns>The unlocked emotes, in sheet order, or an empty list when the sheet cannot be read.</returns>
     public static IReadOnlyList<Emote> GetUnlockedEmotes() => FilterEmotesByUnlock(true);
 
-    // Walks the Emote sheet and keeps the rows whose unlock state matches.
     private static IReadOnlyList<Emote> FilterEmotesByUnlock(bool unlocked)
     {
         var sheet = ExcelSheetHelper.GetSheet<Emote>();

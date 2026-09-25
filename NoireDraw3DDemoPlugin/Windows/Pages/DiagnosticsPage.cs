@@ -82,6 +82,8 @@ public sealed class DiagnosticsPage : IDisposable
                 "Projects the layer with the centred camera when the game jitters its own.");
             Ui.Toggle("Temporal stabilization", static () => NoireDraw3D.Diagnostics.TemporalStabilization, static v => NoireDraw3D.Diagnostics.TemporalStabilization = v,
                 "Accumulates the layer over frames so occlusion edges against jittered game depth settle.");
+            Ui.Toggle("Unbind geometry shader", static () => NoireDraw3D.Diagnostics.UnbindGeometryShader, static v => NoireDraw3D.Diagnostics.UnbindGeometryShader = v,
+                "Unbinds a geometry shader the game left bound while the layer draws.");
         }
 
         Ui.Gap();
@@ -134,6 +136,10 @@ public sealed class DiagnosticsPage : IDisposable
             Ui.Value("Fallback camera", YesNo(s.UsedFallbackCamera), s.UsedFallbackCamera ? ImGuiColors.DalamudYellow : ImGuiColors.HealerGreen,
                 "This frame used a guessed view-projection. The real camera was unavailable. Placement is approximate. ImGuizmo drops to Native.");
             Ui.Counter("Frames without", s.DepthOffFrames);
+            Ui.Value("Opaque snapshot", s.OpaqueDepthSource,
+                "The depth copy SeeThrough content occludes against, taken before water and translucent passes.");
+            Ui.Counter("Snapshot frames", s.OpaqueDepthFrames);
+            Ui.Counter("Snapshot missed", s.OpaqueDepthMissedFrames, "SeeThrough content fell back to the full depth. Stays near 0.");
         }
 
         Ui.Section("Frames");

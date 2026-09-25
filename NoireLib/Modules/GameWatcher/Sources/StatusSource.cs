@@ -94,14 +94,12 @@ internal sealed class StatusSource : GameWatcherSource
         unionIteration = iteration;
     }
 
-    /// <inheritdoc/>
     protected override void OnActivate()
     {
         baseline.Clear();
         SeedBaseline();
     }
 
-    /// <inheritdoc/>
     protected override void OnDeactivate()
     {
         baseline.Clear();
@@ -153,7 +151,6 @@ internal sealed class StatusSource : GameWatcherSource
         return false;
     }
 
-    /// <inheritdoc/>
     protected override void OnTick(DateTimeOffset now)
     {
         if (!NoireService.ClientState.IsLoggedIn)

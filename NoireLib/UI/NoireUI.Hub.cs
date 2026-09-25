@@ -1,4 +1,4 @@
-using Dalamud.Bindings.ImGui;
+﻿using Dalamud.Bindings.ImGui;
 using System;
 using System.Collections.Generic;
 
@@ -16,7 +16,7 @@ public static partial class NoireUI
 
     private static bool frameServicesReady;
 
-    // The registry as it was when it last changed, so the per-frame pass can walk it without copying it.
+    // The registry as of its last change: the per-frame pass walks it without copying.
     private static NoireDrawable[] drawableSnapshot = Array.Empty<NoireDrawable>();
 
     // Test seam replacing the ImGui frame counter when no ImGui context exists.
@@ -31,11 +31,12 @@ public static partial class NoireUI
     public static bool AutoDraw { get; set; }
 
     /// <summary>
-    /// Whether animations are reduced to their final state.
+    /// Whether animations are reduced to their final state: the drawing window's switch, then the plugin's, then the
+    /// host's. Assigning sets the plugin's.
     /// </summary>
     public static bool ReducedMotion
     {
-        get => reducedMotion ?? HostReducedMotion;
+        get => windowReducedMotion || (reducedMotion ?? HostReducedMotion);
         set => reducedMotion = value;
     }
 
@@ -50,31 +51,28 @@ public static partial class NoireUI
     /// </summary>
     public static bool HasReducedMotionOverride => reducedMotion.HasValue;
 
-    /// <summary>
-    /// Drops the plugin's own answer, so <see cref="ReducedMotion"/> follows <see cref="HostReducedMotion"/> again.
-    /// </summary>
+    /// <summary>Drops the plugin's answer: <see cref="ReducedMotion"/> follows <see cref="HostReducedMotion"/> again.</summary>
     public static void ClearReducedMotion() => reducedMotion = null;
 
     private static bool? reducedMotion;
 
-    /// <summary>
-    /// An optional translation hook for every user-facing string NoireUI shows.
-    /// </summary>
+    private static bool windowReducedMotion;
+
+    // Set by a window around its own drawing from its own reduced-motion switch.
+    internal static void EnterWindowMotion(bool reduced) => windowReducedMotion = reduced;
+
+    internal static void LeaveWindowMotion() => windowReducedMotion = false;
+
+    /// <summary>An optional translation hook for every user-facing string NoireUI shows.</summary>
     public static Func<string, string?>? StringProvider { get; set; }
 
-    /// <summary>
-    /// The current ImGui frame number, or 0 when there is no ImGui context (unit tests).
-    /// </summary>
-    public static int FrameCount => FrameOverride?.Invoke() ?? (NoireService.IsInitialized() ? ImGui.GetFrameCount() : 0);
+    /// <summary>The current ImGui frame number, or 0 when there is no ImGui context (unit tests).</summary>
+    public static int FrameCount => FrameOverride?.Invoke() ?? (NoireService.IsInitialized() ? UiContext.FrameCount : 0);
 
-    /// <summary>
-    /// The ImGui clock in seconds since startup, or 0 when there is no ImGui context (unit tests).
-    /// </summary>
-    public static float Time => TimeOverride?.Invoke() ?? (NoireService.IsInitialized() ? (float)ImGui.GetTime() : 0f);
+    /// <summary>The ImGui clock in seconds since startup, or 0 when there is no ImGui context (unit tests).</summary>
+    public static float Time => TimeOverride?.Invoke() ?? (NoireService.IsInitialized() ? UiContext.Time : 0f);
 
-    /// <summary>
-    /// The duration of the last frame in seconds, clamped to a sane range.
-    /// </summary>
+    /// <summary>The duration of the last frame in seconds, clamped to a sane range.</summary>
     public static float DeltaTime
     {
         get
@@ -82,27 +80,21 @@ public static partial class NoireUI
             if (!NoireService.IsInitialized() || TimeOverride != null)
                 return 1f / 60f;
 
-            return Math.Clamp(ImGui.GetIO().DeltaTime, 1f / 1000f, 1f / 10f);
+            return Math.Clamp(UiContext.DeltaTime, 1f / 1000f, 1f / 10f);
         }
     }
 
-    /// <summary>
-    /// How many actions <see cref="RunOnDraw"/> holds before the oldest are dropped.
-    /// </summary>
+    /// <summary>How many actions <see cref="RunOnDraw"/> holds before the oldest are dropped.</summary>
     public static int RunOnDrawCapacity
     {
         get => DrawPump.Capacity;
         set => DrawPump.Capacity = value;
     }
 
-    /// <summary>
-    /// How many actions are waiting for the next frame.
-    /// </summary>
+    /// <summary>How many actions are waiting for the next frame.</summary>
     public static int PendingDrawActions => DrawPump.Count;
 
-    /// <summary>
-    /// Runs an action on the draw thread, at the start of the next frame.
-    /// </summary>
+    /// <summary>Runs an action on the draw thread, at the start of the next frame.</summary>
     /// <param name="action">The action to run.</param>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="action"/> is <see langword="null"/>.</exception>
     public static void RunOnDraw(Action action)
@@ -132,14 +124,11 @@ public static partial class NoireUI
         }
     }
 
-    /// <summary>
-    /// Gets a snapshot of every registered drawable.
-    /// </summary>
+    /// <summary>Gets a snapshot of every registered drawable.</summary>
     /// <returns>A snapshot list of the registered drawables.</returns>
     public static IReadOnlyList<NoireDrawable> GetDrawables()
     {
-        // Copied rather than handing back the array the frame pass walks, which a caller could cast and write through.
-        // This is asked for on demand, not per frame, so the copy costs nothing that matters.
+        // Copied: the frame-pass array could be cast and written through. Asked on demand, not per frame.
         lock (SyncRoot)
             return Drawables.ToArray();
     }
@@ -206,10 +195,12 @@ public static partial class NoireUI
         UiFrameState.Tick(frame);
         Diagnostics.BeginFrame(frame);
 
+        // An effect scope still open from the previous frame recorded a draw list that has already been rendered.
+        NoireEffects.DropStale();
+
         DrawPump.Drain();
 
-        // Read once, so a drawable that registers or disposes itself from inside its own draw does not disturb the pass
-        // it is running in. The next frame picks the change up.
+        // Read once: a drawable registering or disposing itself mid-draw affects the next frame.
         var snapshot = drawableSnapshot;
 
         foreach (var drawable in snapshot)

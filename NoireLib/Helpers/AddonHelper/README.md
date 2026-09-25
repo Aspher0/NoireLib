@@ -12,6 +12,7 @@ You are reading the documentation for the `AddonHelper` static helper.
 - [List Components](#list-components)
 - [Components by Kind](#components-by-kind)
 - [Screen Geometry and Hit-Testing](#screen-geometry-and-hit-testing)
+- [Hotbars](#hotbars)
 - [Sending Callbacks](#sending-callbacks)
 - [Node Events, Hover and Cursor](#node-events-hover-and-cursor)
 - [Lifecycle Listeners](#lifecycle-listeners)
@@ -272,6 +273,28 @@ AddonHelper.HitTest(point, displaySize, phantomCollisions: AddonPhantomCollision
 
 ---
 
+## Hotbars
+
+Hotbar ids run from 0 to `HotbarCount - 1`: the `StandardHotbarCount` standard hotbars first, then the cross hotbars.
+
+```csharp
+// The standard hotbar slot under the cursor, as the action bars are laid out now. Safe per frame.
+if (AddonHelper.TryGetHotbarSlotAt(ImGui.GetMousePos(), out HotbarSlotBounds slot))
+    drawList.AddRect(slot.Min, slot.Max, outline);
+
+// 12 for a standard hotbar, 16 for a cross hotbar.
+int slots = AddonHelper.HotbarSlotCount(hotbarId);
+
+// Read and write through the game's hotbar module. Game thread only.
+RaptureHotbarModule.HotbarSlot* held = AddonHelper.GetHotbarSlot(hotbarId, slotIndex);
+AddonHelper.SetHotbarSlot(hotbarId, slotIndex, RaptureHotbarModule.HotbarSlotType.Emote, emoteId);
+```
+
+`SetHotbarSlot` saves the hotbar as dragging a command there by hand does. `ignoreSharedHotbars` and `allowSaveToPvP`
+pass through to the game.
+
+---
+
 ## Sending Callbacks
 
 Callbacks marshal managed values into `AtkValue`: primitives, strings, enums, pointers, and enumerables as vectors.
@@ -422,6 +445,11 @@ implicitly to `bool` (`NoireAddon` -> `IsReady`, `NoireAddonNode` -> `IsValid`).
 `UnregisterEvents`, `UnregisterAllEvents`.
 
 **`AddonHelper` (geometry)** - `IsNativeUiVisible`, `VisibleAddons`, `HitTest`, `DefaultFullScreenSkip`.
+
+**`AddonHelper` (hotbars)** - `HotbarCount`, `StandardHotbarCount`, `HotbarSlotCount`, `TryGetHotbarSlotAt`,
+`GetHotbarSlot`, `SetHotbarSlot`.
+
+**`HotbarSlotBounds`** - `HotbarId`, `SlotIndex`, `Min`, `Max`.
 
 **`NoireAddon`** - `IsValid`, `IsReady`, `IsVisible`, `Name`, `X`, `Y`, `Scale`, `Width`, `Height`, `ScreenRect`,
 `RootNode`, `GetNode`, `ReadText`, `TryReadText`, `SendCallback`, `Show`, `Hide`, `Close`.

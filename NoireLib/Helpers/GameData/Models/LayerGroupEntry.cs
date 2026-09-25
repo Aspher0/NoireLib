@@ -1,5 +1,6 @@
 using FFXIVClientStructs.FFXIV.Client.LayoutEngine.Layer;
 using Lumina.Data.Parsing.Layer;
+using System.Collections.Generic;
 using System.Numerics;
 
 namespace NoireLib.Helpers;
@@ -30,15 +31,11 @@ public sealed record LayerGroupEntry
 
     /// <summary>
     /// The matrix placing the entry, composed by <see cref="LayerGroupHelper.Compose"/>. Local to its file when
-    /// read, composed with every enclosing shared group when returned by <see cref="LayerGroupHelper.Flatten"/>.
+    /// read, composed with every enclosing shared group when returned by <see cref="LayerGroupHelper.Flatten(string, System.Func{LayerGroupLayer, bool}, int)"/>.
     /// </summary>
     public required Matrix4x4 World { get; init; }
 
-    /// <summary>
-    /// The file the entry names: the model (<c>.mdl</c>) of a <see cref="LayerEntryType.BG"/>, the scene (<c>.sgb</c>)
-    /// of a <see cref="LayerEntryType.SharedGroup"/>, the mesh (<c>.pcb</c>) of a mesh-shaped
-    /// <see cref="LayerEntryType.CollisionBox"/>.
-    /// </summary>
+    /// <summary>The file the entry names: the .mdl of a BG, the .sgb of a SharedGroup, the .pcb of a mesh CollisionBox.</summary>
     public string AssetPath { get; init; } = string.Empty;
 
     /// <summary>The collision mesh (<c>.pcb</c>) of a <see cref="LayerEntryType.BG"/>, empty when it names none.</summary>
@@ -56,8 +53,26 @@ public sealed record LayerGroupEntry
     /// <summary>Whether a <see cref="LayerEntryType.BG"/> is drawn. An invisible one is collision only.</summary>
     public bool IsVisible { get; init; }
 
-    /// <summary>The volume shape of a <see cref="LayerEntryType.CollisionBox"/> or <see cref="LayerEntryType.ExitRange"/>.</summary>
+    /// <summary>
+    /// The volume shape of a <see cref="LayerEntryType.CollisionBox"/>, <see cref="LayerEntryType.ExitRange"/>,
+    /// <see cref="LayerEntryType.MapRange"/> or <see cref="LayerGroupHelper.WaterRangeEntryType"/>.
+    /// </summary>
     public TriggerBoxShape Shape { get; init; }
+
+    /// <summary>Which of the overlapping <see cref="LayerEntryType.MapRange"/> or <see cref="LayerGroupHelper.WaterRangeEntryType"/> entries decides, highest first.</summary>
+    public short Priority { get; init; }
+
+    /// <summary>A <see cref="LayerGroupHelper.WaterRangeEntryType"/>'s flags: <c>0x1</c> swimmable water, <c>0x100</c> an air pocket, <c>0x0</c> dry.</summary>
+    public uint WaterRangeFlags { get; init; }
+
+    /// <summary>Whether a <see cref="LayerEntryType.MapRange"/> forbids flight inside it.</summary>
+    public bool FlyingDisabled { get; init; }
+
+    /// <summary>Whether a <see cref="LayerEntryType.MapRange"/> forbids mounts and ornaments inside it.</summary>
+    public bool MountsAndOrnamentsDisabled { get; init; }
+
+    /// <summary>Whether a <see cref="LayerEntryType.MapRange"/> admits only Lalafell.</summary>
+    public bool LalafellOnly { get; init; }
 
     /// <summary>How the door a <see cref="LayerEntryType.SharedGroup"/> places starts, zero when the file states none.</summary>
     public DoorState InitialDoorState { get; init; }
@@ -79,4 +94,7 @@ public sealed record LayerGroupEntry
 
     /// <summary>The PopRange instance an <see cref="LayerEntryType.ExitRange"/> returns the character to.</summary>
     public uint ReturnInstanceId { get; init; }
+
+    /// <summary>The spawn points of a <see cref="LayerEntryType.PopRange"/>, as world offsets from <see cref="Translation"/>.</summary>
+    public IReadOnlyList<Vector3> SpawnOffsets { get; init; } = [];
 }

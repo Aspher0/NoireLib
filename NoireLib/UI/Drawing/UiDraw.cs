@@ -38,8 +38,7 @@ internal static class UiDraw
     internal static UiDrawScope BeginMethod([CallerMemberName] string member = "", [CallerFilePath] string path = "")
         => new(MethodName(path, member), UiDrawTarget.Window);
 
-    // For window plumbing rather than for shapes. Anything that paints a shape uses Begin instead, so that it follows
-    // the redirect.
+    // Window plumbing only. Anything painting a shape uses Begin, which follows the redirect.
     internal static UiDrawScope BeginWindow([CallerFilePath] string path = "")
         => new(TypeName(path), UiDrawTarget.OwnWindow);
 
@@ -49,7 +48,7 @@ internal static class UiDraw
     internal static UiDrawScope BeginBackground([CallerFilePath] string path = "")
         => new(TypeName(path), UiDrawTarget.Background);
 
-    // Taken from the file name up to its first dot, so every part of a partial class reports as one type.
+    // Up to the first dot: every part of a partial class reports as one type.
     private static UiScopeName? TypeName(string path)
         => NoireUI.Profiler.Enabled ? Resolve(path) : null;
 
@@ -88,7 +87,7 @@ internal ref struct UiDrawScope
     // Resolved on each read: read it into a local when a method paints more than once.
     public readonly ImDrawListPtr List => target switch
     {
-        UiDrawTarget.OwnWindow => UiDraw.Available ? ImGui.GetWindowDrawList() : ImDrawListPtr.Null,
+        UiDrawTarget.OwnWindow => UiDraw.Available ? UiContext.WindowDrawList : ImDrawListPtr.Null,
         UiDrawTarget.Foreground => UiDraw.Available ? ImGui.GetForegroundDrawList() : ImDrawListPtr.Null,
         UiDrawTarget.Background => UiDraw.Available ? ImGui.GetBackgroundDrawList() : ImDrawListPtr.Null,
         _ => NoireShapes.DrawList,

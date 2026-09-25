@@ -139,10 +139,8 @@ internal sealed class PredicateGameCondition : GameCondition
         this.predicate = predicate ?? throw new ArgumentNullException(nameof(predicate));
     }
 
-    /// <inheritdoc/>
     public override bool IsMet() => predicate();
 
-    /// <inheritdoc/>
     public override string ToString() => name;
 }
 

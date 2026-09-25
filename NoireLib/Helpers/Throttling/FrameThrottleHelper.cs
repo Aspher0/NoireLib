@@ -11,9 +11,6 @@ public static class FrameThrottleHelper
 {
     private static readonly ConcurrentDictionary<string, FrameThrottler> _throttlers = new();
 
-    /// <summary>
-    /// Throws an exception if the NoireLib is not initialized.
-    /// </summary>
     static FrameThrottleHelper()
     {
         if (!NoireService.IsInitialized())

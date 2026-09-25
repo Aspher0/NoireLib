@@ -84,8 +84,6 @@ public abstract class NoireModuleWindowBase<TModule> : Window, IDisposable, INoi
     /// <returns></returns>
     public virtual string GetWindowName() => $"{DisplayWindowName}###{ParentModule.GetUniqueIdentifier()}";
 
-    // TODO: Add an option to change the window size
-
     /// <summary>
     /// Disposes the window.
     /// </summary>

@@ -23,6 +23,8 @@ public class TweakManagerWindow : NoireModuleWindowBase<NoireTweakManager>
     private bool showFavoritesOnly;
     private readonly HashSet<string> selectedTagFilters = [];
 
+    private const float TooltipWrapEms = 30f;
+
     private static readonly Vector4 ErrorColor = new(0.9f, 0.2f, 0.2f, 1f);
     private static readonly Vector4 EnabledColor = new(0.1f, 0.8f, 0.1f, 1f);
     private static readonly Vector4 EnableButtonColor = new(0.18f, 0.56f, 0.34f, 1f);
@@ -43,14 +45,10 @@ public class TweakManagerWindow : NoireModuleWindowBase<NoireTweakManager>
     private static readonly Vector4 TagTextColor = new(0.85f, 0.85f, 0.95f, 1f);
     private static readonly Vector4 ConfigHeaderColor = new(0.7f, 0.8f, 1f, 1f);
 
-    /// <summary>
-    /// Gets or sets the name of the display window.
-    /// </summary>
+    /// <summary>Gets or sets the name of the display window.</summary>
     public override string DisplayWindowName { get; set; } = "Tweak Manager";
 
-    /// <summary>
-    /// Creates a new instance of the <see cref="TweakManagerWindow"/>.
-    /// </summary>
+    /// <summary>Creates a new instance of the <see cref="TweakManagerWindow"/>.</summary>
     /// <param name="parentModule">The parent <see cref="NoireTweakManager"/> module.</param>
     public TweakManagerWindow(NoireTweakManager parentModule)
         : base(parentModule, ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse)
@@ -64,9 +62,7 @@ public class TweakManagerWindow : NoireModuleWindowBase<NoireTweakManager>
         UpdateTitleBarButtons();
     }
 
-    /// <summary>
-    /// Draws the tweak manager window content.
-    /// </summary>
+    /// <summary>Draws the tweak manager window content.</summary>
     public override void Draw()
     {
         DrawSearchBar();
@@ -74,18 +70,14 @@ public class TweakManagerWindow : NoireModuleWindowBase<NoireTweakManager>
         DrawMainContent();
     }
 
-    /// <summary>
-    /// Called when the window is opened.
-    /// </summary>
+    /// <summary>Called when the window is opened.</summary>
     public new void OpenWindow()
     {
         IsOpen = true;
         ParentModule.OnWindowOpened();
     }
 
-    /// <summary>
-    /// Called when the window is closed.
-    /// </summary>
+    /// <summary>Called when the window is closed.</summary>
     public new void CloseWindow()
     {
         if (IsOpen)
@@ -307,24 +299,27 @@ public class TweakManagerWindow : NoireModuleWindowBase<NoireTweakManager>
         else if (isGloballyDisabled && showWhenDisabled && rowHovered)
         {
             using (ImRaii.Tooltip())
+            using (UiPush.TextWrapPos(ImGui.GetFontSize() * TooltipWrapEms))
             {
                 ImGui.TextColored(ErrorColor, "Globally Disabled");
                 if (!tweak.GloballyDisabledReason.IsNullOrWhitespace())
                 {
                     ImGui.Separator();
-                    ImGui.Text(tweak.GloballyDisabledReason);
+                    ImGui.TextUnformatted(tweak.GloballyDisabledReason);
                 }
             }
         }
         else if (hasError && rowHovered)
         {
+            // A tooltip sizes to its content: TextWrapped without a wrap position would wrap at the first glyph.
             using (ImRaii.Tooltip())
+            using (UiPush.TextWrapPos(ImGui.GetFontSize() * TooltipWrapEms))
             {
                 ImGui.TextColored(ErrorColor, "Error");
                 if (tweak.LastError != null)
                 {
                     ImGui.Separator();
-                    ImGui.TextWrapped(tweak.LastError.Message);
+                    ImGui.TextUnformatted(tweak.LastError.Message);
                 }
             }
         }
@@ -646,8 +641,6 @@ public class TweakManagerWindow : NoireModuleWindowBase<NoireTweakManager>
 
     #endregion
 
-    /// <summary>
-    /// Disposes resources used by the TweakManagerWindow.
-    /// </summary>
+    /// <summary>Disposes resources used by the TweakManagerWindow.</summary>
     public override void Dispose() { /* no-op */ }
 }

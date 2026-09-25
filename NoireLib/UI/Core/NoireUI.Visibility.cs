@@ -6,11 +6,7 @@ public static partial class NoireUI
 {
     private static UiVisibility requiredVisibility = UiVisibility.Default;
 
-    /// <summary>
-    /// The union of everything this plugin's windows need to stay visible through, handed to Dalamud so it stops
-    /// hiding them.
-    /// </summary>
-    /// <remarks>Every window must then consult <see cref="ShouldHide"/>; <see cref="NoireWindow"/> does it for you.</remarks>
+    /// <summary>What this plugin's windows stay visible through, handed to Dalamud. Each window then consults <see cref="ShouldHide(UiVisibility)"/>.</summary>
     public static UiVisibility RequiredVisibility
     {
         get => requiredVisibility;
@@ -43,16 +39,26 @@ public static partial class NoireUI
         if (!NoireService.IsInitialized())
             return false;
 
-        return ShouldHide(
-            visibility,
-            NoireService.PluginInterface.UiBuilder.CutsceneActive,
-            NoireService.ClientState.IsGPosing,
-            NoireService.GameGui.GameUiHidden);
+        // Every window asks every frame, and the three answers only change between frames.
+        var frame = FrameCount;
+
+        if (frame != gameStateFrame)
+        {
+            gameStateFrame = frame;
+            cutsceneActive = NoireService.PluginInterface.UiBuilder.CutsceneActive;
+            gposing = NoireService.ClientState.IsGPosing;
+            gameUiHidden = NoireService.GameGui.GameUiHidden;
+        }
+
+        return ShouldHide(visibility, cutsceneActive, gposing, gameUiHidden);
     }
 
-    /// <summary>
-    /// Whether a window with these conditions should be hidden in the given game state.
-    /// </summary>
+    private static int gameStateFrame = -1;
+    private static bool cutsceneActive;
+    private static bool gposing;
+    private static bool gameUiHidden;
+
+    /// <summary>Whether a window with these conditions should be hidden in the given game state.</summary>
     /// <param name="visibility">What the window keeps drawing through.</param>
     /// <param name="cutsceneActive">Whether a cutscene is playing.</param>
     /// <param name="gposing">Whether group pose is active.</param>

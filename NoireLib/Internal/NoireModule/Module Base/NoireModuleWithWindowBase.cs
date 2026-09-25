@@ -1,23 +1,19 @@
 using Dalamud.Interface.Windowing;
 using NoireLib.Configuration;
+using NoireLib.UI;
 using System;
 using System.Collections.Generic;
 
 namespace NoireLib.Core.Modules;
 
-/// <summary>
-/// Base class for modules that integrate a window within the NoireLib library.<br/>
-/// Inherits from <see cref="NoireModuleBase{TModule}"/>.
-/// </summary>
-/// <typeparam name="TModule">The type of the module.</typeparam>
-/// <typeparam name="TWindow">The type of the window associated with the module.</typeparam>
+/// <summary>Base class for modules with a window.</summary>
+/// <typeparam name="TModule">The module type.</typeparam>
+/// <typeparam name="TWindow">The window type.</typeparam>
 public abstract class NoireModuleWithWindowBase<TModule, TWindow> : NoireModuleBase<TModule>, INoireModuleWithWindow
     where TModule : NoireModuleWithWindowBase<TModule, TWindow>, new()
     where TWindow : Window, INoireModuleWindow
 {
-    /// <summary>
-    /// The window associated with this module, if any.
-    /// </summary>
+    /// <summary>The window associated with this module, if any.</summary>
     protected TWindow? ModuleWindow { get; set; }
 
     /// <summary>
@@ -26,13 +22,14 @@ public abstract class NoireModuleWithWindowBase<TModule, TWindow> : NoireModuleB
     protected Window? CustomDisplayWindow { get; private set; }
 
     /// <summary>
-    /// The window the show, hide and toggle methods act on: <see cref="CustomDisplayWindow"/> when set, otherwise <see cref="ModuleWindow"/>.
+    /// The window show, hide and toggle act on: <see cref="CustomDisplayWindow"/>, then the skinned window, then
+    /// <see cref="ModuleWindow"/>. A skinned window its skin hides is passed over.
     /// </summary>
-    protected Window? DisplayedWindow => CustomDisplayWindow ?? ModuleWindow;
+    protected Window? DisplayedWindow
+        => NoireSkinnedWindowBase.UnlessHidden(CustomDisplayWindow) ?? NoireSkinnedWindowBase.UnlessHidden(SkinnedWindow) ?? ModuleWindow;
 
-    /// <summary>
-    /// Gets whether this module has an associated window.
-    /// </summary>
+    private protected virtual Window? SkinnedWindow => null;
+    /// <summary>Gets whether this module has an associated window.</summary>
     public bool HasWindow => ModuleWindow != null;
 
     /// <summary>
@@ -41,9 +38,7 @@ public abstract class NoireModuleWithWindowBase<TModule, TWindow> : NoireModuleB
     /// </summary>
     public bool IsWindowOpen => DisplayedWindow?.IsOpen == true;
 
-    /// <summary>
-    /// Gets or sets the display name of the module's window.
-    /// </summary>
+    /// <summary>Gets or sets the display name of the module's window.</summary>
     public virtual string DisplayWindowName
     {
         get => ModuleWindow?.DisplayWindowName ?? string.Empty;
@@ -57,15 +52,10 @@ public abstract class NoireModuleWithWindowBase<TModule, TWindow> : NoireModuleB
         }
     }
 
-    /// <summary>
-    /// Do not add buttons directly to this list, use the provided methods instead.<br/>
-    /// <see cref="AddTitleBarButton"/>, <see cref="RemoveTitleBarButton"/>, <see cref="SetTitleBarButtons"/>, <see cref="ClearTitleBarButtons"/>
-    /// </summary>
+    /// <summary>The title bar buttons. Edit them through <see cref="AddTitleBarButton"/> and its siblings, never directly.</summary>
     public List<TitleBarButton> TitleBarButtons { get; private set; } = new();
 
-    /// <summary>
-    /// Constructor for the module base class.
-    /// </summary>
+    /// <summary>Constructor for the module base class.</summary>
     /// <param name="moduleId">The module ID.</param>
     /// <param name="active">Whether to activate the module on creation.</param>
     /// <param name="enableLogging">Whether to enable logging for this module.</param>
@@ -73,21 +63,16 @@ public abstract class NoireModuleWithWindowBase<TModule, TWindow> : NoireModuleB
     public NoireModuleWithWindowBase(string? moduleId = null, bool active = true, bool enableLogging = true, params object?[] args)
         : base(moduleId, active, enableLogging, args) { }
 
-    /// <summary>
-    /// Every derived class (module class) shall implement a constructor like this, calling base(moduleId, active, enableLogging)<br/>
-    /// Used in <see cref="NoireLibMain.AddModule{T}(string?)"/> to create modules with specific IDs.
-    /// </summary>
+    /// <summary>The constructor every module mirrors for <see cref="NoireLibMain.AddModule{T}(string?)"/>.</summary>
     /// <param name="moduleId">The module ID.</param>
-    /// <param name="active">Whether to activate the module on creation.</param>
-    /// <param name="enableLogging">Whether to enable logging for this module.</param>
+    /// <param name="active">Whether the module is active on creation.</param>
+    /// <param name="enableLogging">Whether this module logs.</param>
     public NoireModuleWithWindowBase(ModuleId? moduleId = null, bool active = true, bool enableLogging = true)
         : base(moduleId, active, enableLogging) { }
 
     #region Title bar button management
 
-    /// <summary>
-    /// Adds a button to the title bar of the module's window.
-    /// </summary>
+    /// <summary>Adds a button to the title bar of the module's window.</summary>
     /// <param name="titleBarButton">The title bar button to add.</param>
     /// <returns>The module instance for chaining.</returns>
     public virtual TModule AddTitleBarButton(TitleBarButton titleBarButton)
@@ -103,9 +88,7 @@ public abstract class NoireModuleWithWindowBase<TModule, TWindow> : NoireModuleB
         return (TModule)this;
     }
 
-    /// <summary>
-    /// Removes a button from the title bar of the module's window by its index.
-    /// </summary>
+    /// <summary>Removes a button from the title bar of the module's window by its index.</summary>
     /// <param name="index">The index of the title bar button to remove.</param>
     /// <returns>The module instance for chaining.</returns>
     public virtual TModule RemoveTitleBarButton(int index)
@@ -121,9 +104,7 @@ public abstract class NoireModuleWithWindowBase<TModule, TWindow> : NoireModuleB
         return (TModule)this;
     }
 
-    /// <summary>
-    /// Sets the title bar buttons of the module's window, replacing any existing buttons.
-    /// </summary>
+    /// <summary>Sets the title bar buttons of the module's window, replacing any existing buttons.</summary>
     /// <param name="titleBarButtons">The list of title bar buttons to set.</param>
     /// <returns>The module instance for chaining.</returns>
     public virtual TModule SetTitleBarButtons(List<TitleBarButton> titleBarButtons)
@@ -136,9 +117,7 @@ public abstract class NoireModuleWithWindowBase<TModule, TWindow> : NoireModuleB
         return (TModule)this;
     }
 
-    /// <summary>
-    /// Clears all title bar buttons from the module's window.
-    /// </summary>
+    /// <summary>Clears all title bar buttons from the module's window.</summary>
     /// <returns>The module instance for chaining.</returns>
     public virtual TModule ClearTitleBarButtons()
     {
@@ -154,9 +133,7 @@ public abstract class NoireModuleWithWindowBase<TModule, TWindow> : NoireModuleB
 
     #region Window management
 
-    /// <summary>
-    /// Sets the window name of the module's window.
-    /// </summary>
+    /// <summary>Sets the window name of the module's window.</summary>
     /// <param name="windowName">The name of the window.</param>
     /// <returns>The module instance for chaining.</returns>
     public TModule SetWindowName(string windowName)
@@ -165,19 +142,14 @@ public abstract class NoireModuleWithWindowBase<TModule, TWindow> : NoireModuleB
         return (TModule)this;
     }
 
-    /// <summary>
-    /// Gets the full window name of the module's window, including the unique IDs.
-    /// </summary>
+    /// <summary>Gets the full window name of the module's window, including the unique IDs.</summary>
     /// <returns>The full window name, or an empty string when the module holds no window.</returns>
     public string GetFullWindowName() => ModuleWindow?.WindowName ?? string.Empty;
 
-    /// <summary>
-    /// Registers a window with the NoireLib window system.<br/>
-    /// Call this from your derived module's InitializeModule method after creating your window.
-    /// </summary>
+    /// <summary>Registers a window with the NoireLib window system, from <c>InitializeModule</c>.</summary>
     /// <param name="window">The window to register.</param>
-    /// <returns>The module instance for chaining.</returns>
-    /// <exception cref="InvalidOperationException">Thrown if NoireLib window system is not initialized or if the window is null or invalid.</exception>
+    /// <returns>This module.</returns>
+    /// <exception cref="InvalidOperationException">When the window system is not initialized or the window is invalid.</exception>
     protected TModule RegisterWindow(TWindow window)
     {
         if (NoireService.NoireWindowSystem == null)
@@ -206,15 +178,12 @@ public abstract class NoireModuleWithWindowBase<TModule, TWindow> : NoireModuleB
         return (TModule)this;
     }
 
-    /// <summary>
-    /// Unregisters the module's window from the NoireLib window system.<br/>
-    /// Does nothing when the module holds no window, which <see cref="HasWindow"/> reports.
-    /// </summary>
-    /// <returns>The module instance for chaining.</returns>
-    /// <exception cref="InvalidOperationException">Thrown if the module holds a window and the NoireLib window system is not initialized.</exception>
+    /// <summary>Unregisters the module's window. Does nothing without one.</summary>
+    /// <returns>This module.</returns>
+    /// <exception cref="InvalidOperationException">When a window is held and the window system is not initialized.</exception>
     protected TModule UnregisterWindow()
     {
-        // A windowless module needs no window system; skipping this check would throw on disposal for every module without one.
+        // A windowless module needs no window system.
         if (ModuleWindow == null)
             return (TModule)this;
 
@@ -235,11 +204,8 @@ public abstract class NoireModuleWithWindowBase<TModule, TWindow> : NoireModuleB
         return (TModule)this;
     }
 
-    /// <summary>
-    /// Replaces the built-in window with <paramref name="window"/> for display, carrying the open state across.<br/>
-    /// The module never draws or registers <paramref name="window"/>; <see langword="null"/> restores the built-in window.
-    /// </summary>
-    /// <param name="window">The replacement window, or <see langword="null"/>.</param>
+    /// <summary>Shows <paramref name="window"/> in place of the built-in window, carrying the open state. Null restores it.</summary>
+    /// <param name="window">The replacement window. The module never draws or registers it.</param>
     protected void SetCustomDisplayWindow(Window? window)
     {
         if (ReferenceEquals(CustomDisplayWindow, window))
@@ -257,9 +223,7 @@ public abstract class NoireModuleWithWindowBase<TModule, TWindow> : NoireModuleB
             DisplayedWindow.IsOpen = true;
     }
 
-    /// <summary>
-    /// Shows the module's window if it has one.
-    /// </summary>
+    /// <summary>Shows the module's window if it has one.</summary>
     /// <param name="show">Whether to show the window. Set to null to toggle the window.</param>
     /// <returns>The module instance for chaining.</returns>
     public virtual TModule SetShowWindow(bool? show)
@@ -279,9 +243,7 @@ public abstract class NoireModuleWithWindowBase<TModule, TWindow> : NoireModuleB
         return (TModule)this;
     }
 
-    /// <summary>
-    /// Shows the module's window if it has one.
-    /// </summary>
+    /// <summary>Shows the module's window if it has one.</summary>
     /// <returns>The module instance for chaining.</returns>
     public virtual TModule ShowWindow()
     {
@@ -293,9 +255,7 @@ public abstract class NoireModuleWithWindowBase<TModule, TWindow> : NoireModuleB
         return (TModule)this;
     }
 
-    /// <summary>
-    /// Hides the module's window if it has one.
-    /// </summary>
+    /// <summary>Hides the module's window if it has one.</summary>
     /// <returns>The module instance for chaining.</returns>
     public virtual TModule HideWindow()
     {
@@ -307,9 +267,7 @@ public abstract class NoireModuleWithWindowBase<TModule, TWindow> : NoireModuleB
         return (TModule)this;
     }
 
-    /// <summary>
-    /// Toggles the module's window visibility if it has one.
-    /// </summary>
+    /// <summary>Toggles the module's window visibility if it has one.</summary>
     /// <returns>The module instance for chaining.</returns>
     public virtual TModule ToggleWindow()
     {
@@ -323,7 +281,7 @@ public abstract class NoireModuleWithWindowBase<TModule, TWindow> : NoireModuleB
 
     #endregion
 
-    // Window unregistered before base teardown. It must stop drawing before its state is torn apart.
+    // Unregistered before base teardown: the window must stop drawing first.
     private protected override void DisposeCore()
     {
         // The custom window belongs to the plugin; released here, never closed or disposed.
@@ -333,14 +291,10 @@ public abstract class NoireModuleWithWindowBase<TModule, TWindow> : NoireModuleB
     }
 }
 
-/// <summary>
-/// Base class for modules that integrate a window within the NoireLib library.<br/>
-/// Inherits from <see cref="NoireModuleBase{TModule}"/>. Eagerly loads <typeparamref name="TConfiguration"/> in the
-/// static constructor.
-/// </summary>
-/// <typeparam name="TModule">The type of the module.</typeparam>
-/// <typeparam name="TWindow">The type of the window associated with the module.</typeparam>
-/// <typeparam name="TConfiguration">The type of the configuration associated with the module.</typeparam>
+/// <summary>Base class for modules with a window and a configuration, loaded eagerly by the static constructor.</summary>
+/// <typeparam name="TModule">The module type.</typeparam>
+/// <typeparam name="TWindow">The window type.</typeparam>
+/// <typeparam name="TConfiguration">The configuration type.</typeparam>
 public abstract class NoireModuleWithWindowBase<TModule, TWindow, TConfiguration> : NoireModuleWithWindowBase<TModule, TWindow>
     where TModule : NoireModuleWithWindowBase<TModule, TWindow, TConfiguration>, new()
     where TWindow : Window, INoireModuleWindow
@@ -351,9 +305,7 @@ public abstract class NoireModuleWithWindowBase<TModule, TWindow, TConfiguration
         NoireConfigManager.GetConfig<TConfiguration>();
     }
 
-    /// <summary>
-    /// Constructor for the module base class.
-    /// </summary>
+    /// <summary>Constructor for the module base class.</summary>
     /// <param name="moduleId">The module ID.</param>
     /// <param name="active">Whether to activate the module on creation.</param>
     /// <param name="enableLogging">Whether to enable logging for this module.</param>
@@ -361,13 +313,10 @@ public abstract class NoireModuleWithWindowBase<TModule, TWindow, TConfiguration
     public NoireModuleWithWindowBase(string? moduleId = null, bool active = true, bool enableLogging = true, params object?[] args)
         : base(moduleId, active, enableLogging, args) { }
 
-    /// <summary>
-    /// Every derived class (module class) shall implement a constructor like this, calling base(moduleId, active, enableLogging)<br/>
-    /// Used in <see cref="NoireLibMain.AddModule{T}(string?)"/> to create modules with specific IDs.
-    /// </summary>
+    /// <summary>The constructor every module mirrors for <see cref="NoireLibMain.AddModule{T}(string?)"/>.</summary>
     /// <param name="moduleId">The module ID.</param>
-    /// <param name="active">Whether to activate the module on creation.</param>
-    /// <param name="enableLogging">Whether to enable logging for this module.</param>
+    /// <param name="active">Whether the module is active on creation.</param>
+    /// <param name="enableLogging">Whether this module logs.</param>
     public NoireModuleWithWindowBase(ModuleId? moduleId = null, bool active = true, bool enableLogging = true)
         : base(moduleId, active, enableLogging) { }
 }

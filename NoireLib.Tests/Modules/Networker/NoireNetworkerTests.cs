@@ -193,16 +193,14 @@ public class NoireNetworkerTests : IDisposable
         var networker = new NoireNetworker(TestNetwork(), active: false, enableLogging: false);
         networkersToClean.Add(networker);
 
-        // Inline delivery is what lets the rest of this suite run without a game, and it is also what would hide the
-        // behavior under test: inline, the Stopped delivery runs on the thread that posts it and so is already done by
-        // the time the pump is disposed. A running game only ever takes the queued path, so it is forced on here.
+        // Forced: inline, Stopped would run as it is posted, hiding the behavior. A running game always queues.
         networker.ForceQueuedDelivery = true;
         networker.SetActive(true);
 
         var observed = new List<NetworkerState>();
         networker.OnStateChanged(state => { lock (observed) observed.Add(state); });
 
-        // With queueing forced there is no framework update driving the pump, so draining stands in for a frame.
+        // No framework update drives a forced queue: draining stands in for a frame.
         (await WaitUntilAsync(() =>
         {
             networker.DrainDeliveries();
@@ -222,6 +220,35 @@ public class NoireNetworkerTests : IDisposable
             observed[^1].Should().Be(
                 NetworkerState.Stopped,
                 "Stopped is the terminal transition, so nothing may reach a consumer after it");
+        }
+    }
+
+    [Fact]
+    public async Task Deactivating_While_Disposing_Tears_Down_Exactly_Once()
+    {
+        for (var attempt = 0; attempt < 10; attempt++)
+        {
+            var networker = CreateNetworker(TestNetwork());
+
+            (await WaitUntilAsync(() => networker.State == NetworkerState.Ready))
+                .Should().BeTrue("a lone instance elects itself hub and reaches Ready");
+
+            var stoppedDeliveries = 0;
+            networker.OnStateChanged(state =>
+            {
+                if (state == NetworkerState.Stopped)
+                    Interlocked.Increment(ref stoppedDeliveries);
+            });
+
+            using var start = new Barrier(2);
+            var deactivate = Task.Run(() => { start.SignalAndWait(); networker.Deactivate(); });
+            var dispose = Task.Run(() => { start.SignalAndWait(); networker.Dispose(); });
+
+            var act = async () => await Task.WhenAll(deactivate, dispose);
+            await act.Should().NotThrowAsync("the loser of a concurrent stop must find nothing left to tear down, not a half-disposed one");
+
+            networker.State.Should().Be(NetworkerState.Stopped);
+            Volatile.Read(ref stoppedDeliveries).Should().Be(1, "Stopped is the terminal transition and is delivered once");
         }
     }
 
@@ -305,8 +332,7 @@ public class NoireNetworkerTests : IDisposable
     {
         var network = TestNetwork();
 
-        // Holding the role from outside, without ever serving a hub, is the shape of every situation an instance cannot
-        // resolve on its own: no rendezvous is ever published, so it can neither elect nor connect.
+        // A role held from outside publishes no rendezvous: the instance can neither elect nor connect.
         using var squatter = new ElectionMutex(NetworkerNames.MutexName(network));
         squatter.TryAcquire().Should().BeTrue();
 
@@ -316,9 +342,7 @@ public class NoireNetworkerTests : IDisposable
 
         networker.State.Should().NotBe(NetworkerState.Ready, "there is no hub to join");
 
-        // Each attempt starts a dedicated election thread. Backing off from 100ms to a 2s ceiling allows roughly six
-        // attempts in this window; a fixed short retry would allow around thirty. A slow machine only makes the
-        // upper bound safer, since it can only lower the attempt count.
+        // Backing off from 100 ms to 2 s allows about six attempts here, a fixed short retry about thirty.
         networker.ElectionAttempts.Should().BeInRange(
             2, 12, "an instance that cannot join must keep contending, but must not spawn an election thread several times a second forever");
     }

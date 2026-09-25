@@ -47,7 +47,7 @@ public sealed class GameWatcherOptions
     /// <summary>
     /// How often the Friends source refreshes the game's social proxy in the background (via
     /// <c>InfoProxyFriendList.RequestData</c>) so friend online/offline/location updates without the friend
-    /// list being open. Default: a jittered 30–40 seconds (floored at 30) so the request timing is not a
+    /// list being open. Default: a jittered 30 to 40 seconds (floored at 30) so the request timing is not a
     /// detectable fixed beat. Skipped while the friend-list window is open, so the refresh never re-sorts or
     /// scrolls the addon.
     /// </summary>

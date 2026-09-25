@@ -8,14 +8,12 @@ using System.Text;
 namespace NoireLib.Helpers;
 
 /// <summary>
-/// Reads level (<c>.lgb</c>) and shared group (<c>.sgb</c>) files into their layers and every entry those layers
-/// place, and expands nested shared groups into one list with composed transforms.
-/// Fail-soft throughout: a file that is neither container, or a structure that does not fit the buffer, yields what
-/// was read so far and never throws.
+/// Reads .lgb and .sgb files into layers and entries, expanding nested shared groups with composed transforms.
+/// Fail-soft: a bad file yields what was read and never throws.
 /// </summary>
 public static class LayerGroupHelper
 {
-    /// <summary>How deep <see cref="Flatten"/> follows shared groups nested inside shared groups by default.</summary>
+    /// <summary>How deep <see cref="Flatten(string, Func{LayerGroupLayer, bool}, int)"/> follows shared groups nested inside shared groups by default.</summary>
     public const int DefaultMaxDepth = 8;
 
     // { int Id. Int NameOffset. Int LayersOffset. Int LayerCount; }
@@ -31,6 +29,10 @@ public static class LayerGroupHelper
     internal const int SceneHeaderOffset = ChunkOffset + 8;
 
     private static readonly uint[] NoLayerSets = [];
+
+    // ClientStructs' WaterRangeLayoutInstance.
+    /// <summary>The layer entry type of a water range, which Lumina's <see cref="LayerEntryType"/> does not name.</summary>
+    public const LayerEntryType WaterRangeEntryType = (LayerEntryType)86;
 
     /// <summary>Reads a level or shared group file, told apart by its magic.</summary>
     /// <param name="file">The whole file.</param>
@@ -247,6 +249,9 @@ public static class LayerGroupHelper
             LayerEntryType.CollisionBox => 0x54,
             LayerEntryType.ExitRange => 0x50,
             LayerEntryType.Aetheryte or LayerEntryType.EventNPC or LayerEntryType.EventObject => 0x34,
+            LayerEntryType.PopRange => 0x3C,
+            WaterRangeEntryType => 0x40,
+            LayerEntryType.MapRange => 0x6A,
             _ => InstanceBodyOffset,
         };
         if (instance + required > file.Length)
@@ -261,7 +266,11 @@ public static class LayerGroupHelper
         DoorState doorState = 0;
         var notCreateNavimeshDoor = false;
         ExitRangeType exitType = 0;
+        short priority = 0;
+        uint waterFlags = 0;
+        bool flyingDisabled = false, mountsDisabled = false, lalafellOnly = false;
         ushort destTerritory = 0;
+        IReadOnlyList<Vector3> spawnOffsets = [];
 
         switch (type)
         {
@@ -303,6 +312,25 @@ public static class LayerGroupHelper
             case LayerEntryType.Aetheryte or LayerEntryType.EventNPC or LayerEntryType.EventObject:
                 baseId = BitConverter.ToUInt32(file[(instance + 0x30)..]);
                 break;
+
+            case LayerEntryType.PopRange:
+                spawnOffsets = ReadSpawnOffsets(file, instance + 0x34);
+                break;
+
+            case WaterRangeEntryType:
+                shape = (TriggerBoxShape)BitConverter.ToInt32(file[(instance + 0x30)..]);
+                priority = BitConverter.ToInt16(file[(instance + 0x34)..]);
+                waterFlags = BitConverter.ToUInt32(file[(instance + 0x3C)..]);
+                break;
+
+            // ClientStructs' MapRangeLayoutInstance flag bytes; Lumina leaves 0x67 unnamed.
+            case LayerEntryType.MapRange:
+                shape = (TriggerBoxShape)BitConverter.ToInt32(file[(instance + 0x30)..]);
+                priority = BitConverter.ToInt16(file[(instance + 0x34)..]);
+                flyingDisabled = file[instance + 0x67] != 0;
+                mountsDisabled = file[instance + 0x68] != 0;
+                lalafellOnly = file[instance + 0x69] != 0;
+                break;
         }
 
         var translation = ReadVector(file, instance + 0x0C);
@@ -332,8 +360,32 @@ public static class LayerGroupHelper
             DestTerritoryId = destTerritory,
             DestInstanceId = destInstance,
             ReturnInstanceId = returnInstance,
+            SpawnOffsets = spawnOffsets,
+            Priority = priority,
+            WaterRangeFlags = waterFlags,
+            FlyingDisabled = flyingDisabled,
+            MountsAndOrnamentsDisabled = mountsDisabled,
+            LalafellOnly = lalafellOnly,
         };
     }
+
+    // The offset to the list counts from the field holding it, and the count follows it. Every PopRange in the game holds 20.
+    private static IReadOnlyList<Vector3> ReadSpawnOffsets(ReadOnlySpan<byte> file, int field)
+    {
+        var start = field + BitConverter.ToInt32(file[field..]);
+        var count = BitConverter.ToInt32(file[(field + 4)..]);
+        if (count <= 0 || count > MaxSpawnOffsets || start <= field || start + (long)count * 12 > file.Length)
+            return [];
+
+        var offsets = new Vector3[count];
+        for (var i = 0; i < count; i++)
+            offsets[i] = ReadVector(file, start + i * 12);
+
+        return offsets;
+    }
+
+    // Well past the 20 every PopRange holds: a damaged count cannot ask for a large allocation.
+    private const int MaxSpawnOffsets = 256;
 
     // Only 1, 2 and 3 appear in the files.
     private static DoorState ToDoorState(int state)

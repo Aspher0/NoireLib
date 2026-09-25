@@ -13,11 +13,8 @@ using System.Threading.Tasks;
 namespace NoireLib.FileWatcher;
 
 /// <summary>
-/// A module providing advanced filesystem watching for directories and files, with multiple concurrent watch
-/// registrations, callback subscriptions, duplicate suppression, and EventBus integration.<br/>
-/// Every callback, CLR event and EventBus publication runs on the framework thread and never overlaps another,
-/// so handlers may touch game state directly; without an initialized NoireLib, delivery falls back to the
-/// observing thread instead. Once the module is disposed, nothing is delivered again.
+/// Watches directories and files, with several registrations, callbacks, duplicate suppression and EventBus events.
+/// Callbacks and events run on the framework thread, one at a time, and never after disposal.
 /// </summary>
 public class NoireFileWatcher : NoireModuleBase<NoireFileWatcher>
 {
@@ -31,16 +28,13 @@ public class NoireFileWatcher : NoireModuleBase<NoireFileWatcher>
 
     private readonly ConcurrentQueue<Action> deliveryQueue = new();
     private int queuedDeliveryCount;
+    private readonly object deliveryPumpLock = new();
     private int deliveryPumpAttached;
     private int deliveryOverflowReported;
     private int deliveriesInFlight;
     private int disposed;
 
-    // The watcher instances whose deliveries the current thread is currently inside, innermost last. A consumer
-    // callback may dispose the very module that invoked it, and that delivery is still in flight while
-    // DisposeInternal runs, so a disposing thread has to recognize its own deliveries rather than wait for them to
-    // finish. Deliveries nest (a callback can post further work that runs inline), and several watcher instances can
-    // be delivering on one thread, hence a stack rather than a flag.
+    // The deliveries this thread is inside, innermost last: a callback may dispose its own module mid-delivery.
     [ThreadStatic]
     private static List<NoireFileWatcher>? DeliveriesOnThisThread;
 
@@ -59,20 +53,13 @@ public class NoireFileWatcher : NoireModuleBase<NoireFileWatcher>
 
     #region Public Properties and Constructors
 
-    /// <summary>
-    /// The associated EventBus instance for publishing watcher events. If <see langword="null"/>, events are only
-    /// exposed through CLR events and callbacks.
-    /// </summary>
+    /// <summary>The EventBus watcher events are published to, or null for CLR events and callbacks only.</summary>
     public NoireEventBus? EventBus { get; set; } = null;
 
-    /// <summary>
-    /// The default constructor needed for internal purposes.
-    /// </summary>
+    /// <summary>The default constructor needed for internal purposes.</summary>
     public NoireFileWatcher() : base() { }
 
-    /// <summary>
-    /// Creates a new instance of the <see cref="NoireFileWatcher"/> module.
-    /// </summary>
+    /// <summary>Creates a new instance of the <see cref="NoireFileWatcher"/> module.</summary>
     /// <param name="moduleId">The optional module identifier.</param>
     /// <param name="active">Whether the module should be active upon creation.</param>
     /// <param name="enableLogging">Whether to enable logging for this module.</param>
@@ -90,7 +77,6 @@ public class NoireFileWatcher : NoireModuleBase<NoireFileWatcher>
         int duplicateNotificationWindowMs = 100)
         : base(moduleId, active, enableLogging, eventBus, autoEnableNewWatches, suppressDuplicateNotifications, duplicateNotificationWindowMs) { }
 
-    // Constructor for use with AddModule{T}(string?) with . Only used for internal module management.
     internal NoireFileWatcher(ModuleId? moduleId, bool active = true, bool enableLogging = true)
         : base(moduleId, active, enableLogging) { }
 
@@ -98,9 +84,7 @@ public class NoireFileWatcher : NoireModuleBase<NoireFileWatcher>
 
     #region Module Lifecycle Methods
 
-    /// <summary>
-    /// Initializes the module with optional initialization parameters.
-    /// </summary>
+    /// <summary>Initializes the module with optional initialization parameters.</summary>
     protected override void InitializeModule(params object?[] args)
     {
         if (args.Length > 0 && args[0] is NoireEventBus eventBus)
@@ -157,18 +141,14 @@ public class NoireFileWatcher : NoireModuleBase<NoireFileWatcher>
     #region Module Configuration Management
 
     private bool autoEnableNewWatches = true;
-    /// <summary>
-    /// Whether newly added watches should be automatically started while the module is active.
-    /// </summary>
+    /// <summary>Whether newly added watches should be automatically started while the module is active.</summary>
     public bool AutoEnableNewWatches
     {
         get => autoEnableNewWatches;
         set => autoEnableNewWatches = value;
     }
 
-    /// <summary>
-    /// Sets whether newly created watches should auto-start while active.
-    /// </summary>
+    /// <summary>Sets whether newly created watches should auto-start while active.</summary>
     public NoireFileWatcher SetAutoEnableNewWatches(bool autoEnable)
     {
         AutoEnableNewWatches = autoEnable;
@@ -186,18 +166,14 @@ public class NoireFileWatcher : NoireModuleBase<NoireFileWatcher>
     }
 
     private TimeSpan duplicateNotificationWindow = TimeSpan.FromMilliseconds(100);
-    /// <summary>
-    /// Time window used for duplicate notification suppression.
-    /// </summary>
+    /// <summary>Time window used for duplicate notification suppression.</summary>
     public TimeSpan DuplicateNotificationWindow
     {
         get => duplicateNotificationWindow;
         set => duplicateNotificationWindow = value <= TimeSpan.Zero ? TimeSpan.FromMilliseconds(1) : value;
     }
 
-    /// <summary>
-    /// Sets duplicate suppression behavior.
-    /// </summary>
+    /// <summary>Sets duplicate suppression behavior.</summary>
     public NoireFileWatcher SetDuplicateSuppression(bool enabled, TimeSpan? window = null)
     {
         SuppressDuplicateNotifications = enabled;
@@ -215,48 +191,34 @@ public class NoireFileWatcher : NoireModuleBase<NoireFileWatcher>
     /// </summary>
     public event Action<FileWatchNotification>? NotificationReceived;
 
-    /// <summary>
-    /// Raised for changed notifications, on the framework thread with no overlap.
-    /// </summary>
+    /// <summary>Raised for changed notifications, on the framework thread with no overlap.</summary>
     public event Action<FileWatchNotification>? Changed;
 
-    /// <summary>
-    /// Raised for created notifications, on the framework thread with no overlap.
-    /// </summary>
+    /// <summary>Raised for created notifications, on the framework thread with no overlap.</summary>
     public event Action<FileWatchNotification>? Created;
 
-    /// <summary>
-    /// Raised for deleted notifications, on the framework thread with no overlap.
-    /// </summary>
+    /// <summary>Raised for deleted notifications, on the framework thread with no overlap.</summary>
     public event Action<FileWatchNotification>? Deleted;
 
-    /// <summary>
-    /// Raised for renamed notifications, on the framework thread with no overlap.
-    /// </summary>
+    /// <summary>Raised for renamed notifications, on the framework thread with no overlap.</summary>
     public event Action<FileWatchNotification>? Renamed;
 
-    /// <summary>
-    /// Raised for watcher-level errors, on the framework thread with no overlap.
-    /// </summary>
+    /// <summary>Raised for watcher-level errors, on the framework thread with no overlap.</summary>
     public event Action<FileWatchError>? Error;
 
     #endregion
 
     #region Public API Methods
 
-    /// <summary>
-    /// Registers a new directory watch.<br/>
-    /// <paramref name="callback"/> is invoked on the framework thread, and <paramref name="asyncCallback"/> is started
-    /// on it. See <see cref="Watch"/> for the full delivery contract.
-    /// </summary>
+    /// <summary>Registers a directory watch, delivered as <see cref="Watch"/> describes.</summary>
     /// <param name="directoryPath">The directory to watch.</param>
-    /// <param name="callback">Optional synchronous callback invoked for every matching notification.</param>
-    /// <param name="asyncCallback">Optional asynchronous callback started for every matching notification.</param>
-    /// <param name="owner">Optional owner associated with the callbacks, for bulk removal.</param>
-    /// <param name="key">Optional user key. An existing watch with the same key is replaced.</param>
-    /// <param name="patterns">Optional glob patterns filtering the watched files. Defaults to all files.</param>
-    /// <param name="includeSubdirectories">Whether subdirectories are watched recursively.</param>
-    /// <returns>The ID of the new watch registration.</returns>
+    /// <param name="callback">Called for every matching notification.</param>
+    /// <param name="asyncCallback">Started for every matching notification.</param>
+    /// <param name="owner">The owner the callbacks are removed with.</param>
+    /// <param name="key">A key; any watch already holding it is replaced.</param>
+    /// <param name="patterns">Glob patterns the files must match. All files when empty.</param>
+    /// <param name="includeSubdirectories">Whether subdirectories are watched too.</param>
+    /// <returns>The watch ID.</returns>
     public string WatchDirectory(
         string directoryPath,
         Action<FileWatchNotification>? callback = null,
@@ -278,17 +240,13 @@ public class NoireFileWatcher : NoireModuleBase<NoireFileWatcher>
         return Watch(options, callback, asyncCallback, owner);
     }
 
-    /// <summary>
-    /// Registers a new single-file watch.<br/>
-    /// <paramref name="callback"/> is invoked on the framework thread, and <paramref name="asyncCallback"/> is started
-    /// on it. See <see cref="Watch"/> for the full delivery contract.
-    /// </summary>
+    /// <summary>Registers a single-file watch, delivered as <see cref="Watch"/> describes.</summary>
     /// <param name="filePath">The file to watch.</param>
-    /// <param name="callback">Optional synchronous callback invoked for every notification on the file.</param>
-    /// <param name="asyncCallback">Optional asynchronous callback started for every notification on the file.</param>
-    /// <param name="owner">Optional owner associated with the callbacks, for bulk removal.</param>
-    /// <param name="key">Optional user key. An existing watch with the same key is replaced.</param>
-    /// <returns>The ID of the new watch registration.</returns>
+    /// <param name="callback">Called for every notification on the file.</param>
+    /// <param name="asyncCallback">Started for every notification on the file.</param>
+    /// <param name="owner">The owner the callbacks are removed with.</param>
+    /// <param name="key">A key; any watch already holding it is replaced.</param>
+    /// <returns>The watch ID.</returns>
     public string WatchFile(
         string filePath,
         Action<FileWatchNotification>? callback = null,
@@ -307,24 +265,16 @@ public class NoireFileWatcher : NoireModuleBase<NoireFileWatcher>
     }
 
     /// <summary>
-    /// Registers a new filesystem watch using advanced options.<br/>
-    /// <paramref name="callback"/> is invoked on the framework thread. <paramref name="asyncCallback"/> is started on
-    /// the framework thread and runs fire-and-forget: work before its first await is safe there, what runs after is
-    /// governed by the callback's own awaits. Callbacks never overlap, and a callback retired before its notification
-    /// is delivered is not invoked. Delivery falls back to the observing thread when NoireLib is not initialized.<br/>
-    /// The <see cref="FileWatchRegisteredEvent"/> this publishes reaches EventBus subscribers on the framework thread
-    /// after this method returns, and the watch does not raise events until then, so a subscriber is never told about
-    /// a notification from a watch it was not told about yet.<br/>
-    /// Registering on a disposed module is silently abandoned: an ID is returned but no watch exists under it, and
-    /// <see cref="GetWatch"/> reports none.
+    /// Registers a watch. Callbacks run on the framework thread one at a time, never once retired, and on the observing
+    /// thread when NoireLib is not initialized. On a disposed module the returned ID has no watch behind it.
     /// </summary>
-    /// <param name="options">The registration options describing the watch.</param>
-    /// <param name="callback">Optional synchronous callback invoked for every matching notification.</param>
-    /// <param name="asyncCallback">Optional asynchronous callback started for every matching notification.</param>
-    /// <param name="owner">Optional owner associated with the callbacks, for bulk removal.</param>
-    /// <returns>The ID of the new watch registration.</returns>
-    /// <exception cref="ArgumentNullException">Thrown when <paramref name="options"/> is null.</exception>
-    /// <exception cref="ArgumentException">Thrown when the options carry an empty path.</exception>
+    /// <param name="options">The watch to register.</param>
+    /// <param name="callback">Called for every matching notification.</param>
+    /// <param name="asyncCallback">Started for every matching notification.</param>
+    /// <param name="owner">The owner the callbacks are removed with.</param>
+    /// <returns>The watch ID.</returns>
+    /// <exception cref="ArgumentNullException">When <paramref name="options"/> is null.</exception>
+    /// <exception cref="ArgumentException">When the options carry an empty path.</exception>
     public string Watch(
         FileWatchRegistrationOptions options,
         Action<FileWatchNotification>? callback = null,
@@ -367,10 +317,7 @@ public class NoireFileWatcher : NoireModuleBase<NoireFileWatcher>
 
         lock (watchLock)
         {
-            // A key identifies at most one watch, so registering a key displaces whichever watch already holds it. The
-            // displaced watch is resolved and retired inside the same lock acquisition that inserts the new one, so two
-            // concurrent Watch calls for the same key cannot both complete and leave one of them reachable by id but
-            // not by key. Retiring it before the insert lets the new key mapping take its place cleanly.
+            // The watch already holding the key is retired in the lock that inserts the new one: two racing calls cannot both win.
             if (!string.IsNullOrWhiteSpace(options.Key)
                 && keyToWatchId.TryGetValue(options.Key!, out var displacedWatchId)
                 && watchRegistrations.TryGetValue(displacedWatchId, out displacedRegistration))
@@ -384,17 +331,13 @@ public class NoireFileWatcher : NoireModuleBase<NoireFileWatcher>
             if (!string.IsNullOrWhiteSpace(options.Key))
                 keyToWatchId[options.Key!] = watchId;
 
-            // Snapshotted under the lock because it reads the callback list, which another thread may be adding to.
+            // Under the lock: another thread may be adding callbacks.
             registeredInfo = ToInfo(registration);
         }
 
         Interlocked.Increment(ref totalRegistrations);
 
-        // The displaced watch's watcher is disposed and its removal announced outside the lock for the same reason
-        // RemoveWatch does it there: FileSystemWatcher.Dispose can block, and watchLock is taken on the framework
-        // thread by the delivery path. Unindexing it above already made it unreachable, so this thread is the last to
-        // touch it. Its removal is queued before the registration event below, so a subscriber tracking watches sees
-        // the old one leave before the new one arrives.
+        // Disposed outside the lock: FileSystemWatcher.Dispose can block. Its removal is announced before the new watch.
         if (displacedRegistration != null)
         {
             displacedRegistration.Watcher.EnableRaisingEvents = false;
@@ -419,19 +362,14 @@ public class NoireFileWatcher : NoireModuleBase<NoireFileWatcher>
         var registeredEvent = new FileWatchRegisteredEvent(registeredInfo);
         PostDelivery(() => PublishEvent(registeredEvent));
 
-        // Raising is turned on only once the registration event is queued, so a subscriber that tracks watches by ID
-        // is always told that a watch exists before it can receive that watch's first notification. The state is
-        // re-read rather than reused because a subscriber handling the registration event may already have disabled
-        // or removed this watch by the time delivery returns.
+        // Raising starts once the registration event is queued: a subscriber hears of a watch before its first notification.
         var abandoned = false;
 
         lock (watchLock)
         {
             if (Volatile.Read(ref disposed) != 0)
             {
-                // Disposal removes every watch it can see and then stops looking, so a registration that lands after
-                // that sweep would sit in the module forever holding a live FileSystemWatcher that nothing disposes.
-                // Taking it back out here keeps a registration racing disposal from outliving the module.
+                // A registration landing after the disposal sweep would leak its FileSystemWatcher.
                 UnindexRegistration(registration);
                 abandoned = true;
             }
@@ -447,17 +385,13 @@ public class NoireFileWatcher : NoireModuleBase<NoireFileWatcher>
         return watchId;
     }
 
-    /// <summary>
-    /// Adds a callback to an existing watch registration.<br/>
-    /// The callback is invoked on the framework thread and never overlaps another callback. Falls back to the
-    /// observing thread when NoireLib is not initialized.
-    /// </summary>
-    /// <param name="watchId">The ID of the watch registration to attach to.</param>
-    /// <param name="callback">The callback invoked for every matching notification.</param>
-    /// <param name="owner">Optional owner associated with the callback, for bulk removal.</param>
-    /// <returns>A token identifying the callback, for use with <see cref="RemoveCallback"/>.</returns>
-    /// <exception cref="ArgumentNullException">Thrown when <paramref name="callback"/> is null.</exception>
-    /// <exception cref="KeyNotFoundException">Thrown when no watch with the given ID exists.</exception>
+    /// <summary>Adds a callback to a watch, invoked as <see cref="Watch"/> describes.</summary>
+    /// <param name="watchId">The watch to attach to.</param>
+    /// <param name="callback">Called for every matching notification.</param>
+    /// <param name="owner">The owner the callback is removed with.</param>
+    /// <returns>The token <see cref="RemoveCallback"/> takes.</returns>
+    /// <exception cref="ArgumentNullException">When <paramref name="callback"/> is null.</exception>
+    /// <exception cref="KeyNotFoundException">When no watch has this ID.</exception>
     public FileWatchCallbackToken AddCallback(string watchId, Action<FileWatchNotification> callback, object? owner = null)
     {
         if (callback == null)
@@ -474,18 +408,13 @@ public class NoireFileWatcher : NoireModuleBase<NoireFileWatcher>
         }
     }
 
-    /// <summary>
-    /// Adds an async callback to an existing watch registration.<br/>
-    /// The callback is started on the framework thread and runs fire-and-forget: work before its first await runs
-    /// there, what runs after is governed by the callback's own awaits. A faulted task is caught, counted and logged.
-    /// Falls back to the observing thread when NoireLib is not initialized.
-    /// </summary>
-    /// <param name="watchId">The ID of the watch registration to attach to.</param>
-    /// <param name="callback">The callback started for every matching notification.</param>
-    /// <param name="owner">Optional owner associated with the callback, for bulk removal.</param>
-    /// <returns>A token identifying the callback, for use with <see cref="RemoveCallback"/>.</returns>
-    /// <exception cref="ArgumentNullException">Thrown when <paramref name="callback"/> is null.</exception>
-    /// <exception cref="KeyNotFoundException">Thrown when no watch with the given ID exists.</exception>
+    /// <summary>Adds an async callback to a watch. A faulted task is caught and logged.</summary>
+    /// <param name="watchId">The watch to attach to.</param>
+    /// <param name="callback">Started for every matching notification.</param>
+    /// <param name="owner">The owner the callback is removed with.</param>
+    /// <returns>The token <see cref="RemoveCallback"/> takes.</returns>
+    /// <exception cref="ArgumentNullException">When <paramref name="callback"/> is null.</exception>
+    /// <exception cref="KeyNotFoundException">When no watch has this ID.</exception>
     public FileWatchCallbackToken AddAsyncCallback(string watchId, Func<FileWatchNotification, Task> callback, object? owner = null)
     {
         if (callback == null)
@@ -502,9 +431,7 @@ public class NoireFileWatcher : NoireModuleBase<NoireFileWatcher>
         }
     }
 
-    /// <summary>
-    /// Removes a callback from all watches by token.
-    /// </summary>
+    /// <summary>Removes a callback from all watches by token.</summary>
     public bool RemoveCallback(FileWatchCallbackToken token)
     {
         lock (watchLock)
@@ -520,9 +447,7 @@ public class NoireFileWatcher : NoireModuleBase<NoireFileWatcher>
         return false;
     }
 
-    /// <summary>
-    /// Removes all callbacks owned by a specific owner.
-    /// </summary>
+    /// <summary>Removes all callbacks owned by a specific owner.</summary>
     public int RemoveCallbacksByOwner(object owner)
     {
         if (owner == null)
@@ -539,14 +464,10 @@ public class NoireFileWatcher : NoireModuleBase<NoireFileWatcher>
         return removedCount;
     }
 
-    /// <summary>
-    /// Enables or disables a watch.<br/>
-    /// The <see cref="FileWatchStateChangedEvent"/> this publishes reaches EventBus subscribers on the framework
-    /// thread, after this method has returned.
-    /// </summary>
-    /// <param name="watchId">The ID of the watch registration to toggle.</param>
-    /// <param name="enabled">Whether the watch should raise events while the module is active.</param>
-    /// <returns>True when a watch with the given ID existed, false otherwise.</returns>
+    /// <summary>Enables or disables a watch.</summary>
+    /// <param name="watchId">The watch to toggle.</param>
+    /// <param name="enabled">Whether the watch raises events.</param>
+    /// <returns>Whether the watch existed.</returns>
     public bool SetWatchEnabled(string watchId, bool enabled)
     {
         lock (watchLock)
@@ -563,26 +484,14 @@ public class NoireFileWatcher : NoireModuleBase<NoireFileWatcher>
         return true;
     }
 
-    /// <summary>
-    /// Enables all registered watches.<br/>
-    /// Publishes one <see cref="FileWatchStateChangedEvent"/> for each watch that was not already enabled, exactly as
-    /// <see cref="SetWatchEnabled"/> does. Watches already enabled are left alone and report nothing.
-    /// </summary>
-    /// <returns>The module instance for chaining.</returns>
+    /// <summary>Enables every watch, publishing a <see cref="FileWatchStateChangedEvent"/> for each one that changed.</summary>
+    /// <returns>This module.</returns>
     public NoireFileWatcher EnableAllWatches() => SetAllWatchesEnabled(true);
 
-    /// <summary>
-    /// Disables all registered watches.<br/>
-    /// Publishes one <see cref="FileWatchStateChangedEvent"/> for each watch that was not already disabled, exactly as
-    /// <see cref="SetWatchEnabled"/> does. Watches already disabled are left alone and report nothing.
-    /// </summary>
-    /// <returns>The module instance for chaining.</returns>
+    /// <summary>Disables every watch, publishing a <see cref="FileWatchStateChangedEvent"/> for each one that changed.</summary>
+    /// <returns>This module.</returns>
     public NoireFileWatcher DisableAllWatches() => SetAllWatchesEnabled(false);
 
-    // Applies one enabled state to every registered watch, reporting the watches whose state actually changed.
-    // Reports itself as the same per-watch FileWatchStateChangedEvent that SetWatchEnabled publishes, rather than an
-    // event of its own. Only watches that actually changed are reported, so a bulk call over watches already in the
-    // requested state is silent.
     private NoireFileWatcher SetAllWatchesEnabled(bool enabled)
     {
         List<string> changedWatchIds = [];
@@ -599,8 +508,7 @@ public class NoireFileWatcher : NoireModuleBase<NoireFileWatcher>
             }
         }
 
-        // Posted after the lock is released, because an inline delivery runs an EventBus subscriber on this very
-        // thread, and a subscriber calling back into the module must not find watchLock already held.
+        // After the lock: an inline delivery runs subscribers on this thread, and they may call back in.
         foreach (var watchId in changedWatchIds)
         {
             var stateChangedEvent = new FileWatchStateChangedEvent(watchId, enabled);
@@ -610,14 +518,9 @@ public class NoireFileWatcher : NoireModuleBase<NoireFileWatcher>
         return this;
     }
 
-    /// <summary>
-    /// Removes a watch registration.<br/>
-    /// The watch stops raising events immediately, and notifications it captured but that have not been delivered yet
-    /// are discarded. The <see cref="FileWatchRemovedEvent"/> this publishes reaches EventBus subscribers on the
-    /// framework thread, after this method has returned.
-    /// </summary>
-    /// <param name="watchId">The ID of the watch registration to remove.</param>
-    /// <returns>True when a watch with the given ID existed, false otherwise.</returns>
+    /// <summary>Removes a watch. Its undelivered notifications are discarded.</summary>
+    /// <param name="watchId">The watch to remove.</param>
+    /// <returns>Whether the watch existed.</returns>
     public bool RemoveWatch(string watchId)
     {
         WatchRegistration? registration = null;
@@ -630,10 +533,7 @@ public class NoireFileWatcher : NoireModuleBase<NoireFileWatcher>
             UnindexRegistration(registration);
         }
 
-        // Disposed outside the lock because FileSystemWatcher.Dispose can block briefly while it tears down its
-        // native handle, and watchLock is taken on the framework thread by the delivery path, so holding it across
-        // that call would stall a frame. Unindexing above makes this safe: no other site can still reach a
-        // registration that has left watchRegistrations, so this thread is the last one to touch the watcher.
+        // Outside the lock: FileSystemWatcher.Dispose can block, and the delivery path takes the lock every frame.
         registration.Watcher.EnableRaisingEvents = false;
         registration.Watcher.Dispose();
 
@@ -647,12 +547,9 @@ public class NoireFileWatcher : NoireModuleBase<NoireFileWatcher>
         return true;
     }
 
-    /// <summary>
-    /// Removes a watch registration by key.<br/>
-    /// Behaves exactly like <see cref="RemoveWatch"/> once the key is resolved.
-    /// </summary>
-    /// <param name="key">The user key of the watch registration to remove.</param>
-    /// <returns>True when a watch with the given key existed, false otherwise.</returns>
+    /// <summary>Removes a watch by key, as <see cref="RemoveWatch"/> does.</summary>
+    /// <param name="key">The key of the watch to remove.</param>
+    /// <returns>Whether a watch held the key.</returns>
     public bool RemoveWatchByKey(string key)
     {
         if (string.IsNullOrWhiteSpace(key))
@@ -668,13 +565,8 @@ public class NoireFileWatcher : NoireModuleBase<NoireFileWatcher>
         return RemoveWatch(watchId);
     }
 
-    /// <summary>
-    /// Removes all watch registrations.<br/>
-    /// Publishes one <see cref="FileWatchRemovedEvent"/> per watch followed by a single
-    /// <see cref="FileWatchesClearedEvent"/>. All of them reach EventBus subscribers on the framework thread, in that
-    /// order, after this method has returned.
-    /// </summary>
-    /// <returns>The module instance for chaining.</returns>
+    /// <summary>Removes every watch: one <see cref="FileWatchRemovedEvent"/> each, then one <see cref="FileWatchesClearedEvent"/>.</summary>
+    /// <returns>This module.</returns>
     public NoireFileWatcher ClearAllWatches()
     {
         List<string> watchIds;
@@ -689,18 +581,14 @@ public class NoireFileWatcher : NoireModuleBase<NoireFileWatcher>
         return this;
     }
 
-    /// <summary>
-    /// Gets an immutable snapshot of all registrations.
-    /// </summary>
+    /// <summary>Gets an immutable snapshot of all registrations.</summary>
     public IReadOnlyList<FileWatchRegistrationInfo> GetWatches()
     {
         lock (watchLock)
             return watchRegistrations.Values.Select(ToInfo).ToList();
     }
 
-    /// <summary>
-    /// Gets one registration by watch ID.
-    /// </summary>
+    /// <summary>Gets one registration by watch ID.</summary>
     public FileWatchRegistrationInfo? GetWatch(string watchId)
     {
         lock (watchLock)
@@ -712,9 +600,7 @@ public class NoireFileWatcher : NoireModuleBase<NoireFileWatcher>
         }
     }
 
-    /// <summary>
-    /// Gets one registration by key.
-    /// </summary>
+    /// <summary>Gets one registration by key.</summary>
     public FileWatchRegistrationInfo? GetWatchByKey(string key)
     {
         if (string.IsNullOrWhiteSpace(key))
@@ -732,9 +618,7 @@ public class NoireFileWatcher : NoireModuleBase<NoireFileWatcher>
         }
     }
 
-    /// <summary>
-    /// Gets aggregated statistics about this module instance.
-    /// </summary>
+    /// <summary>Gets aggregated statistics about this module instance.</summary>
     public FileWatcherStatistics GetStatistics()
     {
         lock (watchLock)
@@ -759,22 +643,14 @@ public class NoireFileWatcher : NoireModuleBase<NoireFileWatcher>
 
     #region Framework Thread Delivery
 
-    // Maximum number of deliveries allowed to wait for the framework thread at once. A filesystem event storm can
-    // produce notifications far faster than the game renders frames, so the queue is bounded: beyond this many
-    // pending deliveries the oldest is dropped rather than letting memory grow.
+    // Beyond this many pending deliveries the oldest is dropped: an event storm outpaces frames.
     internal const int DeliveryQueueCapacity = 4096;
 
-    // Forces deliveries through the framework thread queue even when NoireLib is not initialized, leaving
-    // DrainDeliveryQueue as the only way to run them. This is the seam for exercising queueing, ordering and the drop
-    // policy without a running game.
+    // Test seam: queues deliveries without NoireLib. Only DrainDeliveryQueue runs them.
     internal bool ForceQueuedDelivery { get; set; } = false;
 
-    // Whether deliveries run inline on the thread that observed the filesystem event. Without an initialized NoireLib
-    // there is no framework thread to marshal onto, so inline is the only option.
     private bool InlineDelivery => !NoireService.IsInitialized() && !ForceQueuedDelivery;
 
-    // Queues a delivery to run on the framework thread, or runs it inline when there is no framework thread to
-    // marshal onto. Deliveries posted after disposal are discarded.
     internal void PostDelivery(Action delivery)
     {
         if (Volatile.Read(ref disposed) != 0)
@@ -788,34 +664,68 @@ public class NoireFileWatcher : NoireModuleBase<NoireFileWatcher>
 
         if (Interlocked.Increment(ref queuedDeliveryCount) > DeliveryQueueCapacity)
         {
-            // Drop the oldest delivery to make room; the newest notification describes the current state of the path.
+            // The newest notification describes the path as it is now.
             if (deliveryQueue.TryDequeue(out _))
             {
                 Interlocked.Decrement(ref queuedDeliveryCount);
                 Interlocked.Increment(ref totalDeliveriesDropped);
             }
 
-            // Report once per overflow episode, not once per drop: warnings log regardless of EnableLogging, so
-            // per-drop reporting would itself become a storm of log writes.
+            // Once per overflow episode: warnings log regardless of EnableLogging.
             if (Interlocked.Exchange(ref deliveryOverflowReported, 1) == 0)
                 NoireLogger.LogWarning(this, $"File watcher delivery queue reached its capacity of {DeliveryQueueCapacity}; the oldest pending deliveries are being dropped.");
         }
 
         deliveryQueue.Enqueue(delivery);
 
-        if (NoireService.IsInitialized() && Interlocked.CompareExchange(ref deliveryPumpAttached, 1, 0) == 0)
-            NoireService.Framework.Update += OnFrameworkUpdate;
+        if (Volatile.Read(ref deliveryPumpAttached) == 0)
+            AttachDeliveryPump();
+    }
+
+    // Attached by the first post into an empty queue, detached by the drain that empties it.
+    internal bool IsDeliveryPumpAttached => Volatile.Read(ref deliveryPumpAttached) != 0;
+
+    private void AttachDeliveryPump()
+    {
+        lock (deliveryPumpLock)
+        {
+            if (deliveryPumpAttached != 0 || Volatile.Read(ref disposed) != 0)
+                return;
+
+            Interlocked.Exchange(ref deliveryPumpAttached, 1);
+
+            if (NoireService.IsInitialized())
+                NoireService.Framework.Update += OnFrameworkUpdate;
+        }
+    }
+
+    // A poster increments the count before reading the flag, and this clears the flag before reading the count.
+    private void DetachDeliveryPump(bool onlyWhenIdle)
+    {
+        lock (deliveryPumpLock)
+        {
+            if (deliveryPumpAttached == 0)
+                return;
+
+            Interlocked.Exchange(ref deliveryPumpAttached, 0);
+
+            if (onlyWhenIdle && Volatile.Read(ref queuedDeliveryCount) != 0)
+            {
+                Interlocked.Exchange(ref deliveryPumpAttached, 1);
+                return;
+            }
+
+            if (NoireService.IsInitialized())
+                NoireService.Framework.Update -= OnFrameworkUpdate;
+        }
     }
 
     private void OnFrameworkUpdate(IFramework framework) => DrainDeliveryQueue();
 
-    // Runs the deliveries queued as of entry, on the calling thread. The underlying watchers raise events
-    // concurrently on several thread pool threads; draining serializes them so consumer callbacks never run in
-    // parallel with each other.
+    // Serializes the watchers' thread-pool events: callbacks never run in parallel.
     internal void DrainDeliveryQueue()
     {
-        // Only drain what was queued at entry, so a callback that triggers further filesystem activity cannot
-        // starve the frame it is running on.
+        // Only what was queued at entry: a callback causing more activity cannot starve the frame.
         var toDrain = Volatile.Read(ref queuedDeliveryCount);
 
         while (toDrain-- > 0 && Volatile.Read(ref disposed) == 0 && deliveryQueue.TryDequeue(out var delivery))
@@ -824,23 +734,22 @@ public class NoireFileWatcher : NoireModuleBase<NoireFileWatcher>
             RunDelivery(delivery);
         }
 
-        // Arm the overflow report again once the backlog is fully gone, so a later storm is reported afresh.
+        // Re-arms the overflow report for the next storm.
         if (Volatile.Read(ref queuedDeliveryCount) == 0)
+        {
             Volatile.Write(ref deliveryOverflowReported, 0);
+            DetachDeliveryPump(onlyWhenIdle: true);
+        }
     }
 
-    // Runs one delivery, containing any exception so that a single failing handler cannot stop the drain. A delivery
-    // that starts after disposal is discarded, and one that has already started keeps DisposeInternal waiting until
-    // it finishes.
+    // A failing handler never stops the drain.
     private void RunDelivery(Action delivery)
     {
         var stack = DeliveriesOnThisThread ??= [];
         stack.Add(this);
 
-        // The in-flight count is incremented before the disposal latch is read, and DisposeInternal sets the latch
-        // before reading the in-flight count; both are full fences, so a delivery racing disposal either turns itself
-        // away here or is waited on by Dispose until it finishes. Without that ordering, a delivery could pass the
-        // latch check and invoke a callback after Dispose had already torn the module down.
+        // Incremented before the latch is read, while disposal sets the latch before reading this: a racing delivery is
+        // either turned away or awaited.
         Interlocked.Increment(ref deliveriesInFlight);
 
         try
@@ -863,10 +772,7 @@ public class NoireFileWatcher : NoireModuleBase<NoireFileWatcher>
         }
     }
 
-    // Blocks until every delivery that had already passed the disposal latch has finished. Deliveries the calling
-    // thread is itself inside are excluded: a consumer callback is allowed to dispose the module that invoked it, and
-    // waiting for that delivery would be waiting for the caller's own stack frame. No lock is held while waiting, so
-    // a callback that is still running remains free to call back into the module.
+    // Skips the deliveries this thread is inside: a callback may dispose its own module.
     private void WaitForDeliveriesToDrain()
     {
         var selfInFlight = 0;
@@ -889,11 +795,7 @@ public class NoireFileWatcher : NoireModuleBase<NoireFileWatcher>
 
     #region Private Helper Methods
 
-    // Removes one registration from every index that holds it. The caller must hold watchLock. Dropping a
-    // registration from watchRegistrations retires it: every site that touches a registration's FileSystemWatcher
-    // looks it up here and touches it within the same lock acquisition, never across two, so an unindexed
-    // registration is unreachable and its watcher can be disposed outside the lock safely. keyToWatchId is retired
-    // conditionally, because a key can resolve to a watch other than this one.
+    // Caller holds watchLock. Once unindexed, a registration is unreachable and its watcher is disposed outside the lock.
     private void UnindexRegistration(WatchRegistration registration)
     {
         watchRegistrations.Remove(registration.WatchId);
@@ -903,11 +805,7 @@ public class NoireFileWatcher : NoireModuleBase<NoireFileWatcher>
         if (string.IsNullOrWhiteSpace(key))
             return;
 
-        // Retired only while the key still resolves to this registration. Registering a key resolves and retires
-        // whichever watch already holds it, within the same lock acquisition that inserts the new one, so the index
-        // always resolves to exactly one live watch. Removing the mapping unconditionally could retire a key that a
-        // different, still-registered watch has since taken over, leaving that watch running while the key reports
-        // it does not exist.
+        // Only while the key still names this registration: another watch may have taken the key over.
         if (keyToWatchId.TryGetValue(key, out var indexedWatchId)
             && string.Equals(indexedWatchId, registration.WatchId, StringComparison.Ordinal))
         {
@@ -1006,8 +904,6 @@ public class NoireFileWatcher : NoireModuleBase<NoireFileWatcher>
         PostDelivery(() => DeliverError(error));
     }
 
-    // Invokes the error event and publishes the matching EventBus event. Runs on the framework thread unless NoireLib
-    // is not initialized.
     private void DeliverError(FileWatchError error)
     {
         if (Volatile.Read(ref disposed) != 0)
@@ -1057,30 +953,24 @@ public class NoireFileWatcher : NoireModuleBase<NoireFileWatcher>
 
     private void DispatchNotification(WatchRegistration registration, FileWatchNotification notification)
     {
-        // Duplicate suppression runs on the observing thread, ahead of the queue, so a burst of Changed events from
-        // one file write does not consume queue capacity.
+        // Before the queue: the burst of Changed events one write produces takes no capacity.
         if (SuppressDuplicateNotifications && IsSuppressedDuplicate(notification))
         {
             Interlocked.Increment(ref totalDuplicateNotificationsSuppressed);
             return;
         }
 
-        // Notifications that survive suppression are delivered individually: coalescing again at drain time would
-        // tie notification counts to the frame rate and silently drop events for consumers who disabled suppression
-        // to get every one.
+        // Not coalesced at drain time: counts would follow the frame rate and drop events with suppression off.
         PostDelivery(() => DeliverNotification(registration, notification));
     }
 
-    // Invokes the callbacks and events of one notification. Runs on the framework thread unless NoireLib is not
-    // initialized.
     private void DeliverNotification(WatchRegistration registration, FileWatchNotification notification)
     {
         List<CallbackRegistration> callbacks;
 
         lock (watchLock)
         {
-            // The callback set is read at delivery time, not at observation time, so a callback or watch the consumer
-            // retired while this notification was queued does not get invoked afterwards.
+            // Read at delivery time: a callback or watch retired while queued is not invoked.
             if (Volatile.Read(ref disposed) != 0 || !watchRegistrations.ContainsKey(registration.WatchId))
                 return;
 
@@ -1154,8 +1044,7 @@ public class NoireFileWatcher : NoireModuleBase<NoireFileWatcher>
         }
     }
 
-    // Whether a notification repeats one already seen for the same watch, event type and paths within
-    // DuplicateNotificationWindow. Collapses the burst of events a single file write produces.
+    // Collapses the burst of events one file write produces.
     internal bool IsSuppressedDuplicate(FileWatchNotification notification)
     {
         var now = notification.OccurredAtUtc;
@@ -1203,9 +1092,7 @@ public class NoireFileWatcher : NoireModuleBase<NoireFileWatcher>
         return false;
     }
 
-    // Whether a watch is configured to observe a given kind of filesystem notification. Only the four notification
-    // kinds are mapped. A watcher-level error arrives through a separate event instead, checked against NotifyOnError
-    // rather than this method.
+    // Errors arrive through their own event, checked against NotifyOnError.
     private static bool IsEventEnabled(FileWatchRegistrationOptions options, FileWatchEventType eventType)
     {
         return eventType switch
@@ -1300,10 +1187,7 @@ public class NoireFileWatcher : NoireModuleBase<NoireFileWatcher>
             AsyncCallbackCount: registration.Callbacks.Count(c => c.IsAsync));
     }
 
-    // Publishes one event to the associated EventBus, if there is one. Every call site reaches this through
-    // PostDelivery and never directly, because Publish{TEvent}(TEvent) invokes synchronous handlers inline:
-    // publishing straight from a public method would run a subscriber on whatever thread that method's caller used,
-    // rather than the framework thread this module guarantees.
+    // Always reached through PostDelivery: Publish runs synchronous handlers inline, on the caller's thread.
     private void PublishEvent<TEvent>(TEvent eventData)
     {
         EventBus?.Publish(eventData);
@@ -1311,33 +1195,20 @@ public class NoireFileWatcher : NoireModuleBase<NoireFileWatcher>
 
     #endregion
 
-    /// <summary>
-    /// Internal dispose method called when the module is disposed.<br/>
-    /// Once this returns, no callback, CLR event handler or EventBus subscriber of this module can be invoked again.
-    /// It blocks for as long as a delivery that had already started takes to finish, so a handler that blocks
-    /// indefinitely blocks disposal with it.
-    /// </summary>
+    /// <summary>Stops every delivery, blocking until the ones already running finish.</summary>
     protected override void DisposeInternal()
     {
-        // Close the delivery path before tearing the watchers down. Disposing a watcher does not retract events it
-        // already raised, so notifications can still be in flight on thread pool threads; blocking new deliveries and
-        // detaching the drain first keeps them from reaching a consumer callback afterwards.
+        // Delivery closes first: a disposed watcher's already raised events may still be in flight.
         Interlocked.Exchange(ref disposed, 1);
-
-        if (Interlocked.Exchange(ref deliveryPumpAttached, 0) == 1)
-            NoireService.Framework.Update -= OnFrameworkUpdate;
+        DetachDeliveryPump(onlyWhenIdle: false);
 
         deliveryQueue.Clear();
         Volatile.Write(ref queuedDeliveryCount, 0);
 
-        // The latch turns away deliveries that have not started, but one that had already passed it is still on its
-        // way to a consumer callback. Waiting for those makes disposal a hard boundary rather than a likely one; it
-        // matters most without an initialized NoireLib, where deliveries run on whatever thread observed the
-        // filesystem event rather than the single framework thread that also runs this teardown.
+        // Makes disposal a hard boundary for deliveries already past the latch.
         WaitForDeliveriesToDrain();
 
-        // Nothing below is published: the latch is set, so the watch removals this performs deliver no lifecycle
-        // events. A module being torn down should not call into subscribers of a plugin that is unloading.
+        // Publishes nothing: the latch is set and the plugin may be unloading.
         ClearAllWatches();
 
         lock (watchLock)

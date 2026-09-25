@@ -68,6 +68,5 @@ public struct ActionTimelineAnimParams
     /// <summary> Unknown. </summary>
     [FieldOffset(0x50)] public byte Unk40;
 
-    /// <summary> Unknown. </summary>
     [FieldOffset(0x52)] public byte Unk42;
 }

@@ -7,9 +7,7 @@ namespace NoireLib.UI;
 /// <summary>The look of a button drawn with <see cref="NoireButtons"/>. A <see langword="null"/> value resolves through <see cref="Tone"/> and the theme.</summary>
 public sealed class ButtonStyle
 {
-    /// <summary>
-    /// What the button means, deciding its colors when they are not set explicitly.
-    /// </summary>
+    /// <summary>What the button means, deciding its colors when they are not set explicitly.</summary>
     public ButtonTone Tone { get; set; } = ButtonTone.Neutral;
 
     /// <summary>The fill color. When <see langword="null"/>, it comes from <see cref="Tone"/>.</summary>
@@ -52,7 +50,7 @@ public sealed class ButtonStyle
         }
     }
 
-    /// <summary>A built-in textured mark drawn before the label. Setting it clears <see cref="Icon"/> and <see cref="IconName"/>.</summary>
+    /// <summary>A built-in <see cref="UI.NoireIcon"/> drawn before the label. Setting it clears <see cref="Icon"/> and <see cref="IconName"/>.</summary>
     public NoireIcon? NoireIcon
     {
         get => noireIcon;
@@ -87,7 +85,7 @@ public sealed class ButtonStyle
         }
     }
 
-    /// <summary>The side of a textured icon at 100%. When <see langword="null"/>, it matches the label's line height.</summary>
+    /// <summary>The side of a built-in or registered icon at 100%. When <see langword="null"/>, it matches the label's line height.</summary>
     public float? IconSize { get; set; }
 
     private FontAwesomeIcon? icon;
@@ -120,10 +118,7 @@ public sealed class ButtonStyle
     /// </summary>
     public float HoldBorderThickness { get; set; } = 2.5f;
 
-    /// <summary>
-    /// Replaces the button's painting. NoireUI still does the sizing, hit testing and state.<br/>
-    /// The label is not drawn when this is set.
-    /// </summary>
+    /// <summary>Replaces the painting, label included. NoireUI still does the sizing, hit testing and state.</summary>
     public Action<UiButtonDraw>? CustomDraw { get; set; }
 
     // Scaled here, and only here.

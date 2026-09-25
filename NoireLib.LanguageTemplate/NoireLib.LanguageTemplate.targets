@@ -1,0 +1,43 @@
+<Project>
+
+  <!--
+    Keeps a plugin's language files up to date with the code after every build, in every configuration.
+  -->
+
+  <PropertyGroup>
+    <NoireLanguageTemplatePath Condition="'$(NoireLanguageTemplatePath)' == ''">$(MSBuildProjectDirectory)\Localization\template.lang</NoireLanguageTemplatePath>
+    <NoireLanguageTemplateTool Condition="'$(NoireLanguageTemplateTool)' == ''">$(MSBuildThisFileDirectory)bin\Release\net10.0-windows\noirelangtemplate.dll</NoireLanguageTemplateTool>
+    <_NoireLanguageTemplateProject>$(MSBuildThisFileDirectory)NoireLib.LanguageTemplate.csproj</_NoireLanguageTemplateProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Remove="$(NoireLanguageTemplatePath)" />
+    <EmbeddedResource Remove="**\template.lang" />
+  </ItemGroup>
+
+  <Target Name="NoireLanguageTemplate"
+          AfterTargets="Build"
+          Condition="'$(NoireLanguageTemplateEnabled)' != 'false' and '$(DesignTimeBuild)' != 'true'">
+
+    <ItemGroup>
+      <_NoireLanguageFile Include="@(EmbeddedResource)" Condition="'%(Extension)' == '.lang'" />
+      <_NoireLanguageFile Remove="$(NoireLanguageTemplatePath)" />
+      <_NoireLanguageFile Remove="**\template.lang" />
+    </ItemGroup>
+
+    <PropertyGroup>
+      <_NoireLanguageTemplateRun Condition="'@(_NoireLanguageFile)' != '' or '$(NoireLanguageTemplateEnabled)' == 'true'">true</_NoireLanguageTemplateRun>
+    </PropertyGroup>
+
+    <Exec Condition="'$(_NoireLanguageTemplateRun)' == 'true' and !Exists('$(NoireLanguageTemplateTool)') and Exists('$(_NoireLanguageTemplateProject)')"
+          Command="dotnet build &quot;$(_NoireLanguageTemplateProject)&quot; -c Release --nologo -v q" />
+
+    <Warning Condition="'$(_NoireLanguageTemplateRun)' == 'true' and !Exists('$(NoireLanguageTemplateTool)')"
+             Code="NOIRELANG002"
+             Text="NoireLib's language file tool was not found at $(NoireLanguageTemplateTool); the language files were not updated." />
+
+    <Exec Condition="'$(_NoireLanguageTemplateRun)' == 'true' and Exists('$(NoireLanguageTemplateTool)')"
+          Command="dotnet &quot;$(NoireLanguageTemplateTool)&quot; &quot;$(TargetPath)&quot; &quot;$(DalamudLibPath.TrimEnd('\'))&quot; &quot;$(NoireLanguageTemplatePath)&quot; @(_NoireLanguageFile->'&quot;%(FullPath)&quot;', ' ')" />
+  </Target>
+
+</Project>

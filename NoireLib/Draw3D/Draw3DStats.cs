@@ -30,6 +30,15 @@ public readonly struct Draw3DStats
     /// <summary>Frames rendered in depth-off mode, with the game depth unreadable.</summary>
     public required long DepthOffFrames { get; init; }
 
+    /// <summary>Frames whose see-through content occluded against the opaque-depth snapshot.</summary>
+    public required long OpaqueDepthFrames { get; init; }
+
+    /// <summary>Frames where see-through content fell back to the full scene depth because no snapshot was taken.</summary>
+    public required long OpaqueDepthMissedFrames { get; init; }
+
+    /// <summary>Where the opaque-depth snapshot was taken last frame, or why it was not.</summary>
+    public required string OpaqueDepthSource { get; init; }
+
     /// <summary>Draws skipped because their mesh or texture was disposed.</summary>
     public required long DisposedAssetDraws { get; init; }
 
@@ -107,6 +116,7 @@ public readonly struct Draw3DStats
           frames: rendered {FramesRendered}, skipped (disabled {FramesSkippedDisabled}, init {FramesSkippedInitPending}, device {FramesSkippedNoDevice}, camera {FramesSkippedNoCamera}, size {FramesSkippedZeroSize}, empty {FramesSkippedEmpty}, ui-hidden {FramesSkippedUiHidden})
           last frame: draws {DrawCalls}, batches {Batches}, instances {Instances}, tris {Triangles}, visible {VisibleItems}, culled {CulledItems}, objectCb updates {ObjectCbUpdates}
           depth: available {DepthAvailable} ({DepthSource}), depth-off frames {DepthOffFrames} | camera fallback: {UsedFallbackCamera}
+          opaque depth: {OpaqueDepthSource}, frames {OpaqueDepthFrames}, missed {OpaqueDepthMissedFrames}
           camera capture: {CameraCapture} | gpu-camera last frame: {UsedGpuCamera}, frames {GpuCameraFrames}, control-camera fallback frames {ControlCameraFrames}, refused at use {CameraRejectedAtUse}
           protection rects: {ProtectRects} | disposed-asset draws: {DisposedAssetDraws} | Im dropped: {ImCommandsDropped}
           gpu: scene {SceneGpuMs:F3} ms, composite {CompositeGpuMs:F3} ms

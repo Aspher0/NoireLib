@@ -36,13 +36,11 @@ internal sealed class ShowcaseSceneService : IDisposable
 
     public bool IsSpawned => scene is { IsDisposed: false };
 
-    /// <summary>The editor driving the showcase gizmo, once <see cref="Spawn"/> has run.</summary>
     public SceneEditor? Editor => editor;
 
-    /// <summary>The status line the Scene section shows next to the spawn/clear buttons.</summary>
     public string Status { get; private set; } = string.Empty;
 
-    /// <summary>Spawns the showcase scene around the player (or the world origin when no player is present).</summary>
+    // Around the player, or the world origin when no player is present.
     public void Spawn()
     {
         Clear();
@@ -169,7 +167,7 @@ internal sealed class ShowcaseSceneService : IDisposable
         }, TaskScheduler.Default);
     }
 
-    /// <summary>Loads a glTF/glb model from disk into the running showcase scene (spawned in front of the player, selectable).</summary>
+    // Spawned in front of the player, selectable.
     public void SpawnModel(string path)
     {
         if (scene is not { IsDisposed: false } s)
@@ -216,7 +214,7 @@ internal sealed class ShowcaseSceneService : IDisposable
         im.DrawLine(c + new Vector3(co * 4f, 0.6f, sn * 4f), c + new Vector3(-co * 4f, 0.6f, -sn * 4f), 0.1f, new Vector4(0.6f, 1f, 0.7f, 0.9f), new ImShapeStyle { Placement = ImShapePlacement.Flat });
     }
 
-    /// <summary>Removes the showcase scene: one <see cref="Scene3D.Dispose"/> frees its nodes, owned meshes, view and editor.</summary>
+    // One Scene3D.Dispose frees its nodes, owned meshes, view and editor.
     public void Clear()
     {
         editor = null;       // owned by the scene

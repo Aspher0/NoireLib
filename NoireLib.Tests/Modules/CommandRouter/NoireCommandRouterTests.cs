@@ -10,22 +10,13 @@ using Xunit;
 
 namespace NoireLib.Tests;
 
-/// <summary>
-/// Game-free tests for the NoireCommandRouter module: history snapshot isolation, history trimming and
-/// <see cref="NoireCommandRouter.MaxHistorySize"/> validation, the contract that every dispatched command
-/// reports exactly one outcome reflecting what the handler actually did, and the rule that an availability
-/// condition gates everything inside the scope it is declared on.
-/// </summary>
+/// <summary>Locks history isolation and trimming, one outcome per dispatched command, and scoped availability conditions.</summary>
 [SupportedOSPlatform("windows")]
 public class NoireCommandRouterTests
 {
     #region Helpers
 
-    /// <summary>
-    /// Creates a router that never reaches Dalamud. It is built inactive so that mapping a command does not try
-    /// to register a handler; tests set IsActive directly afterwards, which opens the dispatch path without
-    /// going through activation.
-    /// </summary>
+    // Built inactive: mapping a command registers no handler. Tests set IsActive directly afterwards.
     private static NoireCommandRouter CreateRouter(NoireEventBus? eventBus = null, int maxHistorySize = 50)
         => new(
             moduleId: null,
@@ -37,9 +28,7 @@ public class NoireCommandRouterTests
 
     private static NoireEventBus CreateEventBus() => new(null, true, enableLogging: false);
 
-    /// <summary>
-    /// Maps a single subcommand and opens the dispatch path.
-    /// </summary>
+    /// <summary>Maps a single subcommand and opens the dispatch path.</summary>
     private static void MapRunCommand(NoireCommandRouter router, Action<SubCommandBuilder> configure)
     {
         router.Map("/test").AddSubCommand("run", configure);
@@ -51,11 +40,7 @@ public class NoireCommandRouterTests
     /// </summary>
     private static async Task WaitUntil(Func<bool> condition, string because)
     {
-        // The deadline is generous because what is being waited on is an asynchronous continuation, which needs a
-        // thread pool thread to run on. The full suite executes in parallel and other classes hold threads while
-        // they wait on real durations, so a tight deadline here fails on pool starvation rather than on the
-        // behavior under test. A passing wait still returns as soon as the condition holds, so the only cost of
-        // the larger budget is how long a genuine failure takes to report.
+        // Generous: the continuation needs a pool thread, and the parallel suite can starve the pool.
         var deadline = DateTime.UtcNow.AddSeconds(30);
 
         while (DateTime.UtcNow < deadline)
@@ -250,9 +235,7 @@ public class NoireCommandRouterTests
 
         gate.SetResult();
 
-        // Both signals are waited on, because the router records history before it publishes the executed event.
-        // Waiting on the history alone would let the assertion on the event run inside that window, which is a
-        // race in the test rather than a defect in the router, and one that only shows up under load.
+        // Both: history is recorded before the executed event is published.
         await WaitUntil(
             () => router.GetHistory().Count == 1 && Volatile.Read(ref executed) == 1,
             "the settled handler should report its outcome");
@@ -456,14 +439,7 @@ public class NoireCommandRouterTests
 
     #region The outcome is recorded before it is announced
 
-    /// <summary>
-    /// Every rejected invocation records what happened and then tells the user about it, in that order.
-    /// <br/><br/>
-    /// Announcing reaches the game's chat, which is not there in a test, so the announcement throws on each of the
-    /// paths below. Reporting an outcome is allowed to fail, and an outcome that is already known must survive that
-    /// failure rather than be replaced by the rootless entry the dispatch-wide error boundary records for the
-    /// reporting fault itself.
-    /// </summary>
+    /// <summary>A rejected invocation is recorded before it is announced, and an announcement failing keeps that record.</summary>
     [Fact]
     public void Dispatch_ShouldRecordTheBlockedSubCommand_EvenWhenAnnouncingItFails()
     {
@@ -720,6 +696,19 @@ public class NoireCommandRouterTests
 
         message.Should().Be("Main help.",
             "a command that opted out of detailed Dalamud help lists nothing but its own help text");
+    }
+
+    [Fact]
+    public void BuiltInHelp_IsListedWhereTheTokenDispatches_WithTheSameTextInChatAndDalamud()
+    {
+        var registration = BuildDocumentedRegistration();
+
+        registration.ListsBuiltInHelp(autoHelp: true).Should().BeTrue();
+        registration.ListsBuiltInHelp(autoHelp: false).Should().BeFalse("the token no longer dispatches");
+        registration.BuildDalamudHelpMessage(includeBuiltInHelp: true).Should().Contain("help - " + registration.BuiltInHelpDescription());
+
+        registration.RawHandler = static (_, _) => { };
+        registration.ListsBuiltInHelp(autoHelp: true).Should().BeFalse("a raw handler bypasses the help token");
     }
 
     [Fact]

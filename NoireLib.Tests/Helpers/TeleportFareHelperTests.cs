@@ -1,4 +1,5 @@
 using FluentAssertions;
+using Lumina;
 using Lumina.Data;
 using Lumina.Excel;
 using Lumina.Excel.Sheets;
@@ -9,11 +10,7 @@ using Xunit;
 
 namespace NoireLib.Tests;
 
-/// <summary>
-/// Locks the teleport fare against the formula the client runs, decompiled from
-/// <c>Telepo.GetTeleportCost</c> and its distance helper. The arithmetic is checked on hand-built streams, and the
-/// whole calculation on the real sheets where they are there to read.
-/// </summary>
+/// <summary>Locks the teleport fare against the client's own Telepo.GetTeleportCost, on hand-built streams and the real sheets.</summary>
 public sealed class TeleportFareHelperTests(ITestOutputHelper output)
 {
     private readonly ITestOutputHelper output = output;
@@ -113,6 +110,27 @@ public sealed class TeleportFareHelperTests(ITestOutputHelper output)
             .Should().Be(TeleportFareHelper.UnknownTerritoryFare);
     }
 
+    /// <summary>Fares read off the game's teleport menu in Limsa Lominsa Lower Decks, without discounts.</summary>
+    [Theory]
+    [InlineData(180u, TeleportDiscount.None, 263, "Camp Overlook, Outer La Noscea")]
+    [InlineData(147u, TeleportDiscount.None, 413, "Ceruleum Processing Plant, Northern Thanalan")]
+    [InlineData(641u, TeleportDiscount.ResidentDistrict, 376, "a private estate in Shirogane, past the halving")]
+    [InlineData(341u, TeleportDiscount.ResidentDistrict, 114, "an apartment in the Goblet")]
+    public void AgainstTheGame_TheFareIsExactToTheGil(uint destination, TeleportDiscount discount, int expected, string what)
+    {
+        var game = GameDataFixture.TryOpen();
+        if (game is null)
+        {
+            Assert.Skip("No game installation found.");
+            return;
+        }
+
+        var sheets = SheetLookups(game);
+
+        TeleportFareHelper.Fare(129, destination, discount, sheets.Stream, sheets.Relay)
+            .Should().Be(expected, "the game charges {0} gil for {1}", expected, what);
+    }
+
     [Fact]
     public void AgainstTheRealSheets_TheFaresAreSaneAndSymmetric()
     {
@@ -123,27 +141,9 @@ public sealed class TeleportFareHelperTests(ITestOutputHelper output)
             return;
         }
 
-        var telepo = game.Excel.GetSheet<RawRow>(Language.English, "TerritoryTypeTelepo");
-        var relays = game.GetExcelSheet<TelepoRelay>(Language.English);
+        var sheets = SheetLookups(game);
 
-        TeleportFareHelper.Stream? Stream(uint territory)
-            => telepo.TryGetRow(territory, out var row)
-                ? new TeleportFareHelper.Stream(row.ReadUInt16Column(0), row.ReadUInt16Column(1), row.ReadUInt16Column(2), row.ReadUInt8Column(3))
-                : null;
-
-        TeleportFareHelper.Relay? Relay(uint id)
-        {
-            if (!relays.TryGetRow(id, out var row))
-                return null;
-
-            var crossings = new List<(uint Enter, uint Exit, int Cost)>();
-            foreach (var crossing in row.Relays)
-                crossings.Add((crossing.EnterTerritory.RowId, crossing.ExitTerritory.RowId, crossing.Cost));
-
-            return new TeleportFareHelper.Relay(row.Unknown_70, crossings);
-        }
-
-        int Fare(uint from, uint to) => TeleportFareHelper.Fare(from, to, TeleportDiscount.None, Stream, Relay);
+        int Fare(uint from, uint to) => TeleportFareHelper.Fare(from, to, TeleportDiscount.None, sheets.Stream, sheets.Relay);
 
         Fare(129, 130).Should().Be(456);
 
@@ -161,5 +161,31 @@ public sealed class TeleportFareHelperTests(ITestOutputHelper output)
 
         output.WriteLine($"Limsa->Ul'dah {Fare(129, 130)}, Limsa->Gridania {Fare(129, 132)}, "
             + $"Limsa->Crystarium {Fare(129, 819)}, Limsa->Tuliyollal {Fare(129, 1185)}");
+    }
+
+    // The two sheets are read positionally. A column taken from the wrong place fails here.
+    private static (Func<uint, TeleportFareHelper.Stream?> Stream, Func<uint, TeleportFareHelper.Relay?> Relay) SheetLookups(GameData game)
+    {
+        var telepo = game.Excel.GetSheet<RawRow>(Language.English, "TerritoryTypeTelepo");
+        var relays = game.GetExcelSheet<TelepoRelay>(Language.English);
+
+        return (Stream, Relay);
+
+        TeleportFareHelper.Stream? Stream(uint territory)
+            => telepo.TryGetRow(territory, out var row)
+                ? new TeleportFareHelper.Stream(row.ReadUInt16Column(0), row.ReadUInt16Column(1), row.ReadUInt16Column(2), row.ReadUInt8Column(3))
+                : null;
+
+        TeleportFareHelper.Relay? Relay(uint id)
+        {
+            if (!relays.TryGetRow(id, out var row))
+                return null;
+
+            var crossings = new List<(uint Enter, uint Exit, int Cost)>();
+            foreach (var crossing in row.Relays)
+                crossings.Add((crossing.EnterTerritory.RowId, crossing.ExitTerritory.RowId, crossing.Cost));
+
+            return new TeleportFareHelper.Relay(row.Unknown_70, crossings);
+        }
     }
 }

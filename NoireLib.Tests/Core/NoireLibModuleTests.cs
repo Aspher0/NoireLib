@@ -441,7 +441,7 @@ public class NoireLibWindowedModuleBaseTests
         public WindowlessWindowedModule() : base((string?)null, false, false) { }
         public WindowlessWindowedModule(ModuleId? moduleId, bool active = true, bool enableLogging = false) : base(moduleId, active, enableLogging) { }
 
-        // Registers no window, which is what a module whose window is optional looks like when it is turned off.
+        // Registers no window, as a module whose optional window is turned off does.
         protected override void InitializeModule(params object?[] args) { /* no-op */ }
         protected override void OnActivated() { /* no-op */ }
         protected override void OnDeactivated() => DeactivatedCount++;

@@ -82,9 +82,7 @@ public static class NoireWindowMenu
         return true;
     }
 
-    /// <summary>
-    /// Closes the menu on the next frame it is drawn, for a window closing its own menu.
-    /// </summary>
+    /// <summary>Closes the menu on the next frame it is drawn, for a window closing its own menu.</summary>
     /// <param name="id">The menu's id.</param>
     public static void Close(string id)
     {
@@ -92,16 +90,14 @@ public static class NoireWindowMenu
         closeId = UiIds.For(PopupPrefix, id);
     }
 
-    /// <summary>
-    /// Whether the menu is open.
-    /// </summary>
+    /// <summary>Whether the menu is open.</summary>
     /// <param name="id">The menu's id.</param>
     /// <returns>True while it is open.</returns>
     public static bool IsOpen(string id)
         => UiDraw.Available && ImGui.IsPopupOpen(UiIds.For(PopupPrefix, id ?? string.Empty));
 
     /// <summary>Draws the menu below its button when open. Call it every frame in the same window.</summary>
-    /// <param name="id">The menu's id, as given to <see cref="Toggle"/>.</param>
+    /// <param name="id">The menu's id, as given to <see cref="Toggle(string)"/>.</param>
     /// <param name="anchorMin">The top left of the button, in screen pixels.</param>
     /// <param name="anchorMax">The bottom right of the button. The menu's right edge lines up with it.</param>
     /// <param name="settings">The values the menu edits.</param>
@@ -507,7 +503,10 @@ public static class NoireWindowMenu
             {
                 hovered = toggle;
 
-                if (s.GetHint(toggle) is { Length: > 0 } hint)
+                // A label longer than its switch shows whole on hover when the switch has no hint of its own.
+                var hint = s.GetHint(toggle) is { Length: > 0 } own ? own : Overflows(toggle, max.X - min.X, s) ? s.GetLabel(toggle) : null;
+
+                if (hint != null)
                 {
                     if (s.CustomShowHint != null)
                         UiHook.Invoke(s.CustomShowHint, new UiWindowMenuHint(toggle, hint, min, max), nameof(NoireWindowMenu), CallbackFault);
@@ -590,6 +589,8 @@ public static class NoireWindowMenu
         var x = args.Min.X + (s.TogglePaddingX * scale);
         var centreY = (args.Min.Y + args.Max.Y) * 0.5f;
 
+        // Kept in step with ToggleTextRoom.
+
         if (s.DotSize > 0f)
         {
             var radius = s.DotSize * scale * 0.5f;
@@ -613,6 +614,25 @@ public static class NoireWindowMenu
 
         DrawText(new UiWindowMenuText(args.Label, WindowMenuTextRole.Toggle, new Vector2(x, args.Min.Y), new Vector2(args.Max.X - (s.TogglePaddingX * scale), args.Max.Y),
             UiAlign.Start, Faded(text, args.Fade), s.ToggleSizePx * s.TextScale, 0f, 1.4f), s);
+    }
+
+    // The width a switch leaves its label: the switch less its padding and its dot.
+    private static float ToggleTextRoom(float width, WindowMenuStyle s)
+    {
+        var scale = NoireUI.Scale;
+        var room = width - (s.TogglePaddingX * scale * 2f);
+
+        if (s.DotSize > 0f)
+            room -= (s.DotSize + s.DotGap) * scale;
+
+        return room;
+    }
+
+    private static bool Overflows(WindowMenuToggle toggle, float width, WindowMenuStyle s)
+    {
+        var label = s.GetLabel(toggle);
+        var text = new UiWindowMenuText(label, WindowMenuTextRole.Toggle, Vector2.Zero, Vector2.Zero, UiAlign.Start, s.ToggleText, s.ToggleSizePx * s.TextScale, 0f, 1.4f);
+        return Measure(text, s).X > ToggleTextRoom(width, s) + 0.5f;
     }
 
     private static float ResolveToggleHeight(WindowMenuStyle s)
@@ -705,25 +725,46 @@ public static class NoireWindowMenu
         }
 
         var size = Measure(text, s);
-        var x = text.Align switch
-        {
-            UiAlign.End => text.BoxMax.X - size.X,
-            UiAlign.Center => text.BoxMin.X + ((text.BoxMax.X - text.BoxMin.X - size.X) * 0.5f),
-            _ => text.BoxMin.X,
-        };
+        var boxWidth = text.BoxMax.X - text.BoxMin.X;
+        var clipped = size.X > boxWidth + 0.5f;
+        var x = clipped
+            ? text.BoxMin.X
+            : text.Align switch
+            {
+                UiAlign.End => text.BoxMax.X - size.X,
+                UiAlign.Center => text.BoxMin.X + ((boxWidth - size.X) * 0.5f),
+                _ => text.BoxMin.X,
+            };
         var y = text.BoxMin.Y + ((text.BoxMax.Y - text.BoxMin.Y - size.Y) * 0.5f);
         var at = new Vector2(MathF.Round(x), MathF.Round(y));
 
-        if (text.TrackingEm != 0f)
-        {
-            ImGui.SetCursorScreenPos(at);
+        // A text longer than its box, such as a long translation, is cut at the box instead of running over its
+        // neighbours, and shows whole on hover. A switch shows its whole label through its hint.
+        if (clipped)
+            ImGui.PushClipRect(text.BoxMin, text.BoxMax, true);
 
-            using var color = UiPush.Color(ImGuiCol.Text, text.Color);
-            NoireText.Tracked(text.Text, text.TrackingEm, text.SizePx);
-            return;
+        try
+        {
+            if (text.TrackingEm != 0f)
+            {
+                ImGui.SetCursorScreenPos(at);
+
+                using var color = UiPush.Color(ImGuiCol.Text, text.Color);
+                NoireText.Tracked(text.Text, text.TrackingEm, text.SizePx);
+            }
+            else
+            {
+                NoireText.DrawAt(at, text.Color, text.Text, text.SizePx);
+            }
+        }
+        finally
+        {
+            if (clipped)
+                ImGui.PopClipRect();
         }
 
-        NoireText.DrawAt(at, text.Color, text.Text, text.SizePx);
+        if (clipped && text.Role != WindowMenuTextRole.Toggle && ImGui.IsMouseHoveringRect(text.BoxMin, text.BoxMax))
+            NoireTooltip.Show(text.Text, s.HintStyle, "NoireWindowMenu.whole");
     }
 
     private static Vector2 Measure(UiWindowMenuText text, WindowMenuStyle s)

@@ -19,7 +19,6 @@ internal sealed class TargetSource : GameWatcherSource
 
     public TargetSource(NoireGameWatcher owner) : base(owner, SourceKind.Targets) { }
 
-    /// <inheritdoc/>
     protected override void OnActivate()
     {
         // Baseline seeding without events.
@@ -31,14 +30,12 @@ internal sealed class TargetSource : GameWatcherSource
         (lastMouseOverId, lastMouseOver) = Read(NoireService.TargetManager.MouseOverTarget, now);
     }
 
-    /// <inheritdoc/>
     protected override void OnDeactivate()
     {
         lastTarget = lastFocus = lastSoft = lastMouseOver = null;
         lastTargetId = lastFocusId = lastSoftId = lastMouseOverId = 0;
     }
 
-    /// <inheritdoc/>
     protected override void OnTick(DateTimeOffset now)
     {
         Check(NoireService.TargetManager.Target, ref lastTargetId, ref lastTarget, now,

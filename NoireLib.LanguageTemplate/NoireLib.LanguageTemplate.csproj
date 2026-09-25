@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The build step behind NoireLib.LanguageTemplate.targets: loads a built plugin beside its references and Dalamud's,
+    then asks the NoireLib inside it for the language template and for each language file brought up to date. It holds no
+    logic of its own and references nothing, so the NoireLib the plugin was built with decides every line.
+  -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <AssemblyName>noirelangtemplate</AssemblyName>
+    <RootNamespace>NoireLib.LanguageTemplate</RootNamespace>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+</Project>

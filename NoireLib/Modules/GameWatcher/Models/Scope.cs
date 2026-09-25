@@ -16,34 +16,28 @@ public sealed class Scope
     // The root kinds a scope can be built from. Internal - user code uses the static factories.
     internal enum RootKind
     {
-        /// <summary>Only the local player.</summary>
         LocalPlayer,
 
-        /// <summary>Party members (includes the local player).</summary>
+        // Includes the local player.
         Party,
 
-        /// <summary>Alliance members.</summary>
         Alliance,
 
-        /// <summary>Friends currently in the object table.</summary>
         Friends,
 
-        /// <summary>Every player character in the object table.</summary>
         AllPlayers,
 
-        /// <summary>Players, battle NPCs and companions.</summary>
         AllCharacters,
 
-        /// <summary>A single entity id (tracks the object-table slot; ids can be reused after despawn).</summary>
+        // Tracks the object-table slot. Entity ids are reused after a despawn.
         Entity,
 
-        /// <summary>A single content id (tracks the person; survives despawn/respawn and entity-id reuse).</summary>
+        // Tracks the person across despawns and entity-id reuse.
         ContentId,
 
-        /// <summary>A character name, optionally bound to a world.</summary>
+        // Optionally bound to a world.
         Name,
 
-        /// <summary>The union of several scopes.</summary>
         Union,
     }
 
@@ -210,13 +204,11 @@ public sealed class Scope
     // registrations to decide what to iterate per tick.
     internal enum IterationClass
     {
-        /// <summary>Only the local player needs to be visited.</summary>
         LocalOnly = 0,
 
-        /// <summary>All player characters need to be scanned (party/alliance/friends/targeted scopes pre-filter per subject).</summary>
+        // Party, alliance, friend and targeted scopes pre-filter per subject.
         Players = 1,
 
-        /// <summary>Players, battle NPCs and companions need to be scanned.</summary>
         AllCharacters = 2,
     }
 
@@ -295,21 +287,17 @@ public sealed class Scope
 // engines.
 internal readonly struct SubjectProbe
 {
-    /// <summary>The subject's entity id.</summary>
     public required uint EntityId { get; init; }
 
-    /// <summary>The subject's content id, or 0 when unavailable.</summary>
+    // 0 when unavailable.
     public required ulong ContentId { get; init; }
 
-    /// <summary>The subject's display name.</summary>
     public required string Name { get; init; }
 
-    /// <summary>The subject's home world row id, or 0 when unavailable.</summary>
+    // 0 when unavailable.
     public required uint HomeWorldId { get; init; }
 
-    /// <summary>The subject's precomputed relationship flags.</summary>
     public required SubjectFlags Flags { get; init; }
 
-    /// <summary>Whether the subject is a player character.</summary>
     public required bool IsPlayer { get; init; }
 }

@@ -11,11 +11,8 @@ using System.Threading.Tasks;
 namespace NoireLib.Networker;
 
 /// <summary>
-/// Zero-configuration communication between game instances on the same PC and, optionally, the LAN.<br/>
-/// One instance per machine is elected hub through a named kernel mutex (no well-known ports at all);
-/// everyone else connects to it over loopback TCP. LAN machines bridge hub-to-hub via UDP beacons.<br/>
-/// Handlers, request continuations, and peer events are all delivered on the framework thread.<br/>
-/// <b>Never sync-block (<c>.Wait()</c> / <c>.Result</c>) on a networker task from the framework thread - always await.</b>
+/// Zero-configuration messaging between game instances on one PC and, optionally, the LAN. Everything is delivered
+/// on the framework thread. <b>Never block on a networker task from the framework thread: await it.</b>
 /// </summary>
 public partial class NoireNetworker : NoireModuleBase<NoireNetworker>
 {
@@ -41,11 +38,11 @@ public partial class NoireNetworker : NoireModuleBase<NoireNetworker>
     private NoireSubscriptionRegistry<int, (NetworkerPeer Peer, string Key)> peerUpdatedRegistry = null!;
     private NoireSubscriptionRegistry<int, NetworkerState> stateRegistry = null!;
 
-    private DeliveryPump? pump;
-    private RequestBroker? broker;
-    private ElectionMutex? election;
-    private CancellationTokenSource? supervisionCts;
-    private Task? supervisionTask;
+    private volatile DeliveryPump? pump;
+    private volatile RequestBroker? broker;
+    private volatile ElectionMutex? election;
+    private volatile CancellationTokenSource? supervisionCts;
+    private volatile Task? supervisionTask;
     private HubServer? hubServer;
     private ClientConnection? clientConnection;
     private volatile NetworkerState state = NetworkerState.Stopped;
@@ -57,9 +54,7 @@ public partial class NoireNetworker : NoireModuleBase<NoireNetworker>
     /// </summary>
     public NoireNetworker() : base((string?)null, false, true) { }
 
-    /// <summary>
-    /// Creates a new networker for the given network name.
-    /// </summary>
+    /// <summary>Creates a new networker for the given network name.</summary>
     /// <param name="networkName">The name identifying the network (e.g. "MyPlugin.Sync"). Instances only see peers using the same name.</param>
     /// <param name="moduleId">Optional module ID for multiple networker instances.</param>
     /// <param name="active">Whether to activate (join the network) on creation.</param>
@@ -83,9 +78,7 @@ public partial class NoireNetworker : NoireModuleBase<NoireNetworker>
             SetActive(true);
     }
 
-    // Constructor for use with AddModule{T}(string?) with , for internal module management only. No network name can
-    // be supplied here, so the module is always created inactive regardless of ; configure it through
-    // SetNetworkName(string) and Options, then activate.
+    // Always created inactive: no network name can be supplied here.
     internal NoireNetworker(ModuleId? moduleId, bool active = true, bool enableLogging = true) : base(moduleId, false, enableLogging)
     {
         if (active)
@@ -104,39 +97,25 @@ public partial class NoireNetworker : NoireModuleBase<NoireNetworker>
 
     #region Public state
 
-    /// <summary>
-    /// The unique, session-scoped identifier of the local instance on the network.
-    /// </summary>
+    /// <summary>The unique, session-scoped identifier of the local instance on the network.</summary>
     public Guid SelfId { get; } = Guid.NewGuid();
 
-    /// <summary>
-    /// The name of the network this instance belongs to.
-    /// </summary>
+    /// <summary>The name of the network this instance belongs to.</summary>
     public string? NetworkName => networkName;
 
-    /// <summary>
-    /// The options of this networker. Changes made while the networker is active require a restart (deactivate/activate) to apply.
-    /// </summary>
+    /// <summary>The options. A change applies once the networker restarts.</summary>
     public NetworkerOptions Options => options;
 
-    /// <summary>
-    /// The current connection state.
-    /// </summary>
+    /// <summary>The current connection state.</summary>
     public NetworkerState State => state;
 
-    /// <summary>
-    /// Whether this instance currently is the machine's hub. Informational only - usage never differs.
-    /// </summary>
+    /// <summary>Whether this instance is the machine's hub. Informational: usage is the same either way.</summary>
     public bool IsHub => hubServer != null;
 
-    /// <summary>
-    /// The local instance's own presence. Metadata set here is automatically synchronized to every peer.
-    /// </summary>
+    /// <summary>This instance's own presence. Its metadata is synchronized to every peer.</summary>
     public NetworkerSelf Self => self ??= new NetworkerSelf(SelfId, OnSelfMetadataChanged);
 
-    /// <summary>
-    /// Every other peer on the network - same-PC and LAN alike, one list. Excludes <see cref="Self"/>.
-    /// </summary>
+    /// <summary>Every other peer, on this PC or the LAN. Excludes <see cref="Self"/>.</summary>
     public IReadOnlyList<NetworkerPeer> OtherPeers
     {
         get
@@ -146,11 +125,9 @@ public partial class NoireNetworker : NoireModuleBase<NoireNetworker>
         }
     }
 
-    /// <summary>
-    /// Sets the network name. When the networker is active, it leaves the current network and joins the new one.
-    /// </summary>
-    /// <param name="newNetworkName">The new network name.</param>
-    /// <returns>The module instance for chaining.</returns>
+    /// <summary>Sets the network name. An active networker leaves its network and joins the new one.</summary>
+    /// <param name="newNetworkName">The network name.</param>
+    /// <returns>This module.</returns>
     public NoireNetworker SetNetworkName(string newNetworkName)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(newNetworkName);
@@ -192,8 +169,11 @@ public partial class NoireNetworker : NoireModuleBase<NoireNetworker>
         };
         broker = new RequestBroker(pump);
         election = new ElectionMutex(NetworkerNames.MutexName(networkName));
-        supervisionCts = new CancellationTokenSource();
-        supervisionTask = Task.Run(() => RunAsync(supervisionCts.Token));
+
+        // Published last: everything teardown releases must already exist.
+        var cts = new CancellationTokenSource();
+        supervisionTask = Task.Run(() => RunAsync(cts.Token));
+        supervisionCts = cts;
 
         InternalLog($"Networker activated for network '{networkName}'.");
     }
@@ -211,12 +191,12 @@ public partial class NoireNetworker : NoireModuleBase<NoireNetworker>
 
     private void StopInternal()
     {
-        var cts = supervisionCts;
+        // Claimed atomically: a deactivation racing disposal tears down once.
+        var cts = Interlocked.Exchange(ref supervisionCts, null);
 
         if (cts == null)
             return;
 
-        supervisionCts = null;
         cts.Cancel();
 
         var task = supervisionTask;
@@ -228,32 +208,23 @@ public partial class NoireNetworker : NoireModuleBase<NoireNetworker>
         FailAllBarriers();
         ClearAllPeersWithEvents();
 
-        // The election mutex is disposed whether or not the loop is confirmed finished, since a role left held
-        // would keep every other instance from electing for the rest of the process. This is safe against a
-        // still-running loop: the mutex serializes its own state and refuses to take the role again once disposed.
+        // Disposed even under a live loop: a held role would block every other election. The mutex refuses the role once disposed.
         election?.Dispose();
         election = null;
         broker = null;
 
-        // The pump is likewise safe under a live loop, since posting to a disposed pump is a no-op, and it must be
-        // disposed unconditionally so that it stops being driven by the framework update.
+        // Disposed unconditionally: posting to a disposed pump does nothing.
         var pumpToDispose = pump;
         pump = null;
         pumpToDispose?.Dispose();
 
-        // Stopped is delivered with the pump already gone: the pump discards its backlog when disposed, so a
-        // Stopped posted through it would never run. With no pump left, SetState dispatches it on this thread
-        // instead, making it the last thing a consumer observes rather than the first thing dropped. Every object
-        // a handler could reach is already in its stopped state by this point: no peers, no hub, and sends refused.
+        // Delivered after the pump is gone, on this thread: a disposed pump drops its backlog, and Stopped must be seen last.
         SetState(NetworkerState.Stopped);
 
         lock (sendGate)
             outbox.Clear();
 
-        // The cancellation source is the one object a running loop keeps reading, since every delay and wait it
-        // starts registers with the token, so it is only disposed once the loop is known to be finished; one that
-        // outlives the wait is left to finalization instead, since disposing it underneath the loop would throw
-        // ObjectDisposedException.
+        // Disposed only once the loop has finished: disposing it underneath the loop would throw.
         if (supervisionEnded)
             cts.Dispose();
         else
@@ -262,8 +233,7 @@ public partial class NoireNetworker : NoireModuleBase<NoireNetworker>
         InternalLog($"Networker stopped for network '{networkName}'.");
     }
 
-    // Waits a bounded time for the supervision loop to finish, and reports whether it is no longer running; bounded
-    // because teardown runs during a plugin unload, which must never block on the network.
+    // Bounded: teardown runs during a plugin unload, which must never block on the network.
     private static bool WaitForSupervisionExit(Task? task)
     {
         if (task == null)
@@ -275,28 +245,21 @@ public partial class NoireNetworker : NoireModuleBase<NoireNetworker>
         }
         catch (AggregateException)
         {
-            // The loop ended by faulting or by being cancelled; either way it is finished and touches nothing further.
             return true;
         }
     }
 
     #endregion
 
-    // Forces this networker's deliveries through the framework thread queue even when NoireLib is not initialized,
-    // leaving DrainDeliveries as the only way to run them; read when the module activates. Inline delivery is the
-    // fallback that lets a networker run without a game at all, but it hides the queue, so this is the seam for
-    // exercising the queued path a running game actually takes.
+    // Test seam: queues deliveries without NoireLib. Only DrainDeliveries runs them. Read on activation.
     internal bool ForceQueuedDelivery { get; set; }
 
-    // Runs the deliveries the pump has queued, on the calling thread; the companion to ForceQueuedDelivery, standing
-    // in for the frame that would otherwise drain the pump.
     internal void DrainDeliveries()
         => pump?.Drain();
 
     #region Supervision (election / connection loop)
 
-    // The number of hub elections this instance has attempted since it was created; each attempt costs a dedicated
-    // election thread, so this measures the supervision loop's churn.
+    // Each attempt costs a dedicated thread: this measures the supervision loop's churn.
     internal long ElectionAttempts => Interlocked.Read(ref electionAttempts);
 
     private async Task RunAsync(CancellationToken cancellationToken)
@@ -313,7 +276,6 @@ public partial class NoireNetworker : NoireModuleBase<NoireNetworker>
 
                 var electionLocal = election;
 
-                // The election mutex is gone once teardown has run, and there is nothing left to contend for.
                 if (electionLocal == null)
                     break;
 
@@ -323,11 +285,7 @@ public partial class NoireNetworker : NoireModuleBase<NoireNetworker>
                     ? await RunAsHubAsync(cancellationToken).ConfigureAwait(false)
                     : await RunAsClientAsync(cancellationToken).ConfigureAwait(false);
 
-                // An attempt that reached Ready and then ended means the hub is gone, so the backoff resets and the
-                // next attempt is immediate. An attempt that established nothing backs off instead: every attempt
-                // starts a dedicated thread, since a kernel mutex can only be held by the thread that took it, and
-                // a network that never forms would otherwise re-elect several times a second for the rest of the
-                // session.
+                // An attempt that served the network re-elects at once. One that established nothing backs off: each costs a thread.
                 idleAttempts = reachedReady ? 0 : (idleAttempts + 1);
 
                 if (idleAttempts > 0)
@@ -353,17 +311,13 @@ public partial class NoireNetworker : NoireModuleBase<NoireNetworker>
         }
     }
 
-    // The delay before the next election attempt, after a number of consecutive attempts that established no role: it
-    // doubles from 100 milliseconds up to a two second ceiling, so a hub merely slow to publish its rendezvous still
-    // joins within a few hundred milliseconds, while a network that cannot form settles at one attempt every couple
-    // of seconds rather than ten per second.
+    // Doubles from 100 ms to a 2 s ceiling: a slow hub still joins fast, and a network that cannot form stays quiet.
     internal static TimeSpan ComputeElectionBackoff(int idleAttempts)
     {
         if (idleAttempts <= 1)
             return ElectionRetryBaseDelay;
 
-        // Shifting past the exponent that reaches the ceiling would overflow, and every attempt beyond it waits the
-        // ceiling anyway, so the exponent is capped well before that point.
+        // Capped: shifting further would overflow, and the ceiling is reached long before.
         var doublings = Math.Min(idleAttempts - 1, 16);
         var delayMs = ElectionRetryBaseDelay.TotalMilliseconds * (1L << doublings);
 
@@ -372,7 +326,6 @@ public partial class NoireNetworker : NoireModuleBase<NoireNetworker>
             : TimeSpan.FromMilliseconds(delayMs);
     }
 
-    // Runs the hub role until it can no longer operate, returning whether the network was served before it ended.
     private async Task<bool> RunAsHubAsync(CancellationToken cancellationToken)
     {
         var hub = new HubServer(this, cancellationToken);
@@ -399,18 +352,16 @@ public partial class NoireNetworker : NoireModuleBase<NoireNetworker>
             election?.Release();
         }
 
-        // The hub faulted (it only completes on its own when something went wrong) - brief pause, then re-elect.
+        // The hub only completes on its own after a fault.
         await Task.Delay(200, cancellationToken).ConfigureAwait(false);
         return true;
     }
 
-    // Runs the client role: connects to this machine's hub and holds the connection until it ends, returning whether
-    // the network was served (false when no hub could be reached at all).
     private async Task<bool> RunAsClientAsync(CancellationToken cancellationToken)
     {
         var rendezvous = RendezvousFile.TryRead(NetworkerNames.MapName(networkName!));
 
-        // The hub is mid-startup or mid-failover, so there is nothing to connect to yet.
+        // The hub is mid-startup or mid-failover.
         if (rendezvous == null || rendezvous.Network != networkName)
             return false;
 
@@ -427,8 +378,7 @@ public partial class NoireNetworker : NoireModuleBase<NoireNetworker>
             SetState(NetworkerState.Ready);
             InternalLog($"Joined '{networkName}' as client (hub port {rendezvous.Port}).");
 
-            // The connection is held here for its whole life, ending only when the hub goes away - exactly when
-            // this instance must contend for the vacant role.
+            // Held until the hub goes away, exactly when this instance must contend for the role.
             await client.Completion.WaitAsync(cancellationToken).ConfigureAwait(false);
             return true;
         }
@@ -441,8 +391,7 @@ public partial class NoireNetworker : NoireModuleBase<NoireNetworker>
         }
     }
 
-    // After becoming hub, peers inherited from the previous role re-confirm themselves by reconnecting. Anything not
-    // seen again within the grace period is treated as departed.
+    // Peers inherited from the previous role re-confirm by reconnecting. Unseen ones depart after the grace period.
     private void BeginPeerGenerationSweep(CancellationToken cancellationToken)
     {
         var sweepGeneration = Interlocked.Increment(ref peerGeneration);
@@ -490,10 +439,7 @@ public partial class NoireNetworker : NoireModuleBase<NoireNetworker>
 
     internal NetworkerOptions ActiveOptions => activeOptions ?? options;
 
-    // Moves to a new state and tells consumers about it, doing nothing when the state already holds. The change is
-    // delivered through the pump so it stays ordered against the surrounding peer events and message deliveries; once
-    // the pump is gone (teardown clears it before the final change to Stopped), it is dispatched on the calling
-    // thread instead.
+    // Through the pump, ordered against peer events and messages. Without a pump, on the calling thread.
     private void SetState(NetworkerState newState)
     {
         NetworkerState oldState;
@@ -526,9 +472,7 @@ public partial class NoireNetworker : NoireModuleBase<NoireNetworker>
         }
         else
         {
-            // Barriers are not evaluated here: they only ever complete while Ready, and a state change reaching this
-            // branch means the pump is gone, which only happens once the networker has stopped and teardown has
-            // already failed every pending barrier.
+            // No barrier to evaluate: without a pump the networker has stopped and failed every barrier.
             stateRegistry.Dispatch(0, newState);
             PublishModuleEvent(new NetworkerStateChangedEvent(this, oldState, newState));
         }
@@ -546,7 +490,7 @@ public partial class NoireNetworker : NoireModuleBase<NoireNetworker>
 
                 case NetworkerState.Starting:
                 case NetworkerState.Reelecting:
-                    // Buffer during (re-)election; flushed the moment the network is Ready again.
+                    // Buffered during an election, flushed once Ready.
                     if (outbox.Count < ActiveOptions.OutboundBufferCapacity)
                         outbox.Enqueue(envelope);
                     else
@@ -756,7 +700,7 @@ public partial class NoireNetworker : NoireModuleBase<NoireNetworker>
                 return peer;
         }
 
-        // A message can outrun its sender's presence during joins; hand out a transient peer rather than dropping it.
+        // A message can outrun its sender's presence during a join.
         return new NetworkerPeer(peerId.Value);
     }
 
@@ -773,10 +717,7 @@ public partial class NoireNetworker : NoireModuleBase<NoireNetworker>
 
     #region Logging
 
-    // Internal-visibility logging seam for the Networker's Internal/ classes, which cannot reach the protected
-    // module logging helpers directly. The debug overload takes an interpolated string handler so interpolated
-    // call sites do not build their message while EnableLogging is off; the string, warning and error overloads
-    // forward to the shared module helpers.
+    // For the Internal/ classes. The handler overload builds nothing while EnableLogging is off.
     internal void InternalLog([InterpolatedStringHandlerArgument("")] ref NoireLogHandler message)
     {
         if (message.IsEnabled)

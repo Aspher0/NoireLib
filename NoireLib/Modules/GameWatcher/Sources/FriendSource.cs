@@ -21,10 +21,8 @@ internal sealed class FriendSource : GameWatcherSource
 
     public FriendSource(NoireGameWatcher owner) : base(owner, SourceKind.Friends) { }
 
-    /// <inheritdoc/>
     protected override TimeSpan DefaultPollCadence => TimeSpan.FromSeconds(1);
 
-    /// <inheritdoc/>
     protected override void OnActivate()
     {
         friends.Clear();
@@ -34,7 +32,6 @@ internal sealed class FriendSource : GameWatcherSource
         nextRefreshRequest = DateTimeOffset.MinValue;
     }
 
-    /// <inheritdoc/>
     protected override void OnDeactivate()
     {
         friends.Clear();
@@ -42,7 +39,6 @@ internal sealed class FriendSource : GameWatcherSource
         hasSignature = false;
     }
 
-    /// <inheritdoc/>
     protected override void OnTick(DateTimeOffset now)
     {
         if (!NoireService.ClientState.IsLoggedIn)

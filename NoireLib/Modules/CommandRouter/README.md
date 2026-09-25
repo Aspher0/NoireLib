@@ -46,7 +46,7 @@ var commandRouter = NoireLibMain.AddModule<NoireCommandRouter>();
 
 ### 2. Map Your First Command
 
-`Map` returns a builder for the root command. A leading `/` is added when missing, and the command is lower-cased, so
+`Map` returns a builder for the root command. A leading `/` is added when missing, and the command is lower-cased:
 the spelling Dalamud shows is independent of how it was written here:
 
 ```csharp
@@ -198,7 +198,7 @@ commandRouter?.Map("/myplugin")
 ```
 
 That registers `/mp` as its own Dalamud command, listed as "Alias of /myplugin.", and everything works through it:
-`/mp config`, `/mp help`, arguments, conditions. History records the command the user actually typed, so `/mp` shows
+`/mp config`, `/mp help`, arguments, conditions. History records the command the user actually typed: `/mp` shows
 up as `/mp`. Like `Map`, an alias gains a leading `/` if missing and is lower-cased.
 
 Aliases share their root command's `WithDisplayOrder` and `ShowInDalamudHelp` settings, and are unregistered with it
@@ -247,7 +247,7 @@ sub.Handle(async () => await DoSomethingAsync());
 sub.Handle(async args => await DoSomethingAsync(args.Get<int>("count")));
 ```
 
-An async handler is not awaited on the framework thread; its outcome is reported once the task settles, so history
+An async handler is not awaited on the framework thread; its outcome is reported once the task settles: history
 and events reflect what actually happened.
 
 ### Visibility and Ordering
@@ -300,9 +300,9 @@ sub.AddArgument<string>("name", required: false, defaultValueFactory: () => GetC
 attempted through `Convert.ChangeType`.
 
 Booleans accept `true`/`1`/`yes`/`on` and `false`/`0`/`no`/`off`. Enums are matched case-insensitively by name.
-Numbers are parsed with the invariant culture, so a decimal point is a `.` whatever the user's locale.
+Numbers are parsed with the invariant culture: a decimal point is a `.` whatever the user's locale.
 
-Quoted tokens are kept together, so `/myplugin say "hello there"` is one argument.
+Quoted tokens are kept together: `/myplugin say "hello there"` is one argument.
 
 ### Reading Them
 
@@ -381,10 +381,11 @@ With `EnableAutoHelp` on (the default), help is generated from the declarations.
 - A subcommand with children but no handler prints its listing when typed alone.
 
 The listing shows each command with its aliases as `(aliases: a|b)`, its arguments as `<required>` and `[optional]`,
-its help text, and any argument descriptions, preceded by a legend. A root command's aliases appear the same way next
+its help text, and any argument descriptions, preceded by a legend. The root listing ends with the built-in `help`
+line, as Dalamud's does. A root command's aliases appear the same way next
 to it in the header. Dalamud's `/xlhelp` listing is generated from the same declarations.
 
-A command with a raw handler bypasses subcommand dispatch entirely, so neither subcommands nor the `help` token can
+A command with a raw handler bypasses subcommand dispatch entirely: neither subcommands nor the `help` token can
 run for it; its Dalamud listing therefore shows only its own help text. Turning `EnableAutoHelp` off likewise removes
 the advertised built-in `help` line from Dalamud's listing, since the token no longer dispatches. Toggling it
 refreshes every live registration.
@@ -465,7 +466,7 @@ var commandRouter = NoireLibMain.AddModule(new NoireCommandRouter(
 - `CommandExecutedEvent` - A command handler ran to completion
 - `CommandFailedEvent` - A command handler threw, or its task faulted
 
-Both are published on the framework thread, so a handler can touch game state directly.
+Both are published on the framework thread: a handler can touch game state directly.
 
 ---
 
@@ -490,7 +491,7 @@ Disposing the module unmaps and unregisters everything it owns.
 
 ### Reconfiguring a Live Command
 
-`Map` replaces the previous mapping for a command, so re-mapping is how a command is redefined:
+`Map` replaces the previous mapping for a command: re-mapping is how a command is redefined:
 
 ```csharp
 var commandRouter = NoireLibMain.GetModule<NoireCommandRouter>();
@@ -542,7 +543,7 @@ var commands = NoireLibMain.GetModule<NoireCommandRouter>("PluginCommands");
 - Check the declared type; a value that fails to convert is reported to the user and the handler does not run.
 - Arguments are positional unless `WithUnorderedOptionalArguments` is set.
 - Use quotes for a value containing spaces.
-- Numbers use the invariant culture, so `1.5` parses and `1,5` does not.
+- Numbers use the invariant culture: `1.5` parses and `1,5` does not.
 
 ### History is empty
 - Confirm `MaxHistorySize` is not 0, which disables recording entirely.

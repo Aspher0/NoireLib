@@ -4,43 +4,26 @@ namespace NoireLib.Hooking;
 // signature; two in different classes are not.
 internal enum ArgumentClass
 {
-    /// <summary>
-    /// Nothing is returned.
-    /// </summary>
     Void,
 
-    /// <summary>
-    /// A full general-purpose register: any pointer, <c>nint</c>, <c>nuint</c>, <c>long</c> or <c>ulong</c>.
-    /// </summary>
+    // Any pointer, nint, nuint, long or ulong.
     Register8,
 
-    /// <summary>
-    /// One byte: <c>bool</c>, <c>byte</c> or <c>sbyte</c>.
-    /// </summary>
+    // bool, byte or sbyte.
     Integer1,
 
-    /// <summary>
-    /// Two bytes: <c>short</c>, <c>ushort</c> or <c>char</c>.
-    /// </summary>
+    // short, ushort or char.
     Integer2,
 
-    /// <summary>
-    /// Four bytes: <c>int</c> or <c>uint</c>.
-    /// </summary>
+    // int or uint.
     Integer4,
 
-    /// <summary>
-    /// A single-precision <c>float</c>, passed in a vector register.
-    /// </summary>
+    // float, passed in a vector register.
     Float4,
 
-    /// <summary>
-    /// A double-precision <c>double</c>, passed in a vector register.
-    /// </summary>
+    // double, passed in a vector register.
     Float8,
 
-    /// <summary>
-    /// A struct or any other type, compared by identity.
-    /// </summary>
+    // A struct or any other type, compared by identity.
     Aggregate,
 }

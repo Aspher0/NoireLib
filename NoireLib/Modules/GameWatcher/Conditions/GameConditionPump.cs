@@ -13,10 +13,7 @@ internal static class GameConditionPump
     private static readonly List<Func<DateTimeOffset, bool>> Waiters = new();
     private static bool attached;
 
-    /// <summary>
-    /// Registers a waiter. The callback is invoked once per framework tick with the current UTC time and
-    /// returns true when the wait completed (the waiter is then removed).
-    /// </summary>
+    // The waiter runs once per framework tick with the UTC time and returns true when its wait completed.
     public static void Register(Func<DateTimeOffset, bool> waiter)
     {
         ArgumentNullException.ThrowIfNull(waiter);
@@ -33,7 +30,6 @@ internal static class GameConditionPump
         }
     }
 
-    /// <summary>The number of active waiters, for diagnostics.</summary>
     public static int ActiveWaiterCount
     {
         get

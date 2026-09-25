@@ -9,6 +9,8 @@ You are reading the documentation for the `NoireChangelogManager` module.
 - [Creating Changelogs](#creating-changelogs)
 - [Displaying the Changelog Window](#displaying-the-changelog-window)
 - [Using Your Own Window](#using-your-own-window)
+- [Skinned Window](#skinned-window)
+- [Localization](#localization)
 - [EventBus Integration](#eventbus-integration)
 - [Advanced Features](#advanced-features)
 - [Troubleshooting](#troubleshooting)
@@ -233,7 +235,19 @@ Button(
 ),
 ```
 
-#### 5. Raw
+#### 5. Effects
+
+A bulleted entry drawn with a `NoireGradient`, a `NoireMotion`, or both (see the UI README). The motion never moves the entries around it.
+
+```csharp
+private static readonly NoireMotion Wiggle = NoireMotion.Create().Scaling(0.97f, 1.04f).Rocking(2.5f);
+
+EffectEntryBullet("Someone moved in.", NoireGradient.Rainbow, Wiggle, indentLevel: 1),
+```
+
+Any entry takes them through its `Gradient` and `Motion` properties.
+
+#### 6. Raw
 
 C# code executed during rendering:
 ```csharp
@@ -321,7 +335,7 @@ public override void Draw()
         foreach (var entry in selected.Entries)
         {
             // entry.Text, TextColor, Icon, IconColor, IsHeader, IsSeparator, IndentLevel, HasBullet,
-            // ButtonText, ButtonAction, IsRaw, RawAction
+            // Gradient, Motion, ButtonText, ButtonAction, IsRaw, RawAction
         }
     }
 
@@ -335,6 +349,51 @@ public override void Draw()
 ```
 
 `ShowChangelogForVersion()` selects the version before opening. The window only reads `SelectedVersion`.
+
+A bullet takes the color of its own text. To draw an entry's `Gradient` and `Motion` the way the built-in window does, open `NoireEffects.Begin(entry.Gradient, entry.Motion)` around its text and bullet.
+
+---
+
+## Skinned Window
+
+Once the plugin registers skins (`NoireSkins.Register`, see the UI README), every open path shows `NoireChangelogWindow`
+instead of the built-in window: the same version selector, entries and footer, as components the user can arrange, in
+the active skin's frame. A custom window set with `SetCustomWindow` still wins. A window the active skin presents as
+`Presentation.Hidden` is passed over, down to the built-in window.
+
+```csharp
+public sealed class GlassSkin : NoireSkin
+{
+    public GlassSkin() : base("glass", L.Glass) => View<NoireChangelogWindow, GlassChangelogView>();
+}
+
+public sealed class GlassChangelogView : NoireView<NoireChangelogWindow>
+{
+    protected override void Draw(NoireChangelogWindow window) => painter.Draw(window.Manager);   // Versions, SelectedVersion
+}
+```
+
+The built-in window stays in use for a plugin that registers no skin.
+
+---
+
+## Localization
+
+Every title, description, entry text and button text of a changelog is a declared text (see the Localizer README's
+Declared Texts): the translation editor lists it and a language file translates it like any other text. Its key is
+the version and a checksum of the text:
+
+```
+# Reworked how animations are refreshed.
+changelog.2.3.0.0.1a2b3c4d = ...
+```
+
+The changelog is written in the source language as before. `Versions` and `SelectedVersion` hold the texts in the
+active language and follow a language switch; a text with no translation shows as written. Entries can be added,
+removed or reordered in a translated version without losing a translation. Editing a text gives it a new key: its
+translation is asked for again instead of showing the translation of the old text; the same text twice in one version
+shares one translation. The build step of the Localizer README's Template and Build Step section carries that old
+translation to the new key, flagged as outdated, and its template lists every key for translators working from files.
 
 ---
 

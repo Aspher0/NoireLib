@@ -1,9 +1,11 @@
 using Dalamud.Interface.Windowing;
 using NoireLib.Core.Modules;
 using NoireLib.Database;
+using NoireLib.UI;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 
 namespace NoireLib.HistoryLogger;
 
@@ -22,20 +24,17 @@ public class NoireHistoryLogger : NoireModuleWithWindowBase<NoireHistoryLogger, 
     private bool persistLogs;
     private string databaseName = DefaultDatabaseName;
     private int entriesVersion;
+    private NoireHistoryLogWindow? skinnedWindow;
 
     private bool allowUserTogglePersistence = false;
     private bool allowUserClearInMemory = true;
     private bool allowUserClearDatabase = true;
     private bool allowManualEntryCreation = false;
 
-    /// <summary>
-    /// The default constructor needed for internal purposes.
-    /// </summary>
+    /// <summary>The default constructor needed for internal purposes.</summary>
     public NoireHistoryLogger() : base() { }
 
-    /// <summary>
-    /// Creates a new instance of the <see cref="NoireHistoryLogger"/> module.
-    /// </summary>
+    /// <summary>Creates a new instance of the <see cref="NoireHistoryLogger"/> module.</summary>
     /// <param name="moduleId">The optional module identifier.</param>
     /// <param name="active">Whether the module should be active upon creation.</param>
     /// <param name="enableLogging">Whether to enable logging for this module.</param>
@@ -60,51 +59,37 @@ public class NoireHistoryLogger : NoireModuleWithWindowBase<NoireHistoryLogger, 
     internal NoireHistoryLogger(ModuleId? moduleId, bool active = true, bool enableLogging = true)
         : base(moduleId, active, enableLogging) { }
 
-    /// <summary>
-    /// Gets whether the module persists logs to a database.
-    /// </summary>
+    /// <summary>Gets whether the module persists logs to a database.</summary>
     public bool PersistLogs => persistLogs;
 
-    /// <summary>
-    /// Gets the database name used for persistent logs.
-    /// </summary>
+    /// <summary>Gets the database name used for persistent logs.</summary>
     public string DatabaseName => databaseName;
 
-    /// <summary>
-    /// Gets or sets the maximum number of entries to keep in memory.
-    /// </summary>
+    /// <summary>Gets or sets the maximum number of entries to keep in memory.</summary>
     public int MaxInMemoryEntries { get; set; } = 2000;
 
-    /// <summary>
-    /// Gets or sets whether the user can toggle database persistence in the UI.
-    /// </summary>
+    /// <summary>Gets or sets whether the user can toggle database persistence in the UI.</summary>
     public bool AllowUserTogglePersistence
     {
         get => allowUserTogglePersistence;
         set => allowUserTogglePersistence = value;
     }
 
-    /// <summary>
-    /// Gets or sets whether the user can clear in-memory entries in the UI.
-    /// </summary>
+    /// <summary>Gets or sets whether the user can clear in-memory entries in the UI.</summary>
     public bool AllowUserClearInMemory
     {
         get => allowUserClearInMemory;
         set => allowUserClearInMemory = value;
     }
 
-    /// <summary>
-    /// Gets or sets whether the user can clear database entries in the UI.
-    /// </summary>
+    /// <summary>Gets or sets whether the user can clear database entries in the UI.</summary>
     public bool AllowUserClearDatabase
     {
         get => allowUserClearDatabase;
         set => allowUserClearDatabase = value;
     }
 
-    /// <summary>
-    /// Gets or sets whether the user can create manual entries in the UI.
-    /// </summary>
+    /// <summary>Gets or sets whether the user can create manual entries in the UI.</summary>
     public bool AllowManualEntryCreation
     {
         get => allowManualEntryCreation;
@@ -121,13 +106,23 @@ public class NoireHistoryLogger : NoireModuleWithWindowBase<NoireHistoryLogger, 
     /// </summary>
     public Window? CustomWindow => CustomDisplayWindow;
 
-    /// <summary>
-    /// Makes <see cref="NoireModuleWithWindowBase{TModule, TWindow}.ShowWindow"/> and the other window methods open
-    /// <paramref name="window"/> in place of the built-in one.<br/>
-    /// The plugin draws the window itself, typically from a <see cref="HistoryLogView"/>. <see langword="null"/> restores the built-in window.
-    /// </summary>
-    /// <param name="window">The plugin's window, or <see langword="null"/>.</param>
-    /// <returns>The module instance for chaining.</returns>
+    // Once the plugin registers skins, the log opens as a skinned window; a custom window still wins.
+    private protected override Window? SkinnedWindow
+    {
+        get
+        {
+            if (skinnedWindow != null || NoireSkins.All.Count == 0 || NoireService.NoireWindowSystem is not { } windows)
+                return skinnedWindow;
+
+            skinnedWindow = new NoireHistoryLogWindow(this);
+            windows.AddWindow(skinnedWindow);
+            return skinnedWindow;
+        }
+    }
+
+    /// <summary>Opens <paramref name="window"/> wherever the log would open. Null restores the built-in window.</summary>
+    /// <param name="window">The plugin's window, typically drawn from a <see cref="HistoryLogView"/>.</param>
+    /// <returns>This module.</returns>
     public NoireHistoryLogger SetCustomWindow(Window? window)
     {
         SetCustomDisplayWindow(window);
@@ -147,9 +142,7 @@ public class NoireHistoryLogger : NoireModuleWithWindowBase<NoireHistoryLogger, 
         return $"{entry.Timestamp:yyyy-MM-dd HH:mm:ss} | {entry.Level} | {entry.Category} | {entry.Message} | {source}";
     }
 
-    /// <summary>
-    /// Formats entries with <see cref="FormatEntry"/>, one per line, for the clipboard or a file.
-    /// </summary>
+    /// <summary>Formats entries with <see cref="FormatEntry"/>, one per line, for the clipboard or a file.</summary>
     /// <param name="entries">The entries to format, in output order.</param>
     /// <returns>The formatted text.</returns>
     public static string FormatEntries(IEnumerable<HistoryLogEntry> entries)
@@ -158,44 +151,27 @@ public class NoireHistoryLogger : NoireModuleWithWindowBase<NoireHistoryLogger, 
         return string.Join(Environment.NewLine, entries.Select(FormatEntry));
     }
 
-    // Lets a reader tell its cached view is current without taking a snapshot.
-    internal int EntriesVersion
-    {
-        get
-        {
-            lock (entryLock)
-                return entriesVersion;
-        }
-    }
+    // Bumped under the entry lock and read without it: a view drawn every frame checks for changes cheaply.
+    internal int EntriesVersion => Volatile.Read(ref entriesVersion);
 
-    /// <summary>
-    /// Gets a snapshot of runtime-only log entries.
-    /// </summary>
+    /// <summary>Gets a snapshot of runtime-only log entries.</summary>
     public IReadOnlyList<HistoryLogEntry> GetRuntimeEntriesSnapshot()
     {
         lock (entryLock)
             return runtimeEntries.ToList();
     }
 
-    /// <summary>
-    /// Gets a snapshot of database-backed log entries.
-    /// </summary>
+    /// <summary>Gets a snapshot of database-backed log entries.</summary>
     public IReadOnlyList<HistoryLogEntry> GetDatabaseEntriesSnapshot()
     {
         lock (entryLock)
             return databaseEntries.ToList();
     }
 
-    /// <summary>
-    /// Removes a log entry from memory, and from the database when persisted, respecting the
-    /// <see cref="AllowUserClearInMemory"/> and <see cref="AllowUserClearDatabase"/> permissions.<br/>
-    /// Pass the entry <see cref="AddEntry(HistoryLogEntry)"/> returned, or one read from a snapshot. A hand-built
-    /// entry is not guaranteed to match the stored one. Persistence stamps it with a database id, and normalization
-    /// can rewrite its fields.
-    /// </summary>
+    /// <summary>Removes an entry, within the clear permissions. Pass an entry the logger returned, not a hand-built one.</summary>
     /// <param name="entry">The entry to remove.</param>
-    /// <returns><see langword="true"/> if an entry was removed.</returns>
-    /// <exception cref="ArgumentNullException">Thrown when <paramref name="entry"/> is <see langword="null"/>.</exception>
+    /// <returns>Whether an entry was removed.</returns>
+    /// <exception cref="ArgumentNullException">When <paramref name="entry"/> is null.</exception>
     public bool RemoveEntry(HistoryLogEntry entry)
     {
         ArgumentNullException.ThrowIfNull(entry);
@@ -228,9 +204,7 @@ public class NoireHistoryLogger : NoireModuleWithWindowBase<NoireHistoryLogger, 
         return removed;
     }
 
-    /// <summary>
-    /// Executes a query against the current history log database.
-    /// </summary>
+    /// <summary>Executes a query against the current history log database.</summary>
     /// <param name="action">The action to perform with the query builder.</param>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="action"/> is <see langword="null"/>.</exception>
     public void ExecuteDatabaseQuery(Action<QueryBuilder<HistoryLogEntryModel>> action)
@@ -241,9 +215,7 @@ public class NoireHistoryLogger : NoireModuleWithWindowBase<NoireHistoryLogger, 
         HistoryLogEntryModel.ExecuteQuery(databaseName, action);
     }
 
-    /// <summary>
-    /// Executes a query against the current history log database and returns a result.
-    /// </summary>
+    /// <summary>Executes a query against the current history log database and returns a result.</summary>
     /// <param name="action">The query builder action.</param>
     /// <returns>The action result.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="action"/> is <see langword="null"/>.</exception>
@@ -255,9 +227,7 @@ public class NoireHistoryLogger : NoireModuleWithWindowBase<NoireHistoryLogger, 
         return HistoryLogEntryModel.ExecuteQuery(databaseName, action);
     }
 
-    /// <summary>
-    /// Initializes the module with optional initialization parameters.
-    /// </summary>
+    /// <summary>Initializes the module with optional initialization parameters.</summary>
     /// <param name="args">The initialization parameters.</param>
     protected override void InitializeModule(params object?[] args)
     {
@@ -288,18 +258,14 @@ public class NoireHistoryLogger : NoireModuleWithWindowBase<NoireHistoryLogger, 
             NoireLogger.LogInfo(this, "History Logger initialized.");
     }
 
-    /// <summary>
-    /// Called when the module is activated.
-    /// </summary>
+    /// <summary>Called when the module is activated.</summary>
     protected override void OnActivated()
     {
         if (EnableLogging)
             NoireLogger.LogInfo(this, "History Logger activated.");
     }
 
-    /// <summary>
-    /// Called when the module is deactivated.
-    /// </summary>
+    /// <summary>Called when the module is deactivated.</summary>
     protected override void OnDeactivated()
     {
         if (DisplayedWindow?.IsOpen == true)
@@ -309,9 +275,7 @@ public class NoireHistoryLogger : NoireModuleWithWindowBase<NoireHistoryLogger, 
             NoireLogger.LogInfo(this, "History Logger deactivated.");
     }
 
-    /// <summary>
-    /// Disposes the module and associated resources.
-    /// </summary>
+    /// <summary>Disposes the module and associated resources.</summary>
     protected override void DisposeInternal()
     {
         lock (entryLock)
@@ -321,11 +285,16 @@ public class NoireHistoryLogger : NoireModuleWithWindowBase<NoireHistoryLogger, 
             autoLogTypes.Clear();
             entriesVersion++;
         }
+
+        if (skinnedWindow != null)
+        {
+            NoireService.NoireWindowSystem?.RemoveWindow(skinnedWindow);
+            skinnedWindow.Dispose();
+            skinnedWindow = null;
+        }
     }
 
-    /// <summary>
-    /// Toggles whether logs are persisted to the database.
-    /// </summary>
+    /// <summary>Toggles whether logs are persisted to the database.</summary>
     /// <param name="persist">Whether to persist logs.</param>
     /// <param name="loadExisting">Whether to load existing database logs into memory.</param>
     /// <returns>The module instance for chaining.</returns>
@@ -346,9 +315,7 @@ public class NoireHistoryLogger : NoireModuleWithWindowBase<NoireHistoryLogger, 
         return this;
     }
 
-    /// <summary>
-    /// Sets whether the user can toggle database persistence in the UI.
-    /// </summary>
+    /// <summary>Sets whether the user can toggle database persistence in the UI.</summary>
     /// <param name="allow">Whether to allow the user to toggle persistence.</param>
     /// <returns>The module instance for chaining.</returns>
     public NoireHistoryLogger SetAllowUserTogglePersistence(bool allow)
@@ -357,9 +324,7 @@ public class NoireHistoryLogger : NoireModuleWithWindowBase<NoireHistoryLogger, 
         return this;
     }
 
-    /// <summary>
-    /// Sets whether the user can clear in-memory entries in the UI.
-    /// </summary>
+    /// <summary>Sets whether the user can clear in-memory entries in the UI.</summary>
     /// <param name="allow">Whether to allow the user to clear in-memory entries.</param>
     /// <returns>The module instance for chaining.</returns>
     public NoireHistoryLogger SetAllowUserClearInMemory(bool allow)
@@ -368,9 +333,7 @@ public class NoireHistoryLogger : NoireModuleWithWindowBase<NoireHistoryLogger, 
         return this;
     }
 
-    /// <summary>
-    /// Sets whether the user can clear database entries in the UI.
-    /// </summary>
+    /// <summary>Sets whether the user can clear database entries in the UI.</summary>
     /// <param name="allow">Whether to allow the user to clear database entries.</param>
     /// <returns>The module instance for chaining.</returns>
     public NoireHistoryLogger SetAllowUserClearDatabase(bool allow)
@@ -379,9 +342,7 @@ public class NoireHistoryLogger : NoireModuleWithWindowBase<NoireHistoryLogger, 
         return this;
     }
 
-    /// <summary>
-    /// Sets whether the user can create manual entries in the UI.
-    /// </summary>
+    /// <summary>Sets whether the user can create manual entries in the UI.</summary>
     /// <param name="allow">Whether to allow manual entry creation.</param>
     /// <returns>The module instance for chaining.</returns>
     public NoireHistoryLogger SetAllowManualEntryCreation(bool allow)
@@ -390,9 +351,7 @@ public class NoireHistoryLogger : NoireModuleWithWindowBase<NoireHistoryLogger, 
         return this;
     }
 
-    /// <summary>
-    /// Overrides the database name used for persistent logs.
-    /// </summary>
+    /// <summary>Overrides the database name used for persistent logs.</summary>
     /// <param name="name">The new database name.</param>
     /// <returns>The module instance for chaining.</returns>
     public NoireHistoryLogger SetDatabaseName(string name)
@@ -408,9 +367,7 @@ public class NoireHistoryLogger : NoireModuleWithWindowBase<NoireHistoryLogger, 
         return this;
     }
 
-    /// <summary>
-    /// Adds a new log entry.
-    /// </summary>
+    /// <summary>Adds a new log entry.</summary>
     /// <param name="message">The log message.</param>
     /// <param name="category">Optional category.</param>
     /// <param name="level">Optional severity level.</param>
@@ -470,9 +427,7 @@ public class NoireHistoryLogger : NoireModuleWithWindowBase<NoireHistoryLogger, 
         return normalized;
     }
 
-    /// <summary>
-    /// Clears stored log entries.
-    /// </summary>
+    /// <summary>Clears stored log entries.</summary>
     public void ClearEntries()
     {
         lock (entryLock)
@@ -482,9 +437,7 @@ public class NoireHistoryLogger : NoireModuleWithWindowBase<NoireHistoryLogger, 
         }
     }
 
-    /// <summary>
-    /// Clears stored database log entries.
-    /// </summary>
+    /// <summary>Clears stored database log entries.</summary>
     public void ClearDatabaseEntries()
     {
         lock (entryLock)
@@ -497,18 +450,14 @@ public class NoireHistoryLogger : NoireModuleWithWindowBase<NoireHistoryLogger, 
             HistoryLogEntryModel.ExecuteQuery(databaseName, builder => builder.Delete());
     }
 
-    /// <summary>
-    /// Retrieves a snapshot of current log entries.
-    /// </summary>
+    /// <summary>Retrieves a snapshot of current log entries.</summary>
     public IReadOnlyList<HistoryLogEntry> GetEntriesSnapshot()
     {
         lock (entryLock)
             return persistLogs ? databaseEntries.ToList() : runtimeEntries.ToList();
     }
 
-    /// <summary>
-    /// Retrieves the list of distinct categories currently stored.
-    /// </summary>
+    /// <summary>Retrieves the list of distinct categories currently stored.</summary>
     public IReadOnlyList<string> GetCategories()
     {
         lock (entryLock)
@@ -518,11 +467,8 @@ public class NoireHistoryLogger : NoireModuleWithWindowBase<NoireHistoryLogger, 
         }
     }
 
-    /// <summary>
-    /// Reloads entries from the database into memory.<br/>
-    /// Entries are loaded oldest first, matching the order in which <see cref="AddEntry(HistoryLogEntry)"/> appends them.
-    /// </summary>
-    /// <param name="replaceExisting">Whether to replace existing entries.</param>
+    /// <summary>Reloads the entries from the database, oldest first.</summary>
+    /// <param name="replaceExisting">Whether to replace the entries in memory.</param>
     public void LoadEntriesFromDatabase(bool replaceExisting)
     {
         // Oldest at index 0. The append path and TrimEntries both assume it.
@@ -540,36 +486,28 @@ public class NoireHistoryLogger : NoireModuleWithWindowBase<NoireHistoryLogger, 
         }
     }
 
-    /// <summary>
-    /// Registers a type for automatic logging of all methods.
-    /// </summary>
+    /// <summary>Registers a type for automatic logging of all methods.</summary>
     public void RegisterTypeForAutoLogging<T>(string? category = null) where T : class
     {
         lock (entryLock)
             autoLogTypes[typeof(T)] = category;
     }
 
-    /// <summary>
-    /// Clears automatic logging registrations.
-    /// </summary>
+    /// <summary>Clears automatic logging registrations.</summary>
     public void ClearAutoLoggingRegistrations()
     {
         lock (entryLock)
             autoLogTypes.Clear();
     }
 
-    /// <summary>
-    /// Creates a proxy around an instance to log method calls.
-    /// </summary>
+    /// <summary>Creates a proxy around an instance to log method calls.</summary>
     public T CreateLoggedProxy<T>(T instance, bool? logAllMethods = null, string? category = null) where T : class
     {
         var (logAll, resolvedCategory) = ResolveProxySettings(typeof(T), logAllMethods, category);
         return NoireHistoryLogProxy.Create(instance, this, logAll, resolvedCategory);
     }
 
-    /// <summary>
-    /// Creates a proxy around a new instance to log method calls.
-    /// </summary>
+    /// <summary>Creates a proxy around a new instance to log method calls.</summary>
     public T CreateLoggedProxy<T>(bool? logAllMethods = null, string? category = null) where T : class, new()
     {
         var (logAll, resolvedCategory) = ResolveProxySettings(typeof(T), logAllMethods, category);

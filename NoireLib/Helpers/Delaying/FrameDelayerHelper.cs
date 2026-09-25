@@ -13,9 +13,6 @@ public static class FrameDelayerHelper
 {
     private static readonly ConcurrentDictionary<string, FrameDelayer> _delayers = new();
 
-    /// <summary>
-    /// Throws an exception if the NoireLib is not initialized.
-    /// </summary>
     static FrameDelayerHelper()
     {
         if (!NoireService.IsInitialized())

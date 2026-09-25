@@ -15,7 +15,7 @@ public partial class NoireGameWatcher
         public DateTimeOffset NextDue { get; set; } = DateTimeOffset.MinValue;
         public NoireSubscriptionToken? Token { get; set; }
 
-        /// <summary>Samples and compares; invokes the callback on change. Returns false when the watcher must be removed.</summary>
+        // Invokes the callback on a change. False removes the watcher.
         public abstract bool Evaluate(NoireGameWatcher owner);
     }
 
@@ -90,6 +90,9 @@ public partial class NoireGameWatcher
 
     private readonly List<ValueWatcherRegistration> valueWatchers = new();
 
+    // Republished under the gate on every change: the tick iterates it without copying.
+    private volatile ValueWatcherRegistration[] valueWatcherSnapshot = Array.Empty<ValueWatcherRegistration>();
+
     // Registers a raw per-tick callback on the value-watcher pump - the plumbing behind scoped value watchers.
     // Internal.
     internal NoireSubscriptionToken WatchTick(Action onTick, TimeSpan? interval, object? owner, string description)
@@ -107,25 +110,21 @@ public partial class NoireGameWatcher
         var token = new NoireSubscriptionToken(null, 0, _ => RemoveValueWatcher(registration));
         registration.Token = token;
 
-        lock (gate)
-            valueWatchers.Add(registration);
-
+        AddValueWatcher(registration);
         return token;
     }
 
     /// <summary>
-    /// Diffs <b>any</b> value you can read, polled per tick or at an interval - the permanent escape hatch:
-    /// game state the library never modeled is still watchable with full semantics.<br/>
-    /// The sampler and the comparison run on the framework thread. The first sample seeds the baseline
-    /// without firing. Returns the same token type as every other subscription.
+    /// Diffs any value you can read, per tick or at an interval, on the framework thread. The first sample seeds the
+    /// baseline without firing.
     /// </summary>
     /// <typeparam name="T">The sampled value type.</typeparam>
     /// <param name="sampler">Reads the current value.</param>
-    /// <param name="onChanged">Invoked with (previous, current) when the value changes.</param>
-    /// <param name="interval">The sampling interval; null = every tick.</param>
-    /// <param name="comparer">An optional equality comparer; defaults to <see cref="EqualityComparer{T}.Default"/>.</param>
-    /// <param name="owner">An optional owner for bulk removal via <see cref="UnsubscribeOwner"/>.</param>
-    /// <param name="description">An optional readable description for logs and diagnostics.</param>
+    /// <param name="onChanged">Called with the previous and current values on a change.</param>
+    /// <param name="interval">The sampling interval, every tick when null.</param>
+    /// <param name="comparer">The equality comparer, <see cref="EqualityComparer{T}.Default"/> when null.</param>
+    /// <param name="owner">The owner the watcher is removed with, see <see cref="UnsubscribeOwner"/>.</param>
+    /// <param name="description">A description for logs and diagnostics.</param>
     /// <returns>A token that stops the watcher when disposed.</returns>
     public NoireSubscriptionToken WatchValue<T>(
         Func<T> sampler,
@@ -151,16 +150,33 @@ public partial class NoireGameWatcher
         var token = new NoireSubscriptionToken(null, 0, _ => RemoveValueWatcher(registration));
         registration.Token = token;
 
-        lock (gate)
-            valueWatchers.Add(registration);
-
+        AddValueWatcher(registration);
         return token;
+    }
+
+    private void AddValueWatcher(ValueWatcherRegistration registration)
+    {
+        lock (gate)
+        {
+            valueWatchers.Add(registration);
+            valueWatcherSnapshot = valueWatchers.ToArray();
+        }
     }
 
     private void RemoveValueWatcher(ValueWatcherRegistration registration)
     {
         lock (gate)
-            valueWatchers.Remove(registration);
+        {
+            if (valueWatchers.Remove(registration))
+                valueWatcherSnapshot = valueWatchers.ToArray();
+        }
+    }
+
+    // Called under the gate by module disposal.
+    private void ClearValueWatchers()
+    {
+        valueWatchers.Clear();
+        valueWatcherSnapshot = Array.Empty<ValueWatcherRegistration>();
     }
 
     private int RemoveValueWatchersByOwner(object owner)
@@ -178,17 +194,7 @@ public partial class NoireGameWatcher
 
     private void TickValueWatchers(DateTimeOffset now)
     {
-        ValueWatcherRegistration[] snapshot;
-
-        lock (gate)
-        {
-            if (valueWatchers.Count == 0)
-                return;
-
-            snapshot = valueWatchers.ToArray();
-        }
-
-        foreach (var watcher in snapshot)
+        foreach (var watcher in valueWatcherSnapshot)
         {
             if (watcher.Interval > TimeSpan.Zero)
             {

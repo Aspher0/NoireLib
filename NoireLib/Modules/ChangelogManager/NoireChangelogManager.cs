@@ -2,37 +2,30 @@ using Dalamud.Interface.ImGuiNotification;
 using Dalamud.Interface.Windowing;
 using NoireLib.Core.Modules;
 using NoireLib.EventBus;
+using NoireLib.Localizer;
+using NoireLib.UI;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 
 namespace NoireLib.Changelog;
 
-/// <summary>
-/// A module that manages and displays changelogs for a plugin.<br/>
-/// Includes a fully automatic version handling, as well as manual management methods.<br/>
-/// Publishes events via <see cref="EventBus"/> for changelog actions.
-/// </summary>
+/// <summary>Manages and displays a plugin's changelogs, with automatic version handling and EventBus events.</summary>
 public class NoireChangelogManager : NoireModuleWithWindowBase<NoireChangelogManager, ChangelogWindow, ChangelogManagerConfigInstance>
 {
     private readonly Dictionary<Version, ChangelogVersion> changelogs = new();
     private ChangelogVersion[] sortedVersions = [];
     private ChangelogVersion? selectedVersion;
+    private NoireChangelogWindow? skinnedWindow;
+    private readonly ChangelogTexts texts = new();
 
-    /// <summary>
-    /// The associated EventBus instance for publishing changelog events.<br/>
-    /// If <see langword="null"/>, no events will be published.
-    /// </summary>
+    /// <summary>The EventBus changelog events are published to, or null for none.</summary>
     public NoireEventBus? EventBus { get; set; } = null;
 
-    /// <summary>
-    /// The default constructor needed for internal purposes.
-    /// </summary>
+    /// <summary>The default constructor needed for internal purposes.</summary>
     public NoireChangelogManager() : base() { }
 
-    /// <summary>
-    /// Creates a new instance of the <see cref="NoireChangelogManager"/> module.
-    /// </summary>
+    /// <summary>Creates a new instance of the <see cref="NoireChangelogManager"/> module.</summary>
     /// <param name="moduleId">The optional module identifier.</param>
     /// <param name="active">Whether the module should be active upon creation.</param>
     /// <param name="enableLogging">Whether to enable logging for this module.</param>
@@ -51,9 +44,7 @@ public class NoireChangelogManager : NoireModuleWithWindowBase<NoireChangelogMan
     internal NoireChangelogManager(ModuleId? moduleId, bool active = true, bool enableLogging = true)
         : base(moduleId, active, enableLogging) { }
 
-    /// <summary>
-    /// Initializes the module with optional initialization parameters.
-    /// </summary>
+    /// <summary>Initializes the module with optional initialization parameters.</summary>
     /// <param name="args">The initialization parameters</param>
     protected override void InitializeModule(params object?[] args)
     {
@@ -100,9 +91,7 @@ public class NoireChangelogManager : NoireModuleWithWindowBase<NoireChangelogMan
     }
 
     private bool shouldAutomaticallyShowChangelog = false;
-    /// <summary>
-    /// If true, the changelog window will automatically show when a new version is detected.
-    /// </summary>
+    /// <summary>If true, the changelog window will automatically show when a new version is detected.</summary>
     public bool ShouldAutomaticallyShowChangelog
     {
         get => shouldAutomaticallyShowChangelog;
@@ -114,9 +103,7 @@ public class NoireChangelogManager : NoireModuleWithWindowBase<NoireChangelogMan
         }
     }
 
-    /// <summary>
-    /// Sets the value of <see cref="ShouldAutomaticallyShowChangelog"/>.
-    /// </summary>
+    /// <summary>Sets the value of <see cref="ShouldAutomaticallyShowChangelog"/>.</summary>
     /// <param name="shouldAutomaticallyShowChangelog">Whether the module should automatically show the changelog window.</param>
     /// <returns>The module instance for chaining.</returns>
     public NoireChangelogManager SetAutomaticallyShowChangelog(bool shouldAutomaticallyShowChangelog)
@@ -127,14 +114,9 @@ public class NoireChangelogManager : NoireModuleWithWindowBase<NoireChangelogMan
 
     #region Window Display
 
-    /// <summary>
-    /// Opens the changelog window on a specific version.<br/>
-    /// <see langword="null"/> or an unknown version selects the latest. With no version at all the window stays closed and a notification is raised.
-    /// </summary>
-    /// <param name="version">The version to show. Defaults to the latest available version.</param>
-    /// <returns>The module instance for chaining.</returns>
-    /// <seealso cref="GetAllVersions"/>
-    /// <seealso cref="GetLatestVersion"/>
+    /// <summary>Opens the changelog on a version, the latest when null or unknown. Without any version it stays closed.</summary>
+    /// <param name="version">The version to show.</param>
+    /// <returns>This module.</returns>
     public NoireChangelogManager ShowChangelogForVersion(Version? version = null)
     {
         var window = DisplayedWindow;
@@ -175,13 +157,23 @@ public class NoireChangelogManager : NoireModuleWithWindowBase<NoireChangelogMan
     /// </summary>
     public Window? CustomWindow => CustomDisplayWindow;
 
-    /// <summary>
-    /// Makes every path that opens the changelog (<see cref="NoireModuleWithWindowBase{TModule, TWindow}.ShowWindow"/>,
-    /// <see cref="ShowChangelogForVersion"/>, the automatic display) open <paramref name="window"/> in place of the built-in one.<br/>
-    /// The plugin draws the window itself from <see cref="Versions"/> and <see cref="SelectedVersion"/>. <see langword="null"/> restores the built-in window.
-    /// </summary>
-    /// <param name="window">The plugin's window, or <see langword="null"/>.</param>
-    /// <returns>The module instance for chaining.</returns>
+    // Once the plugin registers skins, the changelog opens as a skinned window; a custom window still wins.
+    private protected override Window? SkinnedWindow
+    {
+        get
+        {
+            if (skinnedWindow != null || NoireSkins.All.Count == 0 || NoireService.NoireWindowSystem is not { } windows)
+                return skinnedWindow;
+
+            skinnedWindow = new NoireChangelogWindow(this);
+            windows.AddWindow(skinnedWindow);
+            return skinnedWindow;
+        }
+    }
+
+    /// <summary>Opens <paramref name="window"/> wherever the changelog would open. Null restores the built-in window.</summary>
+    /// <param name="window">The plugin's window, drawn from <see cref="Versions"/> and <see cref="SelectedVersion"/>.</param>
+    /// <returns>This module.</returns>
     public NoireChangelogManager SetCustomWindow(Window? window)
     {
         SetCustomDisplayWindow(window);
@@ -192,15 +184,14 @@ public class NoireChangelogManager : NoireModuleWithWindowBase<NoireChangelogMan
 
     #region Selection
 
-    /// <summary>
-    /// Every changelog version, newest first. Cached. Reading it every frame does not allocate.
-    /// </summary>
-    public IReadOnlyList<ChangelogVersion> Versions => sortedVersions;
+    /// <summary>Every version, newest first, in the active language. Cached: reading it every frame allocates nothing.</summary>
+    public IReadOnlyList<ChangelogVersion> Versions => texts.Shown(sortedVersions);
 
     /// <summary>
-    /// The version the changelog window shows, or <see langword="null"/> when no version is available.
+    /// The version the changelog window shows, the same instance <see cref="Versions"/> holds, or <see langword="null"/>
+    /// when no version is available.
     /// </summary>
-    public ChangelogVersion? SelectedVersion => selectedVersion;
+    public ChangelogVersion? SelectedVersion => texts.ShownOf(sortedVersions, selectedVersion);
 
     /// <summary>
     /// Selects the version the changelog window shows, publishing <see cref="ChangelogVersionChangedEvent"/> when it changes.
@@ -244,6 +235,9 @@ public class NoireChangelogManager : NoireModuleWithWindowBase<NoireChangelogMan
 
     internal void RebuildVersions()
     {
+        // The versions' texts are declared now: an edited one gets its old translation back.
+        NoireLanguages.Localizer?.CarryChangelogTexts();
+
         sortedVersions = changelogs.Values.OrderByDescending(v => v.Version).ToArray();
         selectedVersion = sortedVersions.Length > 0 ? sortedVersions[0] : null;
 
@@ -313,9 +307,7 @@ public class NoireChangelogManager : NoireModuleWithWindowBase<NoireChangelogMan
         return this;
     }
 
-    /// <summary>
-    /// Sets the last seen changelog version to the latest available version.
-    /// </summary>
+    /// <summary>Sets the last seen changelog version to the latest available version.</summary>
     /// <returns>The module instance for chaining.</returns>
     public NoireChangelogManager ForceLastSeenVersionToLatest()
     {
@@ -328,9 +320,7 @@ public class NoireChangelogManager : NoireModuleWithWindowBase<NoireChangelogMan
         return this;
     }
 
-    /// <summary>
-    /// Sets the last seen changelog version.
-    /// </summary>
+    /// <summary>Sets the last seen changelog version.</summary>
     /// <param name="version">The version to set as last seen.</param>
     /// <returns>The module instance for chaining.</returns>
     public NoireChangelogManager SetLastSeenVersion(Version version)
@@ -340,9 +330,7 @@ public class NoireChangelogManager : NoireModuleWithWindowBase<NoireChangelogMan
         return this;
     }
 
-    /// <summary>
-    /// Retrieves all changelog versions, ordered from newest to oldest.
-    /// </summary>
+    /// <summary>Retrieves all changelog versions, ordered from newest to oldest.</summary>
     /// <returns>The list of all changelog versions.</returns>
     public IReadOnlyList<ChangelogVersion> GetAllVersions()
     {
@@ -351,9 +339,7 @@ public class NoireChangelogManager : NoireModuleWithWindowBase<NoireChangelogMan
             .ToList();
     }
 
-    /// <summary>
-    /// Retrieves a specific changelog version by its Version object.
-    /// </summary>
+    /// <summary>Retrieves a specific changelog version by its Version object.</summary>
     /// <param name="version">The Version object to retrieve.</param>
     /// <returns>The corresponding <see cref="ChangelogVersion"/> if found, or null.</returns>
     public ChangelogVersion? GetVersion(Version version)
@@ -361,18 +347,14 @@ public class NoireChangelogManager : NoireModuleWithWindowBase<NoireChangelogMan
         return changelogs.GetValueOrDefault(version);
     }
 
-    /// <summary>
-    /// Retrieves the latest changelog version.
-    /// </summary>
+    /// <summary>Retrieves the latest changelog version.</summary>
     /// <returns>The latest version if available, or null.</returns>
     public Version? GetLatestVersion()
     {
         return changelogs.Keys.Max();
     }
 
-    /// <summary>
-    /// Adds or updates a changelog version.
-    /// </summary>
+    /// <summary>Adds or updates a changelog version.</summary>
     /// <param name="version">The <see cref="ChangelogVersion"/> to add or update.</param>
     /// <returns>The module instance for chaining.</returns>
     public NoireChangelogManager AddVersion(ChangelogVersion version)
@@ -382,9 +364,7 @@ public class NoireChangelogManager : NoireModuleWithWindowBase<NoireChangelogMan
         return this;
     }
 
-    /// <summary>
-    /// Adds or updates multiple changelog versions.
-    /// </summary>
+    /// <summary>Adds or updates multiple changelog versions.</summary>
     /// <param name="versions">The list of <see cref="ChangelogVersion"/> to add or update.</param>
     /// <returns>The module instance for chaining.</returns>
     public NoireChangelogManager AddVersions(List<ChangelogVersion> versions)
@@ -400,12 +380,13 @@ public class NoireChangelogManager : NoireModuleWithWindowBase<NoireChangelogMan
     private void AddVersionInternal(ChangelogVersion version)
     {
         changelogs[version.Version] = version;
+
+        // Declared now: the translation editor lists them before the changelog is ever opened.
+        texts.Localize(version);
         PublishEvent(new ChangelogVersionAddedEvent(version.Version));
     }
 
-    /// <summary>
-    /// Removes a changelog version by its Version object.
-    /// </summary>
+    /// <summary>Removes a changelog version by its Version object.</summary>
     /// <param name="version">The Version object to remove.</param>
     /// <returns>True if the version was successfully removed.</returns>
     public bool RemoveVersion(Version version)
@@ -417,9 +398,7 @@ public class NoireChangelogManager : NoireModuleWithWindowBase<NoireChangelogMan
         return removed;
     }
 
-    /// <summary>
-    /// Removes multiple changelog versions by their Version objects.
-    /// </summary>
+    /// <summary>Removes multiple changelog versions by their Version objects.</summary>
     /// <param name="versions">The list of Version objects to remove.</param>
     /// <returns>The number of versions successfully removed.</returns>
     public int RemoveVersions(List<Version> versions)
@@ -439,9 +418,7 @@ public class NoireChangelogManager : NoireModuleWithWindowBase<NoireChangelogMan
         return removedAmount;
     }
 
-    /// <summary>
-    /// Clears all changelog versions.
-    /// </summary>
+    /// <summary>Clears all changelog versions.</summary>
     /// <returns>The module instance for chaining.</returns>
     public NoireChangelogManager ClearVersions()
     {
@@ -500,14 +477,19 @@ public class NoireChangelogManager : NoireModuleWithWindowBase<NoireChangelogMan
         RebuildVersions();
     }
 
-    /// <summary>
-    /// Internal dispose method called when the module is disposed.
-    /// </summary>
+    /// <summary>Internal dispose method called when the module is disposed.</summary>
     protected override void DisposeInternal()
     {
         changelogs.Clear();
         sortedVersions = [];
         selectedVersion = null;
+
+        if (skinnedWindow != null)
+        {
+            NoireService.NoireWindowSystem?.RemoveWindow(skinnedWindow);
+            skinnedWindow.Dispose();
+            skinnedWindow = null;
+        }
 
         if (EnableLogging)
             NoireLogger.LogInfo(this, "Changelog Manager disposed.");

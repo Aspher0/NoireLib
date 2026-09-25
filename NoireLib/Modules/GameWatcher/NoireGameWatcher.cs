@@ -8,36 +8,30 @@ using System.Linq;
 namespace NoireLib.GameWatcher;
 
 /// <summary>
-/// Watches <b>anything and anyone</b>: every character (local player and others), every object, party and
-/// alliance, zones, duties, conditions, chat, combat, cooldowns, statuses, UI addons and inventory - through
-/// one subscription model, one token type, one cost model, and one waiting primitive that plugs directly
-/// into <c>NoireTaskQueue</c>.<br/><br/>
-/// Subscribe through the domain facades (<see cref="Characters"/>, <see cref="Party"/>, <see cref="Zone"/>, …),
-/// query current state through the same facades, and await game state with <see cref="GameCondition"/> /
-/// <see cref="WaitFor{TEvent}"/>. Sources activate on demand: the first subscription touching a source spins
-/// it up, disposing the last token shuts it down.<br/><br/>
-/// Every handler, filter, sampler and wait continuation runs <b>inline on the framework thread</b>.
-/// <b>Never sync-block (<c>.Wait()</c> / <c>.Result</c>) on a watcher task from the framework thread - always await.</b>
+/// Watches characters, objects, party, zones, duties, chat, combat, statuses, addons and inventory. Sources run on demand.
+/// Everything runs on the framework thread: <b>never block on a watcher task there, await it.</b>
 /// </summary>
 public partial class NoireGameWatcher : NoireModuleWithWindowBase<NoireGameWatcher, GameWatcherDiagnosticsWindow>
 {
     private readonly object gate = new();
 
+    // Refcount changes and the activation decision share it: a source never activates twice.
+    private readonly object sourceGate = new();
+
     private NoireSubscriptionRegistry<Type, object> registry = null!;
     private Dictionary<SourceKind, GameWatcherSource> sources = null!;
+
+    // Built once: the tick reads it without locking.
+    private GameWatcherSource[] orderedSources = Array.Empty<GameWatcherSource>();
+
     private GameWatcherOptions options = new();
     private GameWatcherOptions? activeOptions;
     private bool frameworkAttached;
 
-    /// <summary>
-    /// The default constructor needed for internal purposes.<br/>
-    /// Configure through <see cref="Options"/> before activating.
-    /// </summary>
+    /// <summary>The default constructor. Configure <see cref="Options"/> before activating.</summary>
     public NoireGameWatcher() : base((string?)null, false, true) { }
 
-    /// <summary>
-    /// Creates a new game watcher.
-    /// </summary>
+    /// <summary>Creates a new game watcher.</summary>
     /// <param name="options">Optional settings; everything works with none.</param>
     /// <param name="moduleId">Optional module ID for multiple watcher instances.</param>
     /// <param name="active">Whether to activate on creation.</param>
@@ -55,7 +49,6 @@ public partial class NoireGameWatcher : NoireModuleWithWindowBase<NoireGameWatch
             SetActive(true);
     }
 
-    // Constructor for use with AddModule{T}(string?) with . Only used for internal module management.
     internal NoireGameWatcher(ModuleId? moduleId, bool active = true, bool enableLogging = true) : base(moduleId, active, enableLogging) { }
 
     /// <inheritdoc/>
@@ -85,6 +78,8 @@ public partial class NoireGameWatcher : NoireModuleWithWindowBase<NoireGameWatch
             [SourceKind.Toast] = new ToastSource(this),
         };
 
+        orderedSources = sources.Values.ToArray();
+
         Characters = new CharacterWatcher(this);
         Objects = new ObjectWatcher(this);
         Party = new PartyWatcher(this);
@@ -102,8 +97,7 @@ public partial class NoireGameWatcher : NoireModuleWithWindowBase<NoireGameWatch
         Fates = new FateWatcher(this);
         Toasts = new ToastWatcher(this);
 
-        // The diagnostics window needs the NoireLib window system; skip it when running without the game
-        // (unit tests). ShowDiagnostics() registers it lazily in that case.
+        // No window system without the game. ShowDiagnostics registers the window lazily.
         if (NoireService.NoireWindowSystem != null)
             RegisterWindow(new GameWatcherDiagnosticsWindow(this));
     }
@@ -124,10 +118,7 @@ public partial class NoireGameWatcher : NoireModuleWithWindowBase<NoireGameWatch
 
     #region Public state & facades
 
-    /// <summary>
-    /// The options of this watcher. Changes made while the watcher is active require a restart
-    /// (deactivate/activate) to apply.
-    /// </summary>
+    /// <summary>The options. A change applies once the watcher restarts.</summary>
     public GameWatcherOptions Options => options;
 
     internal GameWatcherOptions ActiveOptions => activeOptions ?? options;
@@ -180,11 +171,9 @@ public partial class NoireGameWatcher : NoireModuleWithWindowBase<NoireGameWatch
     /// <summary>Toast facts: normal, quest and error toasts.</summary>
     public ToastWatcher Toasts { get; private set; } = null!;
 
-    /// <summary>
-    /// Sets the watcher options. When the watcher is active, it is restarted so the new options apply.
-    /// </summary>
-    /// <param name="newOptions">The new options.</param>
-    /// <returns>The module instance for chaining.</returns>
+    /// <summary>Sets the options, restarting an active watcher.</summary>
+    /// <param name="newOptions">The options.</param>
+    /// <returns>This module.</returns>
     public NoireGameWatcher SetOptions(GameWatcherOptions newOptions)
     {
         ArgumentNullException.ThrowIfNull(newOptions);
@@ -219,9 +208,9 @@ public partial class NoireGameWatcher : NoireModuleWithWindowBase<NoireGameWatch
             frameworkAttached = true;
         }
 
-        lock (gate)
+        lock (sourceGate)
         {
-            foreach (var source in sources.Values)
+            foreach (var source in orderedSources)
                 source.ResetFailure();
         }
 
@@ -240,10 +229,12 @@ public partial class NoireGameWatcher : NoireModuleWithWindowBase<NoireGameWatch
             frameworkAttached = false;
         }
 
-        // Deactivating suspends all sources but keeps subscriptions: reactivation resumes them
-        // against a fresh baseline (no synthetic change storm for state that moved while suspended).
-        foreach (var source in sources.Values)
-            source.Deactivate();
+        // Subscriptions survive: reactivation resumes them against a fresh baseline, with no change storm.
+        lock (sourceGate)
+        {
+            foreach (var source in orderedSources)
+                source.Deactivate();
+        }
 
         if (EnableLogging)
             NoireLogger.LogDebug(this, "GameWatcher deactivated. Subscriptions are kept and resume on reactivation.");
@@ -261,13 +252,13 @@ public partial class NoireGameWatcher : NoireModuleWithWindowBase<NoireGameWatch
 
             ledger.Clear();
             keyedEntries.Clear();
-            valueWatchers.Clear();
-            eventBusMirrors.Clear();
+            ClearValueWatchers();
+            ClearEventBusMirrors();
         }
 
         registry.ClearAll();
 
-        foreach (var source in sources.Values)
+        foreach (var source in orderedSources)
             source.DisposeSource();
 
         if (EnableLogging)
@@ -275,16 +266,12 @@ public partial class NoireGameWatcher : NoireModuleWithWindowBase<NoireGameWatch
     }
 
     private void OnFrameworkUpdate(IFramework framework)
+        => TickSources(DateTimeOffset.UtcNow);
+
+    internal void TickSources(DateTimeOffset now)
     {
-        var now = DateTimeOffset.UtcNow;
-
-        GameWatcherSource[] snapshot;
-
-        lock (gate)
-            snapshot = sources.Values.ToArray();
-
-        // Within one tick, sources run in declared order and events dispatch in detection order.
-        foreach (var source in snapshot)
+        // Sources run in declared order, events in detection order.
+        foreach (var source in orderedSources)
             source.Tick(now);
 
         TickValueWatchers(now);
@@ -294,23 +281,20 @@ public partial class NoireGameWatcher : NoireModuleWithWindowBase<NoireGameWatch
 
     #region Demand-driven activation
 
-    // Resolves the effective poll cadence for a source: the configured override, or the source default.
     internal TimeSpan ResolvePollCadence(SourceKind kind, TimeSpan defaultCadence)
         => ActiveOptions.PollCadences.TryGetValue(kind, out var cadence) ? cadence : defaultCadence;
 
-    // Registers interest in a source (refcount up) and starts it when it becomes needed.
     internal void AddInterest(SourceKind kind)
     {
-        lock (gate)
+        lock (sourceGate)
             sources[kind].RefCount++;
 
         ReevaluateSource(kind);
     }
 
-    // Releases interest in a source (refcount down) and stops it when nothing needs it anymore.
     internal void ReleaseInterest(SourceKind kind)
     {
-        lock (gate)
+        lock (sourceGate)
         {
             var source = sources[kind];
             source.RefCount = Math.Max(0, source.RefCount - 1);
@@ -319,27 +303,40 @@ public partial class NoireGameWatcher : NoireModuleWithWindowBase<NoireGameWatch
         ReevaluateSource(kind);
     }
 
-    // Starts or stops one source according to module state, refcount and configuration overrides.
+    // Decision and toggle share one lock. In game, activation seeds baselines on the framework thread.
     internal void ReevaluateSource(SourceKind kind)
     {
-        var source = sources[kind];
-        var desired = ComputeDesiredState(source);
-
-        if (desired && !source.IsRunning)
+        if (NoireService.IsInitialized() && !NoireService.Framework.IsInFrameworkUpdateThread)
         {
-            if (NoireService.IsInitialized())
-                source.Activate();
+            MarshalReevaluation(kind);
+            return;
         }
-        else if (!desired && source.IsRunning)
+
+        lock (sourceGate)
         {
-            source.Deactivate();
+            var source = sources[kind];
+            var desired = ComputeDesiredState(source);
+
+            if (desired && !source.IsRunning)
+            {
+                if (NoireService.IsInitialized() || AllowSourceActivationWithoutGame)
+                    source.Activate();
+            }
+            else if (!desired && source.IsRunning)
+            {
+                source.Deactivate();
+            }
         }
     }
 
+    // Apart: its closure is only allocated on this path.
+    private void MarshalReevaluation(SourceKind kind)
+        => _ = NoireService.Framework.RunOnFrameworkThread(() => ReevaluateSource(kind));
+
     private void ReevaluateAllSources()
     {
-        foreach (var kind in sources.Keys.ToArray())
-            ReevaluateSource(kind);
+        foreach (var source in orderedSources)
+            ReevaluateSource(source.Kind);
     }
 
     private bool ComputeDesiredState(GameWatcherSource source)
@@ -362,7 +359,7 @@ public partial class NoireGameWatcher : NoireModuleWithWindowBase<NoireGameWatch
     private SourceOverride GetSourceOverride(SourceKind kind)
         => ActiveOptions.Sources.TryGetValue(kind, out var configured) ? configured : SourceOverride.Default;
 
-    // Histories only collect while their source runs, so a configured history capacity implies AlwaysOn.
+    // A history only collects while its source runs.
     private bool HasImpliedAlwaysOn(SourceKind kind) => kind switch
     {
         SourceKind.Chat => ActiveOptions.Chat.HistoryCapacity > 0,
@@ -379,8 +376,7 @@ public partial class NoireGameWatcher : NoireModuleWithWindowBase<NoireGameWatch
         }
     }
 
-    // Whether a source is turned off by its configured override. A source that is not disabled is not necessarily
-    // running: it still has to be started.
+    // Not disabled does not mean running: the source may still have to start.
     internal bool IsSourceDisabled(SourceKind kind)
         => GetSourceOverride(kind) == SourceOverride.Disabled;
 
@@ -389,12 +385,21 @@ public partial class NoireGameWatcher : NoireModuleWithWindowBase<NoireGameWatch
 
     internal IReadOnlyDictionary<SourceKind, GameWatcherSource> SourcesView => sources;
 
+    // Test seam: lets a substituted source activate when no game is running.
+    internal bool AllowSourceActivationWithoutGame { get; set; }
+
+    // Test seam: call before anything subscribes.
+    internal void ReplaceSource(GameWatcherSource source)
+    {
+        sources[source.Kind] = source;
+        orderedSources[Array.FindIndex(orderedSources, existing => existing.Kind == source.Kind)] = source;
+    }
+
     #endregion
 
     #region Thread guard
 
-    // Throws when called off the framework thread while the game is available. Queries always read live game state
-    // and must run on the framework thread; use NoireService.Framework.RunOnFrameworkThread to hop.
+    // Queries read live game state. Hop with NoireService.Framework.RunOnFrameworkThread.
     internal static void EnsureFrameworkThread()
     {
         if (NoireService.IsInitialized() && !NoireService.Framework.IsInFrameworkUpdateThread)

@@ -50,7 +50,6 @@ internal sealed class CooldownSource : GameWatcherSource
         return () => System.Threading.Interlocked.Decrement(ref estimateInterest);
     }
 
-    /// <inheritdoc/>
     protected override void OnActivate()
     {
         lock (watchedActions)
@@ -63,13 +62,11 @@ internal sealed class CooldownSource : GameWatcherSource
         lastGcdReady = ReadGcdReady(out _);
     }
 
-    /// <inheritdoc/>
     protected override void OnDeactivate()
     {
         estimates.Clear();
     }
 
-    /// <inheritdoc/>
     protected override void OnTick(DateTimeOffset now)
     {
         if (!NoireService.ClientState.IsLoggedIn)

@@ -14,18 +14,8 @@ using Xunit;
 namespace NoireLib.Tests;
 
 /// <summary>
-/// Game-free tests for the NoireFileWatcher module, locking its delivery contract: notifications are marshaled
-/// through a bounded queue that is drained one delivery at a time, every notification surviving duplicate
-/// suppression is delivered (the queue does not coalesce), delivery falls back to inline when NoireLib is not
-/// initialized, every EventBus event the module publishes goes through that same queue rather than running on the
-/// caller's thread, drops are counted rather than only logged, and no consumer callback runs once the module is
-/// disposed.<br/>
-/// Also locks the watch lifecycle: a bulk enable/disable reports the same per-watch state-changed event a single
-/// toggle does and reports only the watches that actually changed, a removed watch's disposed FileSystemWatcher is
-/// unreachable rather than merely unlikely to be touched, and a registration racing disposal is abandoned instead of
-/// outliving the module.<br/>
-/// And the key index: a key resolves to the watch that registered it last, and retiring a watch only ever retires the
-/// key that still resolves to it, so no removal can leave a registered, running watch that the key no longer reaches.
+/// Locks delivery (bounded queue, no coalescing, inline without NoireLib, counted drops, nothing after disposal), the
+/// watch lifecycle and the key index: a key resolves to the watch that registered it last.
 /// </summary>
 public class NoireFileWatcherTests : IDisposable
 {
@@ -45,7 +35,6 @@ public class NoireFileWatcherTests : IDisposable
             }
             catch
             {
-                // Best effort cleanup.
             }
         }
 
@@ -57,7 +46,6 @@ public class NoireFileWatcherTests : IDisposable
             }
             catch
             {
-                // Best effort cleanup.
             }
         }
 
@@ -70,7 +58,6 @@ public class NoireFileWatcherTests : IDisposable
             }
             catch
             {
-                // Best effort cleanup.
             }
         }
     }
@@ -113,10 +100,7 @@ public class NoireFileWatcherTests : IDisposable
             OccurredAtUtc: occurredAtUtc ?? DateTimeOffset.UtcNow,
             NativeChangeType: WatcherChangeTypes.Changed);
 
-    /// <summary>
-    /// Spins until the condition holds or the timeout elapses. Real filesystem events arrive on their own
-    /// schedule, so an end-to-end assertion has to wait for one rather than assume it has already landed.
-    /// </summary>
+    // Real filesystem events arrive on their own schedule.
     private static bool WaitUntil(Func<bool> condition, int timeoutMs = 5000)
     {
         var stopwatch = Stopwatch.StartNew();
@@ -340,6 +324,105 @@ public class NoireFileWatcherTests : IDisposable
 
     #endregion
 
+    #region Delivery Pump
+
+    [Fact]
+    public void DrainDeliveryQueue_EmptiesTheQueue_DetachesThePump()
+    {
+        var watcher = CreateWatcher(active: true, forceQueuedDelivery: true);
+
+        watcher.IsDeliveryPumpAttached.Should().BeFalse(because: "a module with nothing to deliver must not run per frame");
+
+        watcher.PostDelivery(() => { });
+        watcher.IsDeliveryPumpAttached.Should().BeTrue(because: "a pending delivery needs the framework drain");
+
+        watcher.DrainDeliveryQueue();
+        watcher.IsDeliveryPumpAttached.Should().BeFalse(because: "the drain that empties the queue must detach itself");
+    }
+
+    [Fact]
+    public void DrainDeliveryQueue_DeliveryPostedDuringTheDrain_KeepsThePumpAttached()
+    {
+        var watcher = CreateWatcher(active: true, forceQueuedDelivery: true);
+        var delivered = 0;
+
+        watcher.PostDelivery(() => watcher.PostDelivery(() => delivered++));
+        watcher.DrainDeliveryQueue();
+
+        watcher.IsDeliveryPumpAttached.Should().BeTrue(because: "work posted by a callback waits for the next frame, so the drain must stay attached for it");
+
+        watcher.DrainDeliveryQueue();
+        delivered.Should().Be(1);
+        watcher.IsDeliveryPumpAttached.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Deactivate_DeliversPendingThenDetaches_AndReactivationResumesDelivery()
+    {
+        var watcher = CreateWatcher(active: true, forceQueuedDelivery: true);
+        var delivered = 0;
+
+        watcher.PostDelivery(() => delivered++);
+        watcher.Deactivate();
+        watcher.DrainDeliveryQueue();
+
+        delivered.Should().Be(1, because: "a notification queued before deactivation is still delivered");
+        watcher.IsDeliveryPumpAttached.Should().BeFalse(because: "a deactivated module must not keep draining every frame");
+
+        watcher.Activate();
+        watcher.PostDelivery(() => delivered++);
+        watcher.IsDeliveryPumpAttached.Should().BeTrue(because: "delivery resumes on the next notification after reactivation");
+
+        watcher.DrainDeliveryQueue();
+        delivered.Should().Be(2);
+        watcher.IsDeliveryPumpAttached.Should().BeFalse();
+    }
+
+    [Fact]
+    public void PostDelivery_ConcurrentWithDrains_NeverStrandsADelivery()
+    {
+        var watcher = CreateWatcher(active: true, forceQueuedDelivery: true);
+        var delivered = 0;
+        const int posts = NoireFileWatcher.DeliveryQueueCapacity - 1;
+        var posting = true;
+
+        var poster = Task.Run(() =>
+        {
+            for (var i = 0; i < posts; i++)
+                watcher.PostDelivery(() => Interlocked.Increment(ref delivered));
+            Volatile.Write(ref posting, false);
+        });
+
+        while (Volatile.Read(ref posting))
+            watcher.DrainDeliveryQueue();
+
+        poster.Wait();
+
+        // A queued delivery without the pump attached would never drain in game.
+        if (!watcher.IsDeliveryPumpAttached)
+            delivered.Should().Be(posts, because: "a detached pump with deliveries pending would strand them");
+
+        while (watcher.IsDeliveryPumpAttached)
+            watcher.DrainDeliveryQueue();
+
+        delivered.Should().Be(posts);
+    }
+
+    [Fact]
+    public void Dispose_DetachesThePump_AndALaterPostCannotReattachIt()
+    {
+        var watcher = CreateWatcher(active: true, forceQueuedDelivery: true);
+
+        watcher.PostDelivery(() => { });
+        watcher.Dispose();
+        watcher.IsDeliveryPumpAttached.Should().BeFalse();
+
+        watcher.PostDelivery(() => { });
+        watcher.IsDeliveryPumpAttached.Should().BeFalse(because: "a disposed module must never subscribe to the framework update again");
+    }
+
+    #endregion
+
     #region Disposal
 
     [Fact]
@@ -493,9 +576,7 @@ public class NoireFileWatcherTests : IDisposable
     {
         var watcher = CreateWatcher(forceQueuedDelivery: true);
 
-        // Compiling at all is the assertion: the drop counter is an init-only property in the record body rather than
-        // a new positional parameter, precisely so that it leaves the primary constructor and the generated
-        // Deconstruct alone and cannot break a consumer already deconstructing this record.
+        // Compiling is the assertion: the drop counter is init-only and leaves Deconstruct unchanged.
         var (registeredWatches, enabledWatches, totalRegistrations, totalRemoved, observed, dispatched, errors, duplicates, callbackExceptions)
             = watcher.GetStatistics();
 
@@ -603,9 +684,7 @@ public class NoireFileWatcherTests : IDisposable
 
         watcher.DrainDeliveryQueue();
 
-        // Asserted as a set rather than a sequence: the module orders deliveries by the calls that caused them, and
-        // makes no promise about the order of the watches within one bulk call. Pinning that here would be pinning
-        // the registration index's enumeration order, which is not part of the contract.
+        // A set: the order of watches within one bulk call is not part of the contract.
         published.Should().BeEquivalentTo(new[] { (firstId, false), (secondId, false) },
             because: "a subscriber tracking watch state must be told about a bulk change too, or its view is silently wrong afterwards");
     }
@@ -732,10 +811,7 @@ public class NoireFileWatcherTests : IDisposable
     [Fact]
     public void RemoveWatch_RacingConcurrentStateChanges_NeverSurfacesObjectDisposedException()
     {
-        // The registration index is the retirement marker: every site looks a registration up and touches its
-        // FileSystemWatcher inside one lock acquisition, so a watcher can only be disposed once it is unreachable.
-        // This exercises that invariant under contention. It cannot fail unless the invariant is broken, so it is a
-        // gate rather than a timing assertion, though it samples interleavings rather than proving their absence.
+        // Samples interleavings: a watcher is only disposed once unreachable.
         var watcher = CreateWatcher(active: true);
         var watchIds = new ConcurrentQueue<string>();
 
@@ -833,12 +909,7 @@ public class NoireFileWatcherTests : IDisposable
         watcher.RemoveWatchByKey("only").Should().BeFalse();
     }
 
-    /// <summary>
-    /// A key identifies at most one watch: registering a key resolves and retires whichever watch already holds
-    /// it, inside the same lock acquisition that inserts the new one. Two registrations of one key must never both
-    /// stay live with the index resolving to only one of them; the earlier watch is removed outright, so the index
-    /// always resolves to exactly one live watch or to nothing.
-    /// </summary>
+    /// <summary>A key names one watch: registering it again removes the previous watch outright.</summary>
     [Fact]
     public void Watch_UnderAKeyAlreadyHeld_RemovesThePreviousWatchEntirely()
     {
@@ -923,8 +994,7 @@ public class NoireFileWatcherTests : IDisposable
 
         File.Move(original, Path.Combine(directory, "renamed.txt"));
 
-        // The sentinel is written after the rename, so its arrival proves the watch is live and that the rename's own
-        // events have had their chance to land. Without it the assertion below would pass on a watch that saw nothing.
+        // Written after the rename: its arrival proves the watch is live and the rename's events had their chance.
         File.WriteAllText(Path.Combine(directory, "sentinel.txt"), "content");
 
         WaitUntil(() => received.Any(n => n.Name == "sentinel.txt"))

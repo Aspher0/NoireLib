@@ -13,19 +13,11 @@ using Xunit;
 namespace NoireLib.Tests;
 
 /// <summary>
-/// Game-free tests for the NoireLocalizer module.<br/>
-/// They lock three invariants. First, the cached lookup order is the order the uncached computation would produce, and
-/// every mutation that changes the fallback graph discards it, so a cached order can never outlive the configuration it
-/// was built from. Second, a failed lookup announces itself once per key and requested locale rather than on every
-/// call, while still counting every failure. Third, the default locale is resolved from the persisted source, then any
-/// default locale selected in an earlier session, then the constructor argument, in that order: a selection outranks a
-/// declaration, and a value nobody selected outranks nothing.<br/>
-/// End-to-end resolution (exact hit, fallback hit, miss) is covered alongside them.<br/><br/>
-/// The module is config-backed, and its configuration is reachable without the game: an uninitialized NoireLib makes
-/// the config file path null, so loading and saving log and return false instead of throwing. The instance behind
-/// <see cref="LocalizerConfig"/> is a process-wide singleton, so each test resets it before building a localizer.
+/// Locks the lookup-order cache against every fallback change, one missing-translation event per key and locale, and
+/// the default-locale precedence: persisted source, then an earlier selection, then the constructor argument.
 /// </summary>
 [SupportedOSPlatform("windows")]
+[Collection(LocalizerStateCollection.Name)]
 public class NoireLocalizerTests : IDisposable
 {
     #region Helpers
@@ -47,23 +39,16 @@ public class NoireLocalizerTests : IDisposable
             }
             catch
             {
-                // Best effort cleanup.
             }
         }
 
         ResetPersistedConfiguration();
     }
 
-    /// <summary>
-    /// Returns the cached configuration to the state of a fresh installation, and pins it in the manager cache the way
-    /// an initialized plugin's load does. A localizer applies the persisted configuration while initializing, so values
-    /// a previous test persisted would otherwise decide the next test's locales.
-    /// </summary>
+    // A localizer applies the persisted configuration: a previous test's values would decide this one's locales.
     private static void ResetPersistedConfiguration()
     {
-        // With no plugin behind the library the configuration resolves no path, so its load reports failure and the
-        // manager declines to cache it, handing every caller a fresh instance. Caching it explicitly puts the
-        // localizer and the assertions below on the one instance they share in game.
+        // Without a plugin the manager declines to cache the configuration. Caching it shares one instance, as in game.
         NoireConfigManager.UnloadConfig<LocalizerConfigInstance>();
         var config = new LocalizerConfigInstance();
         NoireConfigManager.AddConfigToCache(typeof(LocalizerConfigInstance), config);
@@ -74,10 +59,6 @@ public class NoireLocalizerTests : IDisposable
         config.HasCustomDefaultLocaleSelection = false;
     }
 
-    /// <summary>
-    /// Builds an inactive, silent localizer with the locales it was asked for. Nothing is applied after construction:
-    /// with no persisted selection, the constructor arguments are what decide the locales.
-    /// </summary>
     private NoireLocalizer MakeLocalizer(string defaultLocale = "en-US", string? currentLocale = null)
     {
         var localizer = new NoireLocalizer(
@@ -90,11 +71,7 @@ public class NoireLocalizerTests : IDisposable
         return localizer;
     }
 
-    /// <summary>
-    /// Runs an action against a known Windows UI culture, so that a test covering
-    /// <see cref="DefaultLocaleSource.Windows"/> asserts the module's rule rather than the culture of whichever machine
-    /// happens to run it.
-    /// </summary>
+    // Pins the Windows UI culture: the test asserts the rule, not the machine running it.
     private static void WithWindowsUiCulture(string locale, Action action)
     {
         var previousCulture = CultureInfo.CurrentUICulture;
@@ -112,29 +89,23 @@ public class NoireLocalizerTests : IDisposable
 
     private static readonly BindingFlags InstanceMembers = BindingFlags.Instance | BindingFlags.NonPublic;
 
-    /// <summary>
-    /// The lookup orders the module has cached, keyed by requested locale.
-    /// </summary>
+    /// <summary>The lookup orders the module has cached, keyed by requested locale.</summary>
     private static Dictionary<string, IReadOnlyList<string>> LookupOrderCache(NoireLocalizer localizer)
         => (Dictionary<string, IReadOnlyList<string>>)typeof(NoireLocalizer)
             .GetField("lookupOrderCache", InstanceMembers)!
             .GetValue(localizer)!;
 
-    /// <summary>
-    /// The order the module serves, which is the cached one once a lookup has populated it.
-    /// </summary>
+    /// <summary>The order the module serves, which is the cached one once a lookup has populated it.</summary>
     private static IReadOnlyList<string> ServedOrder(NoireLocalizer localizer, string locale)
         => (IReadOnlyList<string>)typeof(NoireLocalizer)
             .GetMethod("GetLookupOrderLocked", InstanceMembers)!
             .Invoke(localizer, new object[] { locale })!;
 
-    /// <summary>
-    /// The order computed from scratch, bypassing the cache entirely.
-    /// </summary>
+    /// <summary>The order computed from scratch, bypassing the cache entirely.</summary>
     private static IReadOnlyList<string> FreshlyComputedOrder(NoireLocalizer localizer, string locale)
         => (IReadOnlyList<string>)typeof(NoireLocalizer)
             .GetMethod("BuildLookupOrderLocked", InstanceMembers)!
-            .Invoke(localizer, new object[] { locale })!;
+            .Invoke(localizer, new object[] { locale, true })!;
 
     /// <summary>
     /// Builds a localizer with a chain deep enough that a stale cache is visible: the requested locale has a parent, an
@@ -151,11 +122,7 @@ public class NoireLocalizerTests : IDisposable
 
     #region Default locale precedence
 
-    /// <summary>
-    /// The rule the whole precedence rests on: with nothing selected, the locale the caller declared is the one it
-    /// gets. CustomDefaultLocale is populated from the moment a configuration exists, so a module that restored it
-    /// whenever it was populated could never honour this argument at all.
-    /// </summary>
+    /// <summary>With nothing selected, the declared locale wins, though CustomDefaultLocale is always populated.</summary>
     [Fact]
     public void DefaultLocale_WithNoPersistedSelection_IsTheConstructorArgument()
     {
@@ -167,10 +134,7 @@ public class NoireLocalizerTests : IDisposable
         localizer.DefaultLocale.Should().Be("fr-FR");
     }
 
-    /// <summary>
-    /// A selection is a choice made while running and is what persistence is for, so it outranks a value declared at
-    /// construction and re-read on every start.
-    /// </summary>
+    /// <summary>A selection made while running outranks the declared locale.</summary>
     [Fact]
     public void DefaultLocale_WithAPersistedSelection_OverridesTheConstructorArgument()
     {
@@ -183,10 +147,7 @@ public class NoireLocalizerTests : IDisposable
         localizer.DefaultLocale.Should().Be("de-DE");
     }
 
-    /// <summary>
-    /// The flag is the difference between a stored selection and a stored default, so a locale sitting in the
-    /// custom slot without it must not decide anything.
-    /// </summary>
+    /// <summary>A locale in the custom slot without the selection flag decides nothing.</summary>
     [Fact]
     public void DefaultLocale_WithACustomLocaleThatWasNeverSelected_IsStillTheConstructorArgument()
     {
@@ -224,10 +185,7 @@ public class NoireLocalizerTests : IDisposable
         LocalizerConfig.Instance.HasCustomDefaultLocaleSelection.Should().BeTrue();
     }
 
-    /// <summary>
-    /// Switching the active locale is not selecting a default one. Recording it as such would store the declared
-    /// default under the guise of a choice, and the next session would restore that instead of the argument.
-    /// </summary>
+    /// <summary>Switching the active locale is not selecting a default.</summary>
     [Fact]
     public void SetCurrentLocale_DoesNotRecordADefaultLocaleSelection()
     {
@@ -240,10 +198,7 @@ public class NoireLocalizerTests : IDisposable
             "no default locale was selected, so the constructor argument must keep deciding it");
     }
 
-    /// <summary>
-    /// The end-to-end shape of the rule: a user switching language, then the plugin shipping a different declared
-    /// default. The switch survives, the declaration is honoured, and neither is mistaken for the other.
-    /// </summary>
+    /// <summary>A language switch survives, and a new declared default is still honoured.</summary>
     [Fact]
     public void DefaultLocale_AfterOnlyTheActiveLocaleWasChanged_FollowsTheNewConstructorArgument()
     {
@@ -290,10 +245,7 @@ public class NoireLocalizerTests : IDisposable
         });
     }
 
-    /// <summary>
-    /// A detour through another source must not spend the stored selection: the custom slot still holds what was
-    /// chosen, so going back to Custom restores it rather than falling through to the declaration.
-    /// </summary>
+    /// <summary>Leaving Custom for another source keeps the selection for the return.</summary>
     [Fact]
     public void DefaultLocale_SelectedThenLeftForAnotherSource_IsRestoredOnReturningToCustom()
     {
@@ -364,9 +316,6 @@ public class NoireLocalizerTests : IDisposable
 
     #region Lookup order cache invalidation
 
-    /// <summary>
-    /// Populates the cache so that a following mutation has something stale to discard.
-    /// </summary>
     private static void PrimeCache(NoireLocalizer localizer)
     {
         ServedOrder(localizer, "fr-CA");
@@ -385,10 +334,7 @@ public class NoireLocalizerTests : IDisposable
         ServedOrder(localizer, "fr-CA").Should().Equal("fr-CA", "fr", "ja-JP", "ja", "en-US", "en");
     }
 
-    /// <summary>
-    /// A chain configured for another locale can still be reached from this one, so a fallback change anywhere
-    /// invalidates every cached order rather than just the one that was edited.
-    /// </summary>
+    /// <summary>Any fallback change invalidates every cached order: another locale's chain can reach this one.</summary>
     [Fact]
     public void SetFallbackLocales_ForAnotherLocale_StillInvalidatesTheCachedOrder()
     {
@@ -450,10 +396,7 @@ public class NoireLocalizerTests : IDisposable
             "clearing drops the explicit fallback chains with everything else");
     }
 
-    /// <summary>
-    /// Adding or removing translations cannot change the order of locales to try, so those paths keep the cache.
-    /// This pins that they stay off the invalidation list rather than being forgotten additions to it.
-    /// </summary>
+    /// <summary>Adding translations keeps the cache: they never change the order of locales to try.</summary>
     [Fact]
     public void AddingTranslations_DoesNotInvalidateTheLookupOrderCache()
     {
@@ -549,10 +492,7 @@ public class NoireLocalizerTests : IDisposable
         raised.Select(evt => evt.Key).Should().Equal("FirstAbsentKey", "SecondAbsentKey");
     }
 
-    /// <summary>
-    /// Failing to resolve a key in another locale is a separate fact with its own attempted chain, so it is announced
-    /// separately.
-    /// </summary>
+    /// <summary>A miss in another locale is its own fact, announced separately.</summary>
     [Fact]
     public void MissingTranslation_ForTheSameKeyInAnotherLocale_IsRaisedAgain()
     {

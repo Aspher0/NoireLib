@@ -1,26 +1,17 @@
 using Dalamud.Bindings.ImGui;
-using Dalamud.Interface;
-using Dalamud.Interface.Utility.Raii;
 using NoireLib.Core.Modules;
-using NoireLib.UI;
 using System;
 using System.Numerics;
 
 namespace NoireLib.Changelog;
 
-/// <summary>
-/// Changelog window that displays changelog entries using ImGui.
-/// </summary>
+/// <summary>Changelog window that displays changelog entries using ImGui.</summary>
 public class ChangelogWindow : NoireModuleWindowBase<NoireChangelogManager>
 {
-    /// <summary>
-    /// Gets or sets the name of the display window.
-    /// </summary>
+    /// <summary>Gets or sets the name of the display window.</summary>
     public override string DisplayWindowName { get; set; } = "Changelog";
 
-    /// <summary>
-    /// Constructor for ChangelogWindow.
-    /// </summary>
+    /// <summary>Constructor for ChangelogWindow.</summary>
     /// <param name="noireChangelogManager">The <see cref="NoireChangelogManager"/> instance associated with this window.</param>
     public ChangelogWindow(NoireChangelogManager noireChangelogManager)
         : base(noireChangelogManager, ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse)
@@ -30,9 +21,7 @@ public class ChangelogWindow : NoireModuleWindowBase<NoireChangelogManager>
         UpdateTitleBarButtons();
     }
 
-    /// <summary>
-    /// Reloads the versions from the ChangelogManager and selects the latest one.
-    /// </summary>
+    /// <summary>Reloads the versions from the ChangelogManager and selects the latest one.</summary>
     public void UpdateVersions() => ParentModule.RebuildVersions();
 
     /// <summary>
@@ -49,9 +38,7 @@ public class ChangelogWindow : NoireModuleWindowBase<NoireChangelogManager>
         ParentModule.OnWindowOpened(ParentModule.SelectedVersion!.Version);
     }
 
-    /// <summary>
-    /// Closes the changelog window.
-    /// </summary>
+    /// <summary>Closes the changelog window.</summary>
     public new void CloseWindow()
     {
         if (IsOpen)
@@ -63,348 +50,18 @@ public class ChangelogWindow : NoireModuleWindowBase<NoireChangelogManager>
 
     #region Drawing
 
-    /// <summary>
-    /// Draws the changelog window content.
-    /// </summary>
+    /// <summary>Draws the changelog window content.</summary>
     public override void Draw()
     {
-        DrawVersionSelector();
+        ChangelogDraw.VersionSelector(ParentModule);
         ImGui.Dummy(new Vector2(0, 3));
-        DrawChangelogContent();
+        ChangelogDraw.Content(ParentModule, ImGui.GetContentRegionAvail().Y - 40f);
         ImGui.Dummy(new Vector2(0, 3));
-        DrawFooter();
-    }
-
-    private void DrawVersionSelector()
-    {
-        ImGui.Text("Select Version:");
-        ImGui.SameLine();
-
-        var selectedVersion = ParentModule.SelectedVersion?.Version;
-        var currentChangelog = ParentModule.SelectedVersion;
-
-        ImGui.SetNextItemWidth(200f);
-        var selectedVersionString = selectedVersion?.ToString(4) ?? string.Empty;
-        using (var combo = ImRaii.Combo("##VersionSelector", selectedVersionString, ImGuiComboFlags.HeightRegular))
-        {
-            if (combo)
-            {
-                foreach (var changelog in ParentModule.Versions)
-                {
-                    var version = changelog.Version;
-                    bool isSelected = version == selectedVersion;
-                    var versionString = version.ToString(4);
-                    if (ImGui.Selectable($"{versionString}##version_{versionString}", isSelected))
-                    {
-                        ParentModule.SelectVersion(version);
-                        currentChangelog = ParentModule.SelectedVersion;
-                    }
-
-                    if (isSelected)
-                        ImGui.SetItemDefaultFocus();
-                }
-            }
-        }
-
-        if (currentChangelog != null)
-        {
-            ImGui.SameLine();
-            ImGui.TextDisabled($"({currentChangelog.Date})");
-
-            if (!string.IsNullOrWhiteSpace(currentChangelog.Title))
-            {
-                var availableWidth = ImGui.GetContentRegionAvail().X;
-
-                if (availableWidth < 100f)
-                {
-                    ImGui.NewLine();
-                }
-                else
-                {
-                    ImGui.SameLine();
-                }
-
-                var titleColor = currentChangelog.TitleColor ?? new Vector4(1f, 1f, 1f, 1f);
-                using (var pushed = UiPush.Color(ImGuiCol.Text, titleColor))
-                {
-                    pushed.PushTextWrapPos(ImGui.GetCursorPosX() + ImGui.GetContentRegionAvail().X);
-                    ImGui.TextWrapped($"- {currentChangelog.Title}");
-                }
-            }
-        }
-    }
-
-    private void DrawChangelogContent()
-    {
-        var currentChangelog = ParentModule.SelectedVersion;
-        if (currentChangelog == null)
-        {
-            ImGui.TextDisabled("No changelog available for this version.");
-            return;
-        }
-
-        var availHeight = ImGui.GetContentRegionAvail().Y - 40f; // footer
-
-        var bgColor = new Vector4(0.5f, 0.5f, 0.5f, 0.05f);
-        using (UiPush.Color(ImGuiCol.Border, bgColor))
-        {
-            using (ImRaii.Child("##ChangelogContentChild", new Vector2(0, availHeight), false))
-            {
-                var padding = 5f;
-                ImGui.Dummy(new Vector2(0, padding));
-                // Scales with the global UI scale.
-                using (ImRaii.PushIndent(padding))
-                {
-                    using (UiPush.TextWrapPos(ImGui.GetCursorPosX() + ImGui.GetContentRegionAvail().X - padding))
-                    {
-                        if (!string.IsNullOrWhiteSpace(currentChangelog.Description))
-                        {
-                            ImGui.TextWrapped(currentChangelog.Description);
-                            ImGui.Spacing();
-                            ImGui.Separator();
-                            ImGui.Spacing();
-                        }
-
-                        foreach (var entry in currentChangelog.Entries)
-                        {
-                            DrawChangelogEntry(entry);
-                        }
-                    }
-                }
-
-                ImGui.Dummy(new Vector2(0, padding));
-            }
-        }
-    }
-
-    private void DrawChangelogEntry(ChangelogEntry entry)
-    {
-        if (entry.IsSeparator)
-        {
-            ImGui.Spacing();
-            ImGui.Separator();
-            ImGui.Spacing();
-            return;
-        }
-
-        if (entry.IsRaw)
-        {
-            entry.RawAction?.Invoke();
-            return;
-        }
-
-        if (entry.IsHeader)
-        {
-            ImGui.Spacing();
-
-            var headerIndent = 20f;
-            var headerTotalIndent = entry.IndentLevel * headerIndent;
-
-            if (headerTotalIndent > 0)
-            {
-                var currentPosX = ImGui.GetCursorPosX();
-                ImGui.SetCursorPosX(currentPosX + headerTotalIndent);
-            }
-
-            if (entry.HasBullet)
-            {
-                ImGui.Bullet();
-                ImGui.SameLine();
-            }
-            else if (entry.Icon.HasValue)
-            {
-                using (UiPush.Font(UiBuilder.IconFont))
-                {
-                    var iconColor = entry.IconColor ?? new Vector4(1f, 1f, 1f, 1f);
-                    ImGui.TextColored(iconColor, entry.Icon.Value.ToIconString());
-                }
-                ImGui.SameLine();
-            }
-
-            var headerTextColor = entry.TextColor ?? new Vector4(1f, 1f, 1f, 1f);
-            using (UiPush.Color(ImGuiCol.Text, headerTextColor))
-            {
-                var originalPos = ImGui.GetCursorPos();
-
-                ImGui.SetCursorPos(new Vector2(originalPos.X + 0.5f, originalPos.Y));
-                ImGui.TextUnformatted(entry.Text);
-                ImGui.SetCursorPos(originalPos);
-                ImGui.TextUnformatted(entry.Text);
-            }
-
-            ImGui.Spacing();
-            return;
-        }
-
-        var startPos = ImGui.GetCursorPos();
-        var levelIndent = 20f;
-        var totalIndent = entry.IndentLevel * levelIndent;
-
-        if (totalIndent > 0)
-        {
-            ImGui.SetCursorPosX(startPos.X + totalIndent);
-        }
-
-        var entryTextColor = entry.TextColor ?? new Vector4(1f, 1f, 1f, 1f);
-
-        bool hasButton = !string.IsNullOrWhiteSpace(entry.ButtonText) && entry.ButtonAction != null;
-        bool shouldPlaceButtonOnNewLine = false;
-        var textStartPosX = 0f;
-
-        using (UiPush.Color(ImGuiCol.Text, entryTextColor))
-        {
-
-            float prefixWidth = 0f;
-
-            bool willShowBullet = entry.HasBullet;
-            bool willShowIcon = !entry.HasBullet && entry.Icon.HasValue;
-
-            if (willShowIcon)
-            {
-                using (UiPush.Font(UiBuilder.IconFont))
-                {
-                    prefixWidth = ImGui.CalcTextSize(entry.Icon!.Value.ToIconString()).X + ImGui.GetStyle().ItemSpacing.X;
-                }
-            }
-            else if (willShowBullet)
-            {
-                prefixWidth = ImGui.CalcTextSize("• ").X;
-            }
-
-            if (hasButton)
-            {
-                var buttonWidth = ImGui.CalcTextSize(entry.ButtonText).X + 35f;
-                var availableWidth = ImGui.GetContentRegionAvail().X;
-                var textWidth = ImGui.CalcTextSize(entry.Text ?? string.Empty).X;
-
-                if (textWidth + prefixWidth + buttonWidth + 10f > availableWidth)
-                {
-                    shouldPlaceButtonOnNewLine = true;
-                }
-            }
-
-            if (willShowBullet)
-            {
-                ImGui.Bullet();
-                ImGui.SameLine();
-
-                textStartPosX = ImGui.GetCursorPosX();
-
-                if (shouldPlaceButtonOnNewLine)
-                {
-                    ImGui.TextWrapped(entry.Text);
-                }
-                else
-                {
-                    ImGui.TextUnformatted(entry.Text);
-                }
-            }
-            else if (willShowIcon)
-            {
-                var iconColor = entry.IconColor ?? new Vector4(0.7f, 0.7f, 0.7f, 1f);
-                using (UiPush.Font(UiBuilder.IconFont))
-                {
-                    ImGui.TextColored(iconColor, entry.Icon!.Value.ToIconString());
-                }
-                ImGui.SameLine();
-
-                textStartPosX = ImGui.GetCursorPosX();
-
-                if (shouldPlaceButtonOnNewLine)
-                {
-                    ImGui.TextWrapped(entry.Text);
-                }
-                else
-                {
-                    ImGui.TextUnformatted(entry.Text);
-                }
-            }
-            else
-            {
-                textStartPosX = ImGui.GetCursorPosX();
-
-                if (shouldPlaceButtonOnNewLine)
-                {
-                    ImGui.TextWrapped(entry.Text);
-                }
-                else
-                {
-                    ImGui.TextUnformatted(entry.Text);
-                }
-            }
-        }
-
-        if (hasButton)
-        {
-            if (!shouldPlaceButtonOnNewLine)
-            {
-                ImGui.SameLine();
-            }
-            else
-            {
-                ImGui.SetCursorPosX(textStartPosX);
-            }
-
-            var colorCount = 0;
-
-            if (entry.ButtonColor.HasValue)
-            {
-                ImGui.PushStyleColor(ImGuiCol.Button, entry.ButtonColor.Value);
-                ImGui.PushStyleColor(ImGuiCol.ButtonHovered, entry.ButtonColor.Value * 1.1f);
-                ImGui.PushStyleColor(ImGuiCol.ButtonActive, entry.ButtonColor.Value * 0.9f);
-                colorCount += 3;
-            }
-
-            if (entry.ButtonTextColor.HasValue)
-            {
-                ImGui.PushStyleColor(ImGuiCol.Text, entry.ButtonTextColor.Value);
-                colorCount++;
-            }
-
-            var buttonSize = new Vector2(ImGui.CalcTextSize(entry.ButtonText).X + 20f, 0);
-
-            ImGui.Button(entry.ButtonText, buttonSize);
-
-            if (ImGui.IsItemHovered())
-            {
-                if (ImGui.IsMouseClicked(ImGuiMouseButton.Left))
-                {
-                    entry.ButtonAction?.Invoke(ImGuiMouseButton.Left);
-                }
-                else if (ImGui.IsMouseClicked(ImGuiMouseButton.Right))
-                {
-                    entry.ButtonAction?.Invoke(ImGuiMouseButton.Right);
-                }
-                else if (ImGui.IsMouseClicked(ImGuiMouseButton.Middle))
-                {
-                    entry.ButtonAction?.Invoke(ImGuiMouseButton.Middle);
-                }
-            }
-
-            if (colorCount > 0)
-            {
-                ImGui.PopStyleColor(colorCount);
-            }
-        }
-
-        ImGui.Spacing();
-    }
-
-    private void DrawFooter()
-    {
-        var buttonWidth = 100f;
-        var windowWidth = ImGui.GetWindowWidth();
-
-        ImGui.SetCursorPosX((windowWidth - buttonWidth) * 0.5f);
-
-        if (ImGui.Button("Close", new Vector2(buttonWidth, 0)))
-            CloseWindow();
+        ChangelogDraw.Footer(ParentModule);
     }
 
     #endregion
 
-    /// <summary>
-    /// Disposes resources used by the ChangelogWindow.
-    /// </summary>
+    /// <summary>Disposes resources used by the ChangelogWindow.</summary>
     public override void Dispose() { /* no-op */ }
 }

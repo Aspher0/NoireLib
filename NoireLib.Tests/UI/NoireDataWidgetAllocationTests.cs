@@ -56,15 +56,9 @@ public sealed class NoireDataWidgetAllocationTests : IClassFixture<UiHarness>
     [Fact]
     public void Table_AllocatesNothing()
     {
-        // Four warm-up frames rather than the usual two, because a table settles over more of them than other widgets
-        // do: ImGui resolves the column widths and clears the sort specs over the first frames, and the widget captures
-        // its own column geometry on the first frame that has rows. At two frames this reads 112 bytes that are not a
-        // per-frame cost, which is the harness reporting settling rather than steady state.
+        // Four frames: a table settles its column widths and sort specs over more frames than other widgets.
         var result = harness.Draw(static () => SmallTable.Draw(), warmUpFrames: 4);
 
-        // 232 bytes a frame before this, none of it per row. Two causes: the frame, the table and the search box each
-        // built their id by interpolation on every frame, and the search box wrote its row counter out twice a frame
-        // for a count that had not moved. A third, worth more than either, is held by the table column's own test.
         result.AllocatedBytes.Should().Be(0L);
     }
 
@@ -82,7 +76,8 @@ public sealed class NoireDataWidgetAllocationTests : IClassFixture<UiHarness>
     [Fact]
     public void Reorder_AllocatesNothing()
     {
-        var result = harness.Draw(static () => ShortList.Draw(), warmUpFrames: 2);
+        // A shape is recorded for replay the second frame its size is seen, and this layout settles on the second.
+        var result = harness.Draw(static () => ShortList.Draw(), warmUpFrames: 3);
 
         // 24 bytes a row before this, from three ids interpolated per row per frame: the row itself, its duplicate
         // button and its delete button.
@@ -105,8 +100,7 @@ public sealed class NoireDataWidgetAllocationTests : IClassFixture<UiHarness>
         var screenful = harness.Draw(static () => ScreenfulList.Draw(), warmUpFrames: 2);
         var longList = harness.Draw(static () => LongList.Draw(), warmUpFrames: 2);
 
-        // Both overflow the display, so both paint what fits and nothing beyond it. Before the audit the 500-item list
-        // painted all 500, at 32,296 vertices, every one of them for a row nobody could see.
+        // Both overflow the display: each paints only what fits.
         longList.TotalVtxCount.Should().Be(screenful.TotalVtxCount);
     }
 

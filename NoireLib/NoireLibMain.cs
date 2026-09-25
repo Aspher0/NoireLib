@@ -13,22 +13,16 @@ using NoireDatabase = NoireLib.Database.NoireDatabase;
 
 namespace NoireLib;
 
-/// <summary>
-/// Entry point of NoireLib: initializes the library, manages its modules and disposes it.
-/// </summary>
+/// <summary>Entry point of NoireLib: initializes the library, manages its modules and disposes it.</summary>
 public class NoireLibMain
 {
     private static readonly List<(string Key, Action Callback, int Priority)> OnDisposeCallbacks = new();
 
-    /// <summary>
-    /// NoireLib's own version, read from the assembly.
-    /// </summary>
+    /// <summary>NoireLib's own version, read from the assembly.</summary>
     public static string Version { get; } =
         typeof(NoireLibMain).Assembly.GetName().Version?.ToString(3) ?? "unknown";
 
-    /// <summary>
-    /// Initializes NoireLib services, to be called from the host plugin's constructor.
-    /// </summary>
+    /// <summary>Initializes NoireLib services, to be called from the host plugin's constructor.</summary>
     /// <param name="dalamudPluginInterface">The host plugin's Dalamud plugin interface.</param>
     /// <param name="plugin">The host plugin instance.</param>
     /// <returns>True when the services came up, false when initialization failed.</returns>
@@ -62,14 +56,10 @@ public class NoireLibMain
         return initialized;
     }
 
-    /// <summary>
-    /// Creates a module instance, active and with logging enabled, and adds it for retrieval through
-    /// <see cref="GetModule{T}(string?, int)"/>.
-    /// Several modules of the same type can be added, told apart by <paramref name="moduleId"/> or by zero-based index.
-    /// </summary>
-    /// <typeparam name="T">The type of the module to add.</typeparam>
-    /// <param name="moduleId">An optional id identifying this instance among others of the same type.</param>
-    /// <returns>The added module instance.</returns>
+    /// <summary>Creates and adds an active module. Several of one type are told apart by id or index.</summary>
+    /// <typeparam name="T">The module type.</typeparam>
+    /// <param name="moduleId">The id telling this instance apart.</param>
+    /// <returns>The added module.</returns>
     public static T AddModule<T>(string? moduleId = null) where T : class, INoireModule, new()
     {
         var moduleType = typeof(T);
@@ -121,9 +111,7 @@ public class NoireLibMain
         return instance;
     }
 
-    /// <summary>
-    /// Adds several existing module instances, skipping nulls.
-    /// </summary>
+    /// <summary>Adds several existing module instances, skipping nulls.</summary>
     /// <param name="modules">The module instances to add.</param>
     /// <returns>The added module instances.</returns>
     public static INoireModule[] AddModules(params INoireModule[] modules)
@@ -148,9 +136,7 @@ public class NoireLibMain
         return addedModules.ToArray();
     }
 
-    /// <summary>
-    /// Disposes and removes an added module, found by type and optional id.
-    /// </summary>
+    /// <summary>Disposes and removes an added module, found by type and optional id.</summary>
     /// <typeparam name="T">The type of the module to remove.</typeparam>
     /// <param name="moduleId">The optional id of the module to remove.</param>
     /// <returns>True when removed, false when no module matched or disposal threw.</returns>
@@ -178,9 +164,7 @@ public class NoireLibMain
         return true;
     }
 
-    /// <summary>
-    /// Disposes and removes an added module by its instance.
-    /// </summary>
+    /// <summary>Disposes and removes an added module by its instance.</summary>
     /// <typeparam name="T">The type of the module to remove.</typeparam>
     /// <param name="instance">The module instance to remove.</param>
     /// <returns>True when removed, false when no module matched or disposal threw.</returns>
@@ -211,9 +195,7 @@ public class NoireLibMain
         return true;
     }
 
-    /// <summary>
-    /// Disposes and removes every added module.
-    /// </summary>
+    /// <summary>Disposes and removes every added module.</summary>
     /// <returns>True when every module disposed, false when at least one threw.</returns>
     public static bool ClearAllModules()
     {
@@ -236,14 +218,12 @@ public class NoireLibMain
         return allDisposed;
     }
 
-    /// <summary>
-    /// Whether a module of the given type, and optional id, has been added.
-    /// </summary>
+    /// <summary>Whether a module of the given type, and optional id, has been added.</summary>
     /// <typeparam name="T">The type of the module to check.</typeparam>
     /// <param name="moduleId">The optional id of the module to check.</param>
     /// <returns>True when a matching module is added.</returns>
     public static bool IsModuleAdded<T>(string? moduleId = null) where T : class, INoireModule
-        => !NoireService.ActiveModules.FirstOrDefault(m => m.Type == typeof(T) && (moduleId.IsNullOrEmpty() || m.Module.ModuleId == moduleId)).IsDefault();
+        => FindModule<T>(moduleId, 0) >= 0;
 
     /// <summary>
     /// Whether a module of the given type, and optional id, has been added and is
@@ -254,13 +234,11 @@ public class NoireLibMain
     /// <returns>True when a matching module is added and active.</returns>
     public static bool IsModuleActive<T>(string? moduleId = null) where T : class, INoireModule
     {
-        var added = NoireService.ActiveModules.FirstOrDefault(m => m.Type == typeof(T) && (moduleId.IsNullOrEmpty() || m.Module.ModuleId == moduleId));
-        return added.IsDefault() ? false : added.Module.IsActive;
+        var found = FindModule<T>(moduleId, 0);
+        return found >= 0 && NoireService.ActiveModules[found].Module.IsActive;
     }
 
-    /// <summary>
-    /// Retrieves an added module by its type, optional id and index.
-    /// </summary>
+    /// <summary>Retrieves an added module by its type, optional id and index.</summary>
     /// <typeparam name="T">The type of the module to retrieve.</typeparam>
     /// <param name="moduleId">The id of the module to retrieve, or <see langword="null"/> to match on type alone.</param>
     /// <param name="index">
@@ -269,12 +247,10 @@ public class NoireLibMain
     /// <returns>The matching instance, or null when nothing matches.</returns>
     public static T? GetModule<T>(string? moduleId = null, int index = 0) where T : class, INoireModule
     {
-        var instances = NoireService.ActiveModules.Where(m => m.Type == typeof(T)).ToArray();
+        // Windows ask every frame: the lookup walks the list instead of copying it.
+        var count = CountModules<T>(moduleId);
 
-        if (!moduleId.IsNullOrEmpty())
-            instances = instances.Where(m => m.Module.ModuleId == moduleId).ToArray();
-
-        if (instances.Length == 0)
+        if (count == 0)
             return null;
 
         if (index < 0)
@@ -283,19 +259,53 @@ public class NoireLibMain
             index = 0;
         }
 
-        if (index >= instances.Length)
+        if (index >= count)
         {
             NoireLogger.LogWarning($"Tried to get module of type {typeof(T).FullName} with out-of-range index {index}. Returning the last instance instead.");
-            index = instances.Length - 1;
+            index = count - 1;
         }
 
-        var instance = instances[index];
+        var instance = NoireService.ActiveModules[FindModule<T>(moduleId, index)];
         return instance.IsDefault() ? null : instance.Module as T;
     }
 
-    /// <summary>
-    /// Registers a callback to be invoked when NoireLib is disposed.
-    /// </summary>
+    private static bool IsMatch<T>((Type Type, INoireModule Module) entry, string? moduleId) where T : class, INoireModule
+        => entry.Type == typeof(T) && (moduleId.IsNullOrEmpty() || entry.Module.ModuleId == moduleId);
+
+    private static int CountModules<T>(string? moduleId) where T : class, INoireModule
+    {
+        var modules = NoireService.ActiveModules;
+        var count = 0;
+
+        for (var i = 0; i < modules.Count; i++)
+        {
+            if (IsMatch<T>(modules[i], moduleId))
+                count++;
+        }
+
+        return count;
+    }
+
+    // The list position of the index-th matching module, or -1.
+    private static int FindModule<T>(string? moduleId, int index) where T : class, INoireModule
+    {
+        var modules = NoireService.ActiveModules;
+
+        for (var i = 0; i < modules.Count; i++)
+        {
+            if (!IsMatch<T>(modules[i], moduleId))
+                continue;
+
+            if (index == 0)
+                return i;
+
+            index--;
+        }
+
+        return -1;
+    }
+
+    /// <summary>Registers a callback to be invoked when NoireLib is disposed.</summary>
     /// <param name="key">A key unique among the registered callbacks.</param>
     /// <param name="callback">The action to execute during disposal.</param>
     /// <param name="priority">The invocation order, lowest first.</param>
@@ -319,9 +329,7 @@ public class NoireLibMain
         return true;
     }
 
-    /// <summary>
-    /// Unregisters a disposal callback by its key.
-    /// </summary>
+    /// <summary>Unregisters a disposal callback by its key.</summary>
     /// <param name="key">The key of the callback to unregister.</param>
     /// <returns>True when a callback was found and unregistered.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="key"/> is null or blank.</exception>
@@ -337,9 +345,7 @@ public class NoireLibMain
         return true;
     }
 
-    /// <summary>
-    /// Whether a disposal callback is registered under the given key.
-    /// </summary>
+    /// <summary>Whether a disposal callback is registered under the given key.</summary>
     /// <param name="key">The key to check.</param>
     /// <returns>True when a callback is registered under that key.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="key"/> is null or blank.</exception>

@@ -68,6 +68,14 @@ public static unsafe partial class NoireDraw3D
     private static SceneDepth? sceneDepth;
     private static SceneStencil? sceneStencil; // its stencil plane marks characters
 
+    // The scene depth as the opaque pass left it, before water and translucent passes write their surfaces.
+    private static OpaqueDepthSnapshot? opaqueDepth;
+    private static TranslucentOcclusion translucentOcclusion = TranslucentOcclusion.SeeThrough;
+    private static int opaqueDepthKeepAlive;
+    private static bool frameOpaqueDepthUsable;
+    // Kept this long without see-through content: content that blinks never misses a snapshot.
+    private const int OpaqueDepthKeepAliveFrames = 120;
+
     // Rebuilt on the framework thread once the player leaves the cached region, swapped atomically.
     private sealed class WorldCollisionCache { public NoireLib.Draw3D.Geometry.Mesh Mesh = null!; public Vector3 Center; }
     private static volatile WorldCollisionCache? worldCollision;
@@ -85,6 +93,9 @@ public static unsafe partial class NoireDraw3D
     private static RenderTargetTap? renderTargetTap;
 
     internal static RenderTargetTap? RenderTargetTapForDiagnostics => renderTargetTap;
+
+    // This frame's snapshot, 0 when the frame had none.
+    internal static nint OpaqueDepthTextureForDiagnostics => frameOpaqueDepthUsable && opaqueDepth != null ? opaqueDepth.Texture : 0;
     private static CameraConstantCapture? cameraCapture;
     private static DepthProbe? depthProbe;
     private static bool stencilDebug;
@@ -185,6 +196,16 @@ public static unsafe partial class NoireDraw3D
 
     private static bool enabled = true;
 
+    /// <summary>
+    /// Gets or sets whether water and surfaces drawn after the game's opaque pass hide Draw3D content. SeeThrough by default.
+    /// Materials and shape styles override it.
+    /// </summary>
+    public static TranslucentOcclusion TranslucentOcclusion
+    {
+        get => translucentOcclusion;
+        set => translucentOcclusion = value;
+    }
+
     /// <summary>Gets or sets the 0-1 opacity applied to the whole 3D layer at composite time.</summary>
     public static float LayerOpacity { get; set; } = 1f;
 
@@ -231,6 +252,41 @@ public static unsafe partial class NoireDraw3D
         }
     }
 
+    // Every present. The snapshot is copied only while see-through content drew recently.
+    private static void SyncOpaqueDepthSnapshot()
+    {
+        if (opaqueDepthKeepAlive > 0)
+            opaqueDepthKeepAlive--;
+
+        if (!enabled || opaqueDepthKeepAlive <= 0)
+        {
+            if (renderTargetTap is { OpaqueDepthEnabled: true } idle)
+                idle.OpaqueDepthEnabled = false;
+            return;
+        }
+
+        if (renderTargetTap is { OpaqueDepthEnabled: true } or { OpaqueDepthFaulted: true })
+            return;
+
+        var tap = EnsureRenderTargetTap();
+        if (tap == null)
+            return;
+
+        tap.OpaqueDepthSnapshotter ??= TakeOpaqueDepth;
+        tap.OpaqueDepthEnabled = true;
+    }
+
+    // Render thread, from inside the tap, between two of the game's passes.
+    private static bool TakeOpaqueDepth(nint sceneDepthTexture)
+    {
+        var device = renderDevice;
+        if (disposed || device == null)
+            return false;
+
+        opaqueDepth ??= new OpaqueDepthSnapshot();
+        return opaqueDepth.Take(device, sceneDepthTexture);
+    }
+
     /// <summary>Gets or sets whether the 3D layer keeps rendering while the game UI is hidden by a cutscene, GPose or the user.</summary>
     public static bool KeepDrawingWhenUiHidden
     {
@@ -270,11 +326,8 @@ public static unsafe partial class NoireDraw3D
     /// <summary>Gets or sets the input gate for <see cref="Pick"/>. Pick returns false when it says UI claims the mouse.</summary>
     public static Func<bool>? PickInputGate { get; set; }
 
-    /// <summary>
-    /// Collects nearby game objects as <see cref="Im.ImShapeStyle.ExcludeVolumes"/> cylinders, reading the object
-    /// table. It belongs on the framework or draw thread and not in <see cref="Scene.Scene3D.OnPrepareFrame"/>.
-    /// </summary>
-    /// <param name="filter">Which objects to include, or null for the default character, monster and NPC set.</param>
+    /// <summary>Nearby game objects as exclusion cylinders. Framework or draw thread, never <see cref="Scene.Scene3D.OnPrepareFrame"/>.</summary>
+    /// <param name="filter">The objects to include, or null for characters, monsters and NPCs.</param>
     /// <param name="radiusScale">The multiplier on each object's hitbox radius.</param>
     /// <returns>The exclusion volumes.</returns>
     public static IReadOnlyList<ExcludeVolume> GetActorExclusions(Func<IGameObject, bool>? filter = null, float radiusScale = 1f)
@@ -384,13 +437,10 @@ public static unsafe partial class NoireDraw3D
         return view;
     }
 
-    /// <summary>
-    /// Registers a custom shader pipeline for <see cref="Materials.Material.CustomPipeline"/>, whose HLSL may include
-    /// <c>Common.hlsli</c> and must expose <c>vs</c> and <c>ps</c> entry points over the standard vertex layout.
-    /// </summary>
+    /// <summary>Registers a custom pipeline. Its HLSL may include <c>Common.hlsli</c> and exposes <c>vs</c> and <c>ps</c>.</summary>
     /// <param name="name">The pipeline name materials reference.</param>
     /// <param name="hlslSource">The full HLSL source.</param>
-    /// <returns>True when the pipeline compiled and registered, false on a compile error logged with the compiler output.</returns>
+    /// <returns>Whether it compiled. A compile error is logged.</returns>
     public static bool RegisterPipeline(string name, string hlslSource)
     {
         EnsureInitialized();
@@ -467,14 +517,10 @@ public static unsafe partial class NoireDraw3D
 
     private static readonly List<PickHit> pickScratch = new(16);
 
-    /// <summary>
-    /// Reconstructs, on the render or draw thread, the world-space point of the nearest rendered surface at a screen
-    /// pixel from the game depth buffer, including surfaces with no collision, each call queuing a whole-texture copy
-    /// read back on the next call.
-    /// </summary>
-    /// <param name="screenPx">The screen position in framebuffer pixels.</param>
-    /// <param name="world">Receives the world-space surface point under the cursor.</param>
-    /// <returns>True when a surface was found, false on a fallback camera, open sky, or a read fault.</returns>
+    /// <summary>The world point of the nearest rendered surface at a pixel, collision or not. Render or draw thread.</summary>
+    /// <param name="screenPx">The screen position, in framebuffer pixels.</param>
+    /// <param name="world">The surface point.</param>
+    /// <returns>False on a fallback camera, open sky or a read fault.</returns>
     public static bool TryReadDepthWorld(Vector2 screenPx, out Vector3 world)
     {
         world = default;
@@ -728,6 +774,9 @@ public static unsafe partial class NoireDraw3D
             cameraCapture = null;
             renderTargetTap?.Dispose();
             renderTargetTap = null;
+            opaqueDepth?.Dispose();
+            opaqueDepth = null;
+            opaqueDepthKeepAlive = 0;
             depthProbe?.Dispose();
             depthProbe = null;
             gameDepthTarget?.Dispose();
@@ -845,6 +894,8 @@ public static unsafe partial class NoireDraw3D
         // Must run every present, UI hidden or not, or injection stalls.
         renderTargetTap?.OnPresent((nint)backBuffer.Texture);
 
+        SyncOpaqueDepthSnapshot();
+
         // Idle injection lapses, releasing its per-draw managed callback.
         if (renderTargetTap is { GBufferInjectionEnabled: true } gbufTap && ++gbufferIdleFrames > GBufferIdleFramesBeforeOff)
         {
@@ -876,7 +927,7 @@ public static unsafe partial class NoireDraw3D
         stateGuard!.Capture(ctx);
         try
         {
-            var result = RenderMainScene(device, ctx, in backBuffer, stats, cameraOverride: null, presentGpuVp);
+            var result = RenderMainScene(device, ctx, in backBuffer, stats, cameraOverride: null, presentGpuVp, insideFrame: false);
             if (result.HasContent)
             {
                 CompositeOverBackbuffer(device, ctx, in backBuffer, result.RectCount);
@@ -893,8 +944,11 @@ public static unsafe partial class NoireDraw3D
         }
     }
 
-    private static SceneRenderResult RenderMainScene(RenderDevice device, ID3D11DeviceContext* ctx, in GameRenderSources.BackBufferInfo backBuffer, RenderStats stats, GameRenderSources.CameraData? cameraOverride, Matrix4x4? gpuViewProj)
+    // insideFrame: composited at the injection point, before the frame boundary. Otherwise at present time, after it.
+    private static SceneRenderResult RenderMainScene(RenderDevice device, ID3D11DeviceContext* ctx, in GameRenderSources.BackBufferInfo backBuffer, RenderStats stats, GameRenderSources.CameraData? cameraOverride, Matrix4x4? gpuViewProj, bool insideFrame)
     {
+        frameOpaqueDepthUsable = false;
+
         // Dalamud's hide flags stay held so the draw callback keeps firing.
         if (!keepDrawingWhenUiHidden && IsGameUiHidden)
         {
@@ -1003,6 +1057,10 @@ public static unsafe partial class NoireDraw3D
 
         if (!hasDepth)
             stats.DepthOffFrames++;
+
+        // Only a copy of this frame's own depth texture. A stale one would occlude against last frame's camera.
+        frameOpaqueDepthUsable = hasDepth && opaqueDepth is { Srv: not null } od && renderTargetTap != null
+            && renderTargetTap.HasOpaqueDepth(afterFrameBoundary: !insideFrame) && od.Source == sceneDepth.Texture;
 
         var eye = cam.HasRenderCamera ? cam.Origin : UnprojectEye(invViewProj);
         var reversedZ = !cam.HasRenderCamera || !cam.StandardZ;
@@ -1138,7 +1196,7 @@ public static unsafe partial class NoireDraw3D
 
             scenePass!.BeginCollect(in viewFrame, mainPass: false);
             scenePass.AddScene(view.Scene, stats, depthAvailable: false);
-            scenePass.Execute(device, ctx, in viewFrame, view.Target, view.Depth, null, null, null, 0u, 0f, Vector4.Zero, Vector4.Zero, shaderLibrary!, stateCache!, stats, Wireframe, Lighting);
+            scenePass.Execute(device, ctx, in viewFrame, view.Target, view.Depth, null, null, translucentOcclusion, null, null, 0u, 0f, Vector4.Zero, Vector4.Zero, shaderLibrary!, stateCache!, stats, Wireframe, Lighting);
         }
 
         scenePass!.BeginCollect(in frame, mainPass: true);
@@ -1177,10 +1235,21 @@ public static unsafe partial class NoireDraw3D
         }
 
         var sceneStencilSrv = hasDepth ? sceneStencil.Srv : null; // t3
-        scenePass.Execute(device, ctx, in frame, sceneRt!, privateDepth!, hasDepth ? sceneDepth.Srv : null,
+        var opaqueDepthSrv = frameOpaqueDepthUsable ? opaqueDepth!.Srv : null;
+
+        scenePass.Execute(device, ctx, in frame, sceneRt!, privateDepth!, hasDepth ? sceneDepth.Srv : null, opaqueDepthSrv, translucentOcclusion,
             worldHeightSrv, sceneStencilSrv, CharacterStencilValue, TopSurfaceThreshold, worldHeightRegion, depthMap, shaderLibrary!, stateCache!, stats, Wireframe, Lighting);
 
-        RenderOutlinePass(device, ctx, in frame, hasDepth ? sceneDepth.Srv : null, depthMap, stats);
+        if (scenePass.LastWantedOpaqueDepth)
+        {
+            opaqueDepthKeepAlive = OpaqueDepthKeepAliveFrames;
+            if (scenePass.LastUsedOpaqueDepth)
+                stats.OpaqueDepthFrames++;
+            else if (hasDepth)
+                stats.OpaqueDepthMissedFrames++;
+        }
+
+        RenderOutlinePass(device, ctx, in frame, hasDepth ? sceneDepth.Srv : null, opaqueDepthSrv, depthMap, stats);
 
         stats.MarkSceneDone(ctx);
 
@@ -1252,15 +1321,17 @@ public static unsafe partial class NoireDraw3D
         if (pipeline == null)
             return raw;
 
-        // Translucent items write no private depth; without their own, they would reproject through the game surface
-        // in front of or behind them.
+        // Translucent items write no private depth and would otherwise reproject through the surface behind them.
         layerDepth ??= new DepthTarget();
         if (!scenePass.RenderLayerDepth(device, ctx, layerDepth, sceneRt.Width, sceneRt.Height, lastFrame.ViewProj, shaderLibrary, stateCache!)
             || layerDepth.Srv == null)
             return raw;
 
         temporalResolver ??= new TemporalResolver();
-        var gameDepthSrv = lastFrame.HasDepth && sceneDepth != null ? sceneDepth.Srv : null;
+        // Decal-only pixels reproject through the surface they were painted on. The renderer-wide setting names it.
+        var gameDepthSrv = lastFrame.HasDepth && sceneDepth != null
+            ? frameOpaqueDepthUsable && translucentOcclusion == TranslucentOcclusion.SeeThrough ? opaqueDepth!.Srv : sceneDepth.Srv
+            : null;
         var gameDepthMap = new Vector4(lastDepthMap.X, lastDepthMap.Y, lastFrame.NearPlane, 1f);
         var gameDepthUv = new Vector4(lastFrame.DepthUvScale.X, lastFrame.DepthUvScale.Y, DepthSampleJitterUv.X, DepthSampleJitterUv.Y);
         var resolved = temporalResolver.Resolve(device, ctx, pipeline, stateCache!, raw, layerDepth.Srv, gameDepthSrv, gameDepthMap, gameDepthUv,
@@ -1268,7 +1339,7 @@ public static unsafe partial class NoireDraw3D
         return resolved != null ? resolved : raw;
     }
 
-    private static void RenderOutlinePass(RenderDevice device, ID3D11DeviceContext* ctx, in FrameContext frame, ID3D11ShaderResourceView* sceneDepthSrv, Vector4 depthMap, RenderStats stats)
+    private static void RenderOutlinePass(RenderDevice device, ID3D11DeviceContext* ctx, in FrameContext frame, ID3D11ShaderResourceView* sceneDepthSrv, ID3D11ShaderResourceView* opaqueDepthSrv, Vector4 depthMap, RenderStats stats)
     {
         var pass = scenePass;
         var scene = sceneRt;
@@ -1289,7 +1360,7 @@ public static unsafe partial class NoireDraw3D
 
         // The rim hides where world geometry stands in front.
         var privateDepthValid = privateDepth != null && pass.LastPrivateDepthWritten;
-        pass.RenderOutlineMask(device, ctx, in frame, outlineMaskRt, outlineVisRt, privateDepth!, privateDepthValid, sceneDepthSrv, depthMap, shaders, cache, stats);
+        pass.RenderOutlineMask(device, ctx, in frame, outlineMaskRt, outlineVisRt, privateDepth!, privateDepthValid, sceneDepthSrv, opaqueDepthSrv, translucentOcclusion, depthMap, shaders, cache, stats);
         comp.BlitOutline(device, ctx, outline, cache, outlineMaskRt.Srv, outlineVisRt.Srv, scene.Rtv, scene.Width, scene.Height, pass.MaxOutlineWidthPixels);
     }
 
@@ -1347,7 +1418,7 @@ public static unsafe partial class NoireDraw3D
         try
         {
             // The native UI has not drawn yet and paints over the layer.
-            var result = RenderMainScene(device, ctx, in backBuffer, stats, injectCam, injectGpuVp);
+            var result = RenderMainScene(device, ctx, in backBuffer, stats, injectCam, injectGpuVp, insideFrame: true);
             if (result.HasContent)
             {
                 var composite = shaderLibrary!.GetComposite(device);
@@ -1984,7 +2055,7 @@ public static unsafe partial class NoireDraw3D
         // Commands are global across every plugin linking NoireLib.
         commandRegistered = NoireService.CommandManager.AddHandler(CommandName, new CommandInfo(HandleCommand)
         {
-            HelpMessage = "Draw3D diagnostics: validate | probe | cbprobe [frames] | calibrate [compare] | temporal | lights [mark|baseline|diff|candidates|writes [size|base|diff|list]|off] | gpucam | batchcb | stats | wire | decalshapes | decalvolumes | stencil | heightmap | topsurface | reset | rtlog | framedump [sweep [count]|<from> [count]] | gbuffer | ontop | platedepth | uimask | plates",
+            HelpMessage = "Draw3D diagnostics: validate | probe | cbprobe [frames] | calibrate [compare] | temporal | lights [mark|baseline|diff|candidates|writes [size|base|diff|list]|off] | gpucam | batchcb | stats | wire | decalshapes | decalvolumes | stencil | heightmap | topsurface | reset | rtlog | depthwrites | water | framedump [sweep [count]|<from> [count]] | gbuffer | ontop | platedepth | uimask | plates",
         });
 
         if (!commandRegistered)
@@ -2121,6 +2192,24 @@ public static unsafe partial class NoireDraw3D
                 }
 
                 break;
+            case "depthwrites":
+                if (EnsureRenderTargetTap() is { } censusTap)
+                {
+                    censusTap.ArmDepthCensus();
+                    Print("Draw3D: capturing the next frame's bind sequence and every bind that changes the scene depth. Report in the log. Expect one stalled frame.");
+                }
+                else
+                {
+                    Print("Draw3D: the render-target tap could not be installed (see the log).");
+                }
+
+                break;
+            case "water":
+                TranslucentOcclusion = TranslucentOcclusion == TranslucentOcclusion.SeeThrough ? TranslucentOcclusion.Occlude : TranslucentOcclusion.SeeThrough;
+                Print(TranslucentOcclusion == TranslucentOcclusion.SeeThrough
+                    ? "Draw3D: translucent surfaces = see through - content occludes against the depth the opaque pass left, so it shows under water."
+                    : "Draw3D: translucent surfaces = occlude (A/B) - water and later surfaces hide content like solid geometry.");
+                break;
             case "framedump":
                 HandleFrameDumpCommand(rest);
                 break;
@@ -2208,6 +2297,7 @@ public static unsafe partial class NoireDraw3D
             {
                 FramesRendered = 0, FramesSkippedDisabled = 0, FramesSkippedInitPending = 0, FramesSkippedNoDevice = 0,
                 FramesSkippedNoCamera = 0, FramesSkippedZeroSize = 0, FramesSkippedEmpty = 0, FramesSkippedUiHidden = 0, DepthOffFrames = 0,
+                OpaqueDepthFrames = 0, OpaqueDepthMissedFrames = 0, OpaqueDepthSource = "off",
                 DisposedAssetDraws = 0, ImCommandsDropped = 0, DrawCalls = 0, Instances = 0, Triangles = 0, Batches = 0,
                 ObjectCbUpdates = 0, CulledItems = 0, VisibleItems = 0, ProtectRects = 0, DepthAvailable = false, UsedFallbackCamera = false,
                 DepthSource = "none", SceneGpuMs = 0, CompositeGpuMs = 0,
@@ -2227,6 +2317,9 @@ public static unsafe partial class NoireDraw3D
             FramesSkippedEmpty = s.FramesSkippedEmpty,
             FramesSkippedUiHidden = s.FramesSkippedUiHidden,
             DepthOffFrames = s.DepthOffFrames,
+            OpaqueDepthFrames = s.OpaqueDepthFrames,
+            OpaqueDepthMissedFrames = s.OpaqueDepthMissedFrames,
+            OpaqueDepthSource = DescribeOpaqueDepth(),
             DisposedAssetDraws = s.DisposedAssetDraws,
             ImCommandsDropped = s.ImCommandsDropped,
             DrawCalls = s.DrawCalls,
@@ -2311,6 +2404,9 @@ public static unsafe partial class NoireDraw3D
                   + "far that character actually looks, the comparison is being fed a bad number and the mode cannot work.");
         return sb.ToString();
     }
+
+    private static string DescribeOpaqueDepth()
+        => $"{renderTargetTap?.OpaqueDepthDescription ?? "off"}; copy {opaqueDepth?.Description ?? "none"}; default {translucentOcclusion}";
 
     private static string DescribeDepthSource(bool hasDepth)
         => $"{sceneDepth?.Description ?? "none"}; map: {DepthMapDescription(in lastDepthMap, hasDepth)}; uiMask: {UiMaskDescription}";

@@ -17,6 +17,8 @@ internal sealed unsafe class SceneDepth : IDisposable
 
     public bool IsValid => valid;
 
+    public nint Texture => valid ? lastInfo.Texture : 0;
+
     // Maps display UVs into the texture's actual region under dynamic resolution.
     public Vector2 UvScale { get; private set; } = Vector2.One;
 

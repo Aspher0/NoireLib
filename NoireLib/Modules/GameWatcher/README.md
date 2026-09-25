@@ -95,7 +95,7 @@ Everything on `GameWatcherOptions` is optional:
 - `Combat.HistoryCapacity`: action-effect entries retained in history. Default: `0` (no history).
 - `AddonSafetyPollInterval`: the safety poll for addon node and visibility watchers. Default: `250 ms`.
 - `FriendsRefreshCadence`: how often the friend list is refreshed in the background. Default: a jittered 30-40 seconds.
-- `DistanceHysteresis`: extra yalms on a distance watcher's leave threshold, so a subject on the boundary does not flap. Default: `0.5`.
+- `DistanceHysteresis`: extra yalms on a distance watcher's leave threshold: a subject on the boundary does not flap. Default: `0.5`.
 - `DiagnosticsEventLogCapacity`: recent events retained for the diagnostics window. Default: `100`. `0` disables it.
 
 ### Property Configuration
@@ -130,12 +130,15 @@ active changes nothing until a deactivate/activate cycle; `SetOptions` performs 
 
 ### Source Activation
 
-Sources start and stop on demand, so nothing is configured in the normal case. Two things override that:
+Sources start and stop on demand: nothing is configured in the normal case. Two things override that:
 
 - A **configured history capacity implies always-on** for its source: `Chat.HistoryCapacity` or
   `Combat.HistoryCapacity` keeps its source running.
 - **`SourceOverride.Disabled` beats everything**, including that implied always-on. The contradiction is logged
   rather than guessed at.
+
+Subscribing and disposing are safe from any thread. A source starts and stops on the framework thread: a change
+made from another thread takes effect there.
 
 ```csharp
 var options = new GameWatcherOptions
@@ -199,7 +202,7 @@ bool talkOpen = watcher.Addons.IsReady("Talk");
 PartyState state = watcher.Party.State;
 ```
 
-**A query must run on the framework thread.** It reads live game state, so calling one from a background thread
+**A query must run on the framework thread.** It reads live game state: calling one from a background thread
 throws with a message saying so rather than reading torn data.
 
 ---
@@ -240,7 +243,7 @@ new TaskBuilder("teleport-home")
 builder.CompleteOnGameEvent<SomethingObservedEvent>(watcher, e => e.SourceId == id);
 ```
 
-`CompleteOnGameEvent` builds a **fresh latch per call**, so a retried or re-enqueued task never completes against
+`CompleteOnGameEvent` builds a **fresh latch per call**: a retried or re-enqueued task never completes against
 a stale match. No EventBus is required for any of this.
 
 ---
@@ -265,14 +268,14 @@ watcher.Subscribe<SomethingObservedEvent>(e => ...);
 await watcher.WaitFor<SomethingObservedEvent>(timeout: TimeSpan.FromSeconds(10));
 ```
 
-`Publish` is also the test seam: a simulated event reaches only your handlers, so handler logic is testable
+`Publish` is also the test seam: a simulated event reaches only your handlers: handler logic is testable
 without the game.
 
 ---
 
 ## Presence, at Three Ranges
 
-- **Same area**: the object table is the client's entire view, so `watcher.Characters.OnSpawned(..., scope)` *is*
+- **Same area**: the object table is the client's entire view: `watcher.Characters.OnSpawned(..., scope)` *is*
   the presence event, for zones, housing wards and plots alike.
 - **Sub-areas**: `watcher.Objects.WatchRegion(territoryId, RegionShape.Circle(center, radius), onEntered, onLeft)`
   for territory-bound shapes with hysteresis (`Circle`, `Box`, `Predicate`), and `WatchDistance(radius, ...)` for
@@ -301,8 +304,9 @@ watcher.PublishToEventBus<CharacterDiedEvent>(e => e.Current.Flags.HasFlag(Subje
 eventBus.Subscribe<TerritoryChangedEvent>(e => NoireLogger.LogInfo($"Now in {e.TerritoryId}."));
 ```
 
-Mirroring is opt-in per event type. `PublishToEventBus` returns a token that stops mirroring when disposed, and
-the call is inert (and logged) when no bus is attached.
+Mirroring is opt-in per event type. `PublishToEventBus` returns a token that stops mirroring when disposed. Several
+registrations for one event type publish each event once, when at least one of their filters matches. Without an
+attached bus the call is logged and returns an already inactive token.
 
 ### Available Events
 
@@ -363,7 +367,7 @@ tick durations, live subscriptions, active waits, custom-publish counters and a 
 - **Interest-masked diffing**: the Characters source compares only the fields somebody listens to, and only for
   subjects in somebody's scope. The union mask and union scope are recomputed on subscribe and unsubscribe, not
   per tick.
-- **Compare first, materialize second**: a snapshot is allocated only when something actually changed, so a
+- **Compare first, materialize second**: a snapshot is allocated only when something actually changed: a
   crowded but static scene costs field comparisons rather than GC pressure.
 - Event-driven sources (chat, duty, inventory, conditions, addons, toasts) have **zero** tick cost.
 - The one heavy path is wide-scope status watching in crowds. Dial it down with
@@ -376,7 +380,7 @@ tick durations, live subscriptions, active waits, custom-publish counters and a 
 - **Source isolation**: a source that breaks after a game patch (a changed struct layout, a moved ClientStructs
   member) disables *itself only* and reports in diagnostics; every other source keeps working.
 - **Delivery**: every handler, filter, sampler and wait continuation runs inline on the framework thread.
-- **Frame quantization**: polled facts are accurate to plus or minus one frame, so a value that changes and
+- **Frame quantization**: polled facts are accurate to plus or minus one frame: a value that changes and
   reverts inside one frame is invisible. Native events and hooks are not quantized.
 - **Entity identity**: `EntityId` tracks the object-table *slot*, which is reusable; `ContentId` and `Name` track
   the *person*.
@@ -393,7 +397,7 @@ tick durations, live subscriptions, active waits, custom-publish counters and a 
 
 ### A subscription never fires
 
-- Check the scope. The default is the local player, so a fact about someone else needs `Scope.Party`,
+- Check the scope. The default is the local player: a fact about someone else needs `Scope.Party`,
   `Scope.AllPlayers` or a named scope.
 - Check the source is not `SourceOverride.Disabled` in the options. Subscribing to a disabled source warns once.
 - Check the module is active, and that the token has not been disposed or replaced by a same-`Key` subscription.
@@ -408,14 +412,14 @@ tick durations, live subscriptions, active waits, custom-publish counters and a 
 
 ### An await never returns
 
-- A `GameCondition` wait returns `false` on timeout and `WaitFor` returns `null`; neither throws, so a hang is a
+- A `GameCondition` wait returns `false` on timeout and `WaitFor` returns `null`; neither throws: a hang is a
   wait with no timeout. Pass one.
 - Never sync-block on a watcher task from the framework thread: `.Wait()` and `.Result` deadlock against the very
   thread the continuation needs.
 
 ### Chat or combat history is empty
 
-- History only collects while its source runs, so it needs a `HistoryCapacity` above zero.
+- History only collects while its source runs: it needs a `HistoryCapacity` above zero.
 - If the capacity is set and the history is still empty, the source is explicitly `Disabled`, which wins. That
   contradiction is logged on activation.
 

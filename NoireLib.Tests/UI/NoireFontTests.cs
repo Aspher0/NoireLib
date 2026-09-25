@@ -37,6 +37,24 @@ public sealed class NoireFontTests : IClassFixture<UiHarness>, IDisposable
     }
 
     [Fact]
+    public void Request_KeepsTheSize_AtEveryUiScale_UntilTheFaceIsDisposed()
+    {
+        Assert.SkipWhen(face == null, "No system font to read.");
+
+        var own = NoireFont.FromFile(FontPath);
+        own.Request(15f);
+
+        own.Keeps(own.EmPixels(15f)).Should().BeTrue();
+        own.Keeps(own.EmPixels(16f)).Should().BeFalse("because only requested sizes are kept");
+
+        NoireUI.ScaleOverride = static () => 2f;
+        own.Keeps(own.EmPixels(15f)).Should().BeTrue("because a kept size follows the UI scale");
+
+        own.Dispose();
+        own.Keeps(own.EmPixels(15f)).Should().BeFalse();
+    }
+
+    [Fact]
     public void ReadMetrics_ReadsHeadAndHhea()
     {
         Assert.SkipWhen(face == null, "No system font to read.");

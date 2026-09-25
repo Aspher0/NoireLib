@@ -2,6 +2,7 @@ using Newtonsoft.Json;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -19,9 +20,27 @@ public abstract class NoireDbModelBase
 {
     private static readonly ConcurrentDictionary<string, IReadOnlyCollection<string>> TableColumnsCache = new(StringComparer.OrdinalIgnoreCase);
 
-    // Writes and reads the JSON held inside column values, built via Create(JsonSerializerSettings) so it resolves
-    // settings from the object below alone rather than merging in the process-global DefaultSettings.
-    // TypeNameHandling stays None so a stored value can never name a type into existence when it is read back.
+    // The Casts, Relations, ValidationRules and Columns overrides, read once per concrete model type.
+    private sealed record ModelMetadata(
+        IReadOnlyDictionary<string, DbColumnCast> Casts,
+        IReadOnlyDictionary<string, DbRelationDefinition> Relations,
+        IReadOnlyDictionary<string, IReadOnlyList<DbValidationRuleDefinition>> ValidationRules,
+        IReadOnlyDictionary<string, DbColumnDefinition> Columns);
+
+    private static readonly ConcurrentDictionary<Type, ModelMetadata> MetadataCache = new();
+
+    private ModelMetadata? metadata;
+    private ReadOnlyDictionary<string, object?>? columnValuesView;
+    private ReadOnlyDictionary<string, (object? From, object? To)>? columnChangesView;
+    private ReadOnlyDictionary<string, List<string>>? errorsView;
+
+    private ModelMetadata Metadata => metadata ??= MetadataCache.GetOrAdd(GetType(), static (_, model) => new ModelMetadata(
+        model.Casts,
+        model.Relations,
+        model.ValidationRules,
+        model.Columns), this);
+
+    // Built with Create: no process-global DefaultSettings leak in. TypeNameHandling stays None: a value never names a type.
     private static readonly JsonSerializer ColumnSerializer = CreateColumnSerializer();
 
     private static JsonSerializer CreateColumnSerializer()
@@ -31,14 +50,11 @@ public abstract class NoireDbModelBase
             TypeNameHandling = TypeNameHandling.None,
         });
 
-        // A column holds exactly one JSON document; anything after it means the stored value is corrupt.
         serializer.CheckAdditionalContent = true;
         return serializer;
     }
 
-    // Writes the JSON ToJson returns when given no settings. Separate from ColumnSerializer, which writes the compact
-    // form stored in a column; this one produces the indented form for a reader, built the same way so the output
-    // cannot be reshaped by unrelated code.
+    // The indented form ToJson writes without settings, built the same way.
     private static readonly JsonSerializer DefaultJsonSerializer = JsonSerializer.Create(new JsonSerializerSettings
     {
         Formatting = Formatting.Indented,
@@ -66,9 +82,7 @@ public abstract class NoireDbModelBase
         return ColumnSerializer.Deserialize<T>(jsonReader);
     }
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="NoireDbModelBase"/> class.
-    /// </summary>
+    /// <summary>Initializes a new instance of the <see cref="NoireDbModelBase"/> class.</summary>
     protected NoireDbModelBase()
     {
     }
@@ -82,93 +96,55 @@ public abstract class NoireDbModelBase
         Fill(columns);
     }
 
-    /// <summary>
-    /// Gets a value indicating whether the model (row) exists in the database.
-    /// </summary>
+    /// <summary>Gets a value indicating whether the model (row) exists in the database.</summary>
     public bool Exists { get; protected set; }
 
-    /// <summary>
-    /// Gets the database name used by the model.
-    /// </summary>
+    /// <summary>Gets the database name used by the model.</summary>
     protected abstract string DatabaseName { get; }
 
-    /// <summary>
-    /// Gets the table name used by the model.
-    /// </summary>
+    /// <summary>Gets the table name used by the model.</summary>
     protected abstract string? TableName { get; }
 
-    /// <summary>
-    /// Gets the directory override for the database file path.
-    /// </summary>
+    /// <summary>Gets the directory override for the database file path.</summary>
     protected virtual string? DatabaseDirectoryOverride => null;
 
-    /// <summary>
-    /// Gets a value indicating whether the database should load at plugin initialization.
-    /// </summary>
+    /// <summary>Gets a value indicating whether the database should load at plugin initialization.</summary>
     protected virtual bool LoadDatabaseOnInit { get; } = true;
 
-    /// <summary>
-    /// Gets the resolved table name, falling back to the default when not provided.
-    /// </summary>
+    /// <summary>Gets the resolved table name, falling back to the default when not provided.</summary>
     protected string ResolvedTableName => string.IsNullOrWhiteSpace(TableName) ? GetDefaultTableName() : TableName;
 
-    /// <summary>
-    /// Gets the primary key column name.
-    /// </summary>
+    /// <summary>Gets the primary key column name.</summary>
     protected abstract string PrimaryKey { get; }
 
-    /// <summary>
-    /// Gets the column cast definitions.<br/>
-    /// Represented as a dictionary where the key is the column name and the value is the target type for casting.<br/>
-    /// </summary>
-    protected virtual IReadOnlyDictionary<string, DbColumnCast> Casts =>
-        new Dictionary<string, DbColumnCast>();
+    /// <summary>The column casts, by column name. Read once per model type and cached: it must not depend on instance state.</summary>
+    protected virtual IReadOnlyDictionary<string, DbColumnCast> Casts => ReadOnlyDictionary<string, DbColumnCast>.Empty;
 
-    /// <summary>
-    /// Gets the relation definitions for the model.<br/>
-    /// Represented as a dictionary where the key is the relation name and the value is the relation configuration.
-    /// </summary>
-    protected virtual IReadOnlyDictionary<string, DbRelationDefinition> Relations =>
-        new Dictionary<string, DbRelationDefinition>();
+    /// <summary>The relations, by relation name. Read once per model type and cached: it must not depend on instance state.</summary>
+    protected virtual IReadOnlyDictionary<string, DbRelationDefinition> Relations => ReadOnlyDictionary<string, DbRelationDefinition>.Empty;
 
-    /// <summary>
-    /// Gets the validation rules for model columns.<br/>
-    /// Represented as a dictionary where the key is the column name and the value is a list of validation rules to apply to that column.
-    /// </summary>
+    /// <summary>The validation rules, by column name. Read once per model type and cached: it must not depend on instance state.</summary>
     protected virtual IReadOnlyDictionary<string, IReadOnlyList<DbValidationRuleDefinition>> ValidationRules =>
-        new Dictionary<string, IReadOnlyList<DbValidationRuleDefinition>>();
+        ReadOnlyDictionary<string, IReadOnlyList<DbValidationRuleDefinition>>.Empty;
 
-    /// <summary>
-    /// Gets the column definitions used when creating the table schema.
-    /// </summary>
-    protected virtual IReadOnlyDictionary<string, DbColumnDefinition> Columns => new Dictionary<string, DbColumnDefinition>();
+    /// <summary>The column definitions the table schema is created from. Read once per model type and cached: it must not depend on instance state.</summary>
+    protected virtual IReadOnlyDictionary<string, DbColumnDefinition> Columns => ReadOnlyDictionary<string, DbColumnDefinition>.Empty;
 
-    /// <summary>
-    /// Stores the current column values for the model.
-    /// </summary>
+    /// <summary>Stores the current column values for the model.</summary>
     protected readonly Dictionary<string, object?> ColumnValues = new(StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>
-    /// Stores the original column values for change tracking.
-    /// </summary>
+    /// <summary>Stores the original column values for change tracking.</summary>
     protected readonly Dictionary<string, object?> OriginalColumnValues = new(StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>
-    /// Stores column changes for the current model instance.
-    /// </summary>
+    /// <summary>Stores column changes for the current model instance.</summary>
     protected readonly Dictionary<string, (object? From, object? To)> ColumnChanges = new(StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>
-    /// Stores validation errors keyed by column name.
-    /// </summary>
+    /// <summary>Stores validation errors keyed by column name.</summary>
     protected readonly Dictionary<string, List<string>> Errors = new(StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>
-    /// Fills the model with the provided column values and tracks changes. Use this over <see cref="FillUnsafe"/>
-    /// to keep change tracking accurate.
-    /// </summary>
-    /// <param name="columns">The column values to apply.</param>
-    /// <returns>The current model instance.</returns>
+    /// <summary>Fills the model and tracks the changes.</summary>
+    /// <param name="columns">The column values.</param>
+    /// <returns>This model.</returns>
     public NoireDbModelBase Fill(IReadOnlyDictionary<string, object?> columns)
     {
         foreach (var (key, value) in columns)
@@ -182,12 +158,9 @@ public abstract class NoireDbModelBase
         return this;
     }
 
-    /// <summary>
-    /// Fills the model with the provided column values without tracking changes. Use this over <see cref="Fill"/>
-    /// for hydration from the database, or to bypass change tracking.
-    /// </summary>
-    /// <param name="columns">The column values to apply.</param>
-    /// <returns>The current model instance.</returns>
+    /// <summary>Fills the model without tracking changes, as hydration from the database does.</summary>
+    /// <param name="columns">The column values.</param>
+    /// <returns>This model.</returns>
     public NoireDbModelBase FillUnsafe(IReadOnlyDictionary<string, object?> columns)
     {
         foreach (var (key, value) in columns)
@@ -212,29 +185,21 @@ public abstract class NoireDbModelBase
         return this;
     }
 
-    /// <summary>
-    /// Gets the current model column values.
-    /// </summary>
-    /// <returns>A read-only dictionary of column names and values.</returns>
-    public IReadOnlyDictionary<string, object?> GetColumns() => ColumnValues;
+    /// <summary>Gets the current model column values.</summary>
+    /// <returns>A read-only view of the column names and values that follows later changes.</returns>
+    public IReadOnlyDictionary<string, object?> GetColumns() => columnValuesView ??= new(ColumnValues);
 
-    /// <summary>
-    /// Gets the tracked column changes.
-    /// </summary>
-    /// <returns>A read-only dictionary of column names and their original and current values.</returns>
-    public IReadOnlyDictionary<string, (object? From, object? To)> GetChanges() => ColumnChanges;
+    /// <summary>Gets the tracked column changes.</summary>
+    /// <returns>A read-only view of the column names and their original and current values.</returns>
+    public IReadOnlyDictionary<string, (object? From, object? To)> GetChanges() => columnChangesView ??= new(ColumnChanges);
 
-    /// <summary>
-    /// Gets the validation errors for the model.
-    /// </summary>
-    /// <returns>A read-only dictionary of column names and their associated error messages.</returns>
-    public IReadOnlyDictionary<string, List<string>> GetErrors() => Errors;
+    /// <summary>Gets the validation errors for the model.</summary>
+    /// <returns>A read-only view of the column names and their associated error messages.</returns>
+    public IReadOnlyDictionary<string, List<string>> GetErrors() => errorsView ??= new(Errors);
 
-    /// <summary>
-    /// Returns whether the model has pending changes.
-    /// </summary>
-    /// <param name="attribute">An optional column name to check.</param>
-    /// <returns>True if there are changes for the specified column or any column if none specified; otherwise, false.</returns>
+    /// <summary>Whether the model has pending changes.</summary>
+    /// <param name="attribute">A column to check, or null for any.</param>
+    /// <returns>Whether there are changes.</returns>
     public bool IsDirty(string? attribute = null)
     {
         if (!string.IsNullOrWhiteSpace(attribute))
@@ -243,12 +208,10 @@ public abstract class NoireDbModelBase
         return ColumnChanges.Count > 0;
     }
 
-    /// <summary>
-    /// Gets a typed column value.
-    /// </summary>
+    /// <summary>A typed column value.</summary>
     /// <typeparam name="T">The column type.</typeparam>
     /// <param name="key">The column name.</param>
-    /// <returns>The column value cast to the specified type, or default if not found or cannot be cast.</returns>
+    /// <returns>The value, or default when missing or not castable.</returns>
     public T? GetColumn<T>(string key)
     {
         if (!ColumnValues.TryGetValue(key, out var value) || value == null)
@@ -260,9 +223,7 @@ public abstract class NoireDbModelBase
         return (T)Convert.ChangeType(value, typeof(T), CultureInfo.InvariantCulture);
     }
 
-    /// <summary>
-    /// Sets a column value and tracks changes.
-    /// </summary>
+    /// <summary>Sets a column value and tracks changes.</summary>
     /// <param name="key">The column name.</param>
     /// <param name="value">The new column value.</param>
     public void SetColumn(string key, object? value)
@@ -273,9 +234,7 @@ public abstract class NoireDbModelBase
         ColumnValues[key] = CastColumn(key, value);
     }
 
-    /// <summary>
-    /// Sets multiple column values and tracks changes.
-    /// </summary>
+    /// <summary>Sets multiple column values and tracks changes.</summary>
     /// <param name="columns">The column values to set.</param>
     /// <returns>The current model instance.</returns>
     public NoireDbModelBase SetColumns(IReadOnlyDictionary<string, object?> columns)
@@ -286,9 +245,7 @@ public abstract class NoireDbModelBase
         return this;
     }
 
-    /// <summary>
-    /// Gets or sets a column value by name.
-    /// </summary>
+    /// <summary>Gets or sets a column value by name.</summary>
     /// <param name="key">The column name.</param>
     public object? this[string key]
     {
@@ -296,9 +253,7 @@ public abstract class NoireDbModelBase
         set => SetColumn(key, value);
     }
 
-    /// <summary>
-    /// Creates a new model instance with only the specified columns.
-    /// </summary>
+    /// <summary>Creates a new model instance with only the specified columns.</summary>
     /// <param name="columns">The column names to include.</param>
     /// <returns>A new instance of the model containing only the specified columns.</returns>
     public NoireDbModelBase Only(IEnumerable<string> columns)
@@ -316,9 +271,7 @@ public abstract class NoireDbModelBase
         return instance;
     }
 
-    /// <summary>
-    /// Creates a new model instance without the specified columns.
-    /// </summary>
+    /// <summary>Creates a new model instance without the specified columns.</summary>
     /// <param name="columns">The column names to exclude.</param>
     /// <returns>A new instance of the model excluding the specified columns.</returns>
     public NoireDbModelBase Except(IEnumerable<string> columns)
@@ -336,9 +289,7 @@ public abstract class NoireDbModelBase
         return instance;
     }
 
-    /// <summary>
-    /// Saves the model to the database.
-    /// </summary>
+    /// <summary>Saves the model to the database.</summary>
     /// <returns>True if the save operation was successful; otherwise, false.</returns>
     public bool Save()
     {
@@ -394,9 +345,7 @@ public abstract class NoireDbModelBase
         return true;
     }
 
-    /// <summary>
-    /// Deletes the model from the database.
-    /// </summary>
+    /// <summary>Deletes the model from the database.</summary>
     /// <returns>True if the delete operation was successful; otherwise, false.</returns>
     public bool Delete()
     {
@@ -416,9 +365,7 @@ public abstract class NoireDbModelBase
         return true;
     }
 
-    /// <summary>
-    /// Refreshes the model values from the database.
-    /// </summary>
+    /// <summary>Refreshes the model values from the database.</summary>
     /// <returns>True if the refresh operation was successful; otherwise, false.</returns>
     public bool Refresh()
     {
@@ -437,18 +384,17 @@ public abstract class NoireDbModelBase
         return true;
     }
 
-    /// <summary>
-    /// Validates the model columns.
-    /// </summary>
+    /// <summary>Validates the model columns.</summary>
     /// <returns>True if validation passes; otherwise, false with <see cref="Errors"/> populated.</returns>
     public bool Validate()
     {
         Errors.Clear();
 
-        if (ValidationRules.Count == 0)
+        var validationRules = Metadata.ValidationRules;
+        if (validationRules.Count == 0)
             return true;
 
-        foreach (var (column, rules) in ValidationRules)
+        foreach (var (column, rules) in validationRules)
         {
             var value = ColumnValues.TryGetValue(column, out var v) ? v : null;
             foreach (var rule in rules)
@@ -461,13 +407,9 @@ public abstract class NoireDbModelBase
         return Errors.Count == 0;
     }
 
-    /// <summary>
-    /// Serializes the model columns to JSON.
-    /// </summary>
-    /// <param name="settings">Optional JSON serialization settings. <see cref="TypeNameHandling"/> is always
-    /// <see cref="TypeNameHandling.None"/>, whatever the settings ask for; every other setting is honoured.
-    /// When omitted, the columns are written indented.</param>
-    /// <returns>A JSON string representing the model columns.</returns>
+    /// <summary>Serializes the columns to JSON. TypeNameHandling is always None.</summary>
+    /// <param name="settings">The serializer settings. Indented when null.</param>
+    /// <returns>The JSON.</returns>
     public string ToJson(JsonSerializerSettings? settings = null)
     {
         var serializer = settings == null ? DefaultJsonSerializer : CreateToJsonSerializer(settings);
@@ -476,7 +418,7 @@ public abstract class NoireDbModelBase
         using (var stringWriter = new StringWriter(builder, CultureInfo.InvariantCulture))
         using (var jsonWriter = new JsonTextWriter(stringWriter))
         {
-            serializer.Serialize(jsonWriter, ToDictionary());
+            serializer.Serialize(jsonWriter, ColumnValues);
         }
 
         return builder.ToString();
@@ -484,26 +426,19 @@ public abstract class NoireDbModelBase
 
     private static JsonSerializer CreateToJsonSerializer(JsonSerializerSettings settings)
     {
-        // JsonSerializer.Create resolves every setting from the object it is given, unlike the JsonConvert overloads
-        // and JsonSerializer.CreateDefault, which merge in the process-global JsonConvert.DefaultSettings described on
-        // ColumnSerializer. The settings object itself is never mutated; the serializer is the copy.
+        // Create, not CreateDefault: no process-global DefaultSettings merge in, and the settings object is never mutated.
         var serializer = JsonSerializer.Create(settings);
 
-        // A model exports its column data, never a type to build from it.
         serializer.TypeNameHandling = TypeNameHandling.None;
 
         return serializer;
     }
 
-    /// <summary>
-    /// Returns a dictionary representation of the model columns.
-    /// </summary>
-    /// <returns>A read-only dictionary of column names and values.</returns>
-    public IReadOnlyDictionary<string, object?> ToDictionary() => ColumnValues;
+    /// <summary>Returns a copy of the model columns.</summary>
+    /// <returns>A new dictionary of column names and values, detached from the model.</returns>
+    public IReadOnlyDictionary<string, object?> ToDictionary() => new Dictionary<string, object?>(ColumnValues, StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>
-    /// Validates a single column using the specified rule.
-    /// </summary>
+    /// <summary>Validates a single column using the specified rule.</summary>
     /// <param name="column">The column name.</param>
     /// <param name="value">The column value.</param>
     /// <param name="ruleDefinition">The validation rule definition.</param>
@@ -607,14 +542,12 @@ public abstract class NoireDbModelBase
         return true;
     }
 
-    /// <summary>
-    /// Gets a related model or collection based on the relation configuration.
-    /// </summary>
+    /// <summary>Gets a related model or collection based on the relation configuration.</summary>
     /// <param name="relation">The relation name.</param>
     /// <returns>The related model data.</returns>
     protected virtual object? GetRelation(string relation)
     {
-        if (!Relations.TryGetValue(relation, out var config))
+        if (!Metadata.Relations.TryGetValue(relation, out var config))
             throw new InvalidOperationException($"Relation '{relation}' is not defined.");
 
         return config.Type switch
@@ -627,9 +560,7 @@ public abstract class NoireDbModelBase
         };
     }
 
-    /// <summary>
-    /// Resolves a has-one relation.
-    /// </summary>
+    /// <summary>Resolves a has-one relation.</summary>
     /// <param name="config">The relation configuration.</param>
     /// <returns>The related model, or null if not found.</returns>
     protected virtual object? GetHasOneRelation(DbRelationDefinition config)
@@ -643,9 +574,7 @@ public abstract class NoireDbModelBase
         return InvokeFindBy(config.RelatedModelType, new Dictionary<string, object?> { [foreignKey] = localValue });
     }
 
-    /// <summary>
-    /// Resolves a has-many relation.
-    /// </summary>
+    /// <summary>Resolves a has-many relation.</summary>
     /// <param name="config">The relation configuration.</param>
     /// <returns>The related model collection.</returns>
     protected virtual object GetHasManyRelation(DbRelationDefinition config)
@@ -659,9 +588,7 @@ public abstract class NoireDbModelBase
         return InvokeFindAllBy(config.RelatedModelType, new Dictionary<string, object?> { [foreignKey] = localValue });
     }
 
-    /// <summary>
-    /// Resolves a belongs-to relation.
-    /// </summary>
+    /// <summary>Resolves a belongs-to relation.</summary>
     /// <param name="config">The relation configuration.</param>
     /// <returns>The related model, or null if not found.</returns>
     protected virtual object? GetBelongsToRelation(DbRelationDefinition config)
@@ -674,9 +601,7 @@ public abstract class NoireDbModelBase
         return InvokeFind(config.RelatedModelType, ownerValue!);
     }
 
-    /// <summary>
-    /// Resolves a belongs-to-many relation.
-    /// </summary>
+    /// <summary>Resolves a belongs-to-many relation.</summary>
     /// <param name="config">The relation configuration.</param>
     /// <returns>The related model collection.</returns>
     protected virtual object GetBelongsToManyRelation(DbRelationDefinition config)
@@ -701,9 +626,7 @@ public abstract class NoireDbModelBase
         return results.Select(result => CreateModelFromType(config.RelatedModelType, result)).ToList();
     }
 
-    /// <summary>
-    /// Gets the database instance for this model.
-    /// </summary>
+    /// <summary>Gets the database instance for this model.</summary>
     /// <returns>The database instance.</returns>
     protected NoireDatabase GetDb()
     {
@@ -713,9 +636,7 @@ public abstract class NoireDbModelBase
         return NoireDatabase.GetInstance(DatabaseName);
     }
 
-    /// <summary>
-    /// Ensures the database table exists for the model.
-    /// </summary>
+    /// <summary>Ensures the database table exists for the model.</summary>
     protected void EnsureTableCreated()
     {
         var definitions = GetColumnDefinitions();
@@ -729,14 +650,13 @@ public abstract class NoireDbModelBase
         TableColumnsCache.TryRemove(GetCacheKey(), out _);
     }
 
-    /// <summary>
-    /// Gets column definitions for schema creation.
-    /// </summary>
+    /// <summary>Gets column definitions for schema creation.</summary>
     /// <returns>A dictionary of column definitions.</returns>
     protected IReadOnlyDictionary<string, DbColumnDefinition> GetColumnDefinitions()
     {
-        if (Columns.Count > 0)
-            return Columns;
+        var columns = Metadata.Columns;
+        if (columns.Count > 0)
+            return columns;
 
         var definitions = new Dictionary<string, DbColumnDefinition>(StringComparer.OrdinalIgnoreCase);
         var properties = GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance);
@@ -778,9 +698,7 @@ public abstract class NoireDbModelBase
         return definitions;
     }
 
-    /// <summary>
-    /// Gets the column names from the database table.
-    /// </summary>
+    /// <summary>Gets the column names from the database table.</summary>
     /// <returns>The column names in the table.</returns>
     protected IReadOnlyCollection<string> GetDatabaseColumns()
     {
@@ -799,9 +717,7 @@ public abstract class NoireDbModelBase
         return columns;
     }
 
-    /// <summary>
-    /// Gets column values formatted for database insertion.
-    /// </summary>
+    /// <summary>Gets column values formatted for database insertion.</summary>
     /// <returns>A dictionary of column values formatted for the database.</returns>
     protected Dictionary<string, object?> GetColumnsForDb()
     {
@@ -830,9 +746,7 @@ public abstract class NoireDbModelBase
         return columnValues;
     }
 
-    /// <summary>
-    /// Casts a column value according to the model's cast definitions.
-    /// </summary>
+    /// <summary>Casts a column value according to the model's cast definitions.</summary>
     /// <param name="key">The column name.</param>
     /// <param name="value">The column value.</param>
     /// <returns>The casted value.</returns>
@@ -841,7 +755,7 @@ public abstract class NoireDbModelBase
         if (value == null)
             return null;
 
-        if (!Casts.TryGetValue(key, out var type))
+        if (!Metadata.Casts.TryGetValue(key, out var type))
             return value;
 
         return type switch
@@ -858,9 +772,7 @@ public abstract class NoireDbModelBase
         };
     }
 
-    /// <summary>
-    /// Adds a validation error for a column.
-    /// </summary>
+    /// <summary>Adds a validation error for a column.</summary>
     /// <param name="column">The column name.</param>
     /// <param name="message">The error message.</param>
     protected void AddError(string column, string message)
@@ -874,9 +786,7 @@ public abstract class NoireDbModelBase
         list.Add(message);
     }
 
-    /// <summary>
-    /// Counts rows matching a column value, excluding the current row when applicable.
-    /// </summary>
+    /// <summary>Counts rows matching a column value, excluding the current row when applicable.</summary>
     /// <param name="column">The column name.</param>
     /// <param name="value">The column value.</param>
     /// <returns>The number of matching rows.</returns>
@@ -895,9 +805,7 @@ public abstract class NoireDbModelBase
         return result == null ? 0 : Convert.ToInt32(result);
     }
 
-    /// <summary>
-    /// Gets the default table name derived from the model type.
-    /// </summary>
+    /// <summary>Gets the default table name derived from the model type.</summary>
     /// <returns>The default table name.</returns>
     protected string GetDefaultTableName()
     {
@@ -908,9 +816,7 @@ public abstract class NoireDbModelBase
         return ToSnakeCase(className) + "s";
     }
 
-    /// <summary>
-    /// Converts a string to snake_case.
-    /// </summary>
+    /// <summary>Converts a string to snake_case.</summary>
     /// <param name="value">The input string.</param>
     /// <returns>The snake_case string.</returns>
     protected static string ToSnakeCase(string value)
@@ -937,9 +843,7 @@ public abstract class NoireDbModelBase
         return builder.ToString();
     }
 
-    /// <summary>
-    /// Determines whether a type is nullable.
-    /// </summary>
+    /// <summary>Determines whether a type is nullable.</summary>
     /// <param name="type">The type to check.</param>
     /// <returns>True if the type is nullable; otherwise, false.</returns>
     protected static bool IsNullableProperty(Type type)
@@ -947,9 +851,7 @@ public abstract class NoireDbModelBase
         return !type.IsValueType || Nullable.GetUnderlyingType(type) != null;
     }
 
-    /// <summary>
-    /// Determines whether a type represents an integer value.
-    /// </summary>
+    /// <summary>Determines whether a type represents an integer value.</summary>
     /// <param name="type">The type to check.</param>
     /// <returns>True if the type represents an integer; otherwise, false.</returns>
     protected static bool IsIntegerProperty(Type type)
@@ -958,9 +860,7 @@ public abstract class NoireDbModelBase
         return type == typeof(int) || type == typeof(long) || type == typeof(short) || type == typeof(byte);
     }
 
-    /// <summary>
-    /// Maps a CLR type to a SQLite column type.
-    /// </summary>
+    /// <summary>Maps a CLR type to a SQLite column type.</summary>
     /// <param name="type">The CLR type to map.</param>
     /// <returns>The SQLite type name.</returns>
     protected static string MapTypeToSqlite(Type type)
@@ -979,9 +879,7 @@ public abstract class NoireDbModelBase
         return "TEXT";
     }
 
-    /// <summary>
-    /// Builds the SQL column definition statement for a column.
-    /// </summary>
+    /// <summary>Builds the SQL column definition statement for a column.</summary>
     /// <param name="definition">The column definition.</param>
     /// <returns>The SQL column definition statement.</returns>
     protected string BuildColumnDefinition(DbColumnDefinition definition)
@@ -1012,9 +910,7 @@ public abstract class NoireDbModelBase
         return string.Join(" ", parts);
     }
 
-    /// <summary>
-    /// Gets the cache key used for table column metadata.
-    /// </summary>
+    /// <summary>Gets the cache key used for table column metadata.</summary>
     /// <returns>The cache key.</returns>
     protected string GetCacheKey() => $"{DatabaseName}:{ResolvedTableName}";
 
@@ -1049,9 +945,7 @@ public abstract class NoireDbModelBase
         return databases;
     }
 
-    /// <summary>
-    /// Invokes a FindBy method on a related model type.
-    /// </summary>
+    /// <summary>Invokes a FindBy method on a related model type.</summary>
     /// <param name="modelType">The related model type.</param>
     /// <param name="criteria">The filter criteria.</param>
     /// <returns>The related model instance.</returns>
@@ -1061,9 +955,7 @@ public abstract class NoireDbModelBase
         return method?.Invoke(null, new object?[] { criteria });
     }
 
-    /// <summary>
-    /// Invokes a FindAllBy method on a related model type.
-    /// </summary>
+    /// <summary>Invokes a FindAllBy method on a related model type.</summary>
     /// <param name="modelType">The related model type.</param>
     /// <param name="criteria">The filter criteria.</param>
     /// <returns>The related model collection.</returns>
@@ -1073,9 +965,7 @@ public abstract class NoireDbModelBase
         return method?.Invoke(null, new object?[] { criteria }) ?? Array.Empty<object>();
     }
 
-    /// <summary>
-    /// Invokes a Find method on a related model type.
-    /// </summary>
+    /// <summary>Invokes a Find method on a related model type.</summary>
     /// <param name="modelType">The related model type.</param>
     /// <param name="id">The primary key value.</param>
     /// <returns>The related model instance.</returns>
@@ -1085,9 +975,7 @@ public abstract class NoireDbModelBase
         return method?.Invoke(null, new[] { id });
     }
 
-    /// <summary>
-    /// Builds the default foreign key name for a model type.
-    /// </summary>
+    /// <summary>Builds the default foreign key name for a model type.</summary>
     /// <param name="modelType">The model type.</param>
     /// <returns>The foreign key column name.</returns>
     protected static string GetDefaultForeignKeyName(Type modelType)
@@ -1099,9 +987,7 @@ public abstract class NoireDbModelBase
         return ToSnakeCase(name) + "_id";
     }
 
-    /// <summary>
-    /// Creates a model instance from a row of data for a specific type.
-    /// </summary>
+    /// <summary>Creates a model instance from a row of data for a specific type.</summary>
     /// <param name="modelType">The model type.</param>
     /// <param name="data">The row data.</param>
     /// <returns>The model instance.</returns>
@@ -1114,9 +1000,7 @@ public abstract class NoireDbModelBase
         return instance;
     }
 
-    /// <summary>
-    /// Creates a model instance from a row of data.
-    /// </summary>
+    /// <summary>Creates a model instance from a row of data.</summary>
     /// <typeparam name="TModel">The model type.</typeparam>
     /// <param name="data">The row data.</param>
     /// <returns>The model instance.</returns>
@@ -1129,9 +1013,7 @@ public abstract class NoireDbModelBase
         return instance;
     }
 
-    /// <summary>
-    /// Finds a single model by the provided criteria.
-    /// </summary>
+    /// <summary>Finds a single model by the provided criteria.</summary>
     /// <typeparam name="TModel">The model type.</typeparam>
     /// <param name="criteria">The filter criteria.</param>
     /// <returns>The first model matching the criteria, or null if none found.</returns>
@@ -1150,9 +1032,7 @@ public abstract class NoireDbModelBase
         return result == null ? null : CreateModel<TModel>(result);
     }
 
-    /// <summary>
-    /// Finds all models matching the provided criteria.
-    /// </summary>
+    /// <summary>Finds all models matching the provided criteria.</summary>
     /// <typeparam name="TModel">The model type.</typeparam>
     /// <param name="criteria">The filter criteria.</param>
     /// <returns>A list of models matching the criteria.</returns>
@@ -1171,9 +1051,7 @@ public abstract class NoireDbModelBase
         return results.Select(CreateModel<TModel>).ToList();
     }
 
-    /// <summary>
-    /// Finds a model by its primary key.
-    /// </summary>
+    /// <summary>Finds a model by its primary key.</summary>
     /// <typeparam name="TModel">The model type.</typeparam>
     /// <param name="id">The primary key value.</param>
     /// <returns>The model with the specified primary key, or null if not found.</returns>

@@ -1,3 +1,4 @@
+using NoireLib.Localizer;
 using System;
 using System.Numerics;
 
@@ -8,23 +9,30 @@ namespace NoireLib.UI;
 /// </summary>
 public sealed class WindowMenuStyle
 {
-    private static readonly string[] DefaultLabels =
+    private static readonly NoireString[] DefaultLabels =
     [
-        "Always on top", "Reduced motion", "Lock position", "Click through", "Lock width", "Lock height",
-        "In gpose", "UI hidden", "In cutscene", "Auto hide",
+        NoireStrings.MenuAlwaysOnTop, NoireStrings.MenuReducedMotion, NoireStrings.MenuLockPosition, NoireStrings.MenuClickThrough,
+        NoireStrings.MenuLockWidth, NoireStrings.MenuLockHeight, NoireStrings.MenuInGpose, NoireStrings.MenuUiHidden,
+        NoireStrings.MenuInCutscene, NoireStrings.MenuAutoHide,
     ];
 
-    private static readonly string?[] DefaultHints =
+    private static readonly NoireString?[] DefaultHints =
     [
         null, null, null, null, null, null,
-        "Keeps the window open while gpose is active.",
-        "Keeps the window open when you hide the game UI.",
-        "Keeps the window open during cutscenes.",
-        "Keeps the window open whenever the game hides its own UI.",
+        NoireStrings.MenuInGposeHint, NoireStrings.MenuUiHiddenHint, NoireStrings.MenuInCutsceneHint, NoireStrings.MenuAutoHideHint,
     ];
 
-    private string[] labels = (string[])DefaultLabels.Clone();
-    private string?[] hints = (string?[])DefaultHints.Clone();
+    // Null keeps NoireLib's own text, which follows the active language; a hint set to null reads as none.
+    private string?[] labels = new string?[DefaultLabels.Length];
+    private string?[] hints = new string?[DefaultHints.Length];
+    private bool[] hintsSet = new bool[DefaultHints.Length];
+    private string? windowHeading;
+    private string? behaviourHeading;
+    private string? visibilityHeading;
+    private string? opacityLabel;
+    private string? textSizeLabel;
+    private string? clickThroughNote;
+    private bool clickThroughNoteSet;
 
     #region Surface
 
@@ -105,14 +113,26 @@ public sealed class WindowMenuStyle
 
     #region Headings
 
-    /// <summary>The heading above the two sliders.</summary>
-    public string WindowHeading { get; set; } = "WINDOW";
+    /// <summary>The heading above the two sliders; NoireLib's own text in the active language until set.</summary>
+    public string WindowHeading
+    {
+        get => windowHeading ?? NoireStrings.MenuWindowHeading.Text;
+        set => windowHeading = value;
+    }
 
-    /// <summary>The heading above the behaviour switches.</summary>
-    public string BehaviourHeading { get; set; } = "BEHAVIOUR";
+    /// <summary>The heading above the behaviour switches; NoireLib's own text in the active language until set.</summary>
+    public string BehaviourHeading
+    {
+        get => behaviourHeading ?? NoireStrings.MenuBehaviourHeading.Text;
+        set => behaviourHeading = value;
+    }
 
-    /// <summary>The heading above the stay-visible switches.</summary>
-    public string VisibilityHeading { get; set; } = "STAY VISIBLE";
+    /// <summary>The heading above the stay-visible switches; NoireLib's own text in the active language until set.</summary>
+    public string VisibilityHeading
+    {
+        get => visibilityHeading ?? NoireStrings.MenuVisibilityHeading.Text;
+        set => visibilityHeading = value;
+    }
 
     /// <summary>The heading text size.</summary>
     public float HeadingSizePx { get; set; } = 10f;
@@ -145,11 +165,19 @@ public sealed class WindowMenuStyle
 
     #region Sliders
 
-    /// <summary>The opacity slider's label.</summary>
-    public string OpacityLabel { get; set; } = "Opacity";
+    /// <summary>The opacity slider's label; NoireLib's own text in the active language until set.</summary>
+    public string OpacityLabel
+    {
+        get => opacityLabel ?? NoireStrings.MenuOpacity.Text;
+        set => opacityLabel = value;
+    }
 
-    /// <summary>The text size slider's label.</summary>
-    public string TextSizeLabel { get; set; } = "Text size";
+    /// <summary>The text size slider's label; NoireLib's own text in the active language until set.</summary>
+    public string TextSizeLabel
+    {
+        get => textSizeLabel ?? NoireStrings.MenuTextSize.Text;
+        set => textSizeLabel = value;
+    }
 
     /// <summary>The lowest opacity the slider allows.</summary>
     public float OpacityMin { get; set; } = 0.2f;
@@ -318,8 +346,16 @@ public sealed class WindowMenuStyle
     /// <summary>A note under the switches. When <see langword="null"/>, none.</summary>
     public string? Note { get; set; }
 
-    /// <summary>A sentence added to the note while click through is on. When <see langword="null"/>, none.</summary>
-    public string? ClickThroughNote { get; set; } = "The window lets clicks through to the game. Its title bar stays clickable.";
+    /// <summary>A sentence added to the note while click through is on; NoireLib's own text until set, none once set to <see langword="null"/>.</summary>
+    public string? ClickThroughNote
+    {
+        get => clickThroughNoteSet ? clickThroughNote : NoireStrings.MenuClickThroughNote.Text;
+        set
+        {
+            clickThroughNote = value;
+            clickThroughNoteSet = true;
+        }
+    }
 
     /// <summary>The note text size.</summary>
     public float NoteSizePx { get; set; } = 11f;
@@ -347,7 +383,7 @@ public sealed class WindowMenuStyle
     /// <summary>A switch's label.</summary>
     /// <param name="toggle">The switch.</param>
     /// <returns>Its label.</returns>
-    public string GetLabel(WindowMenuToggle toggle) => labels[(int)toggle];
+    public string GetLabel(WindowMenuToggle toggle) => labels[(int)toggle] ?? DefaultLabels[(int)toggle].Text;
 
     /// <summary>Renames a switch.</summary>
     /// <param name="toggle">The switch.</param>
@@ -357,20 +393,25 @@ public sealed class WindowMenuStyle
     /// <summary>A switch's hint, shown under the pointer.</summary>
     /// <param name="toggle">The switch.</param>
     /// <returns>Its hint, or <see langword="null"/> for none.</returns>
-    public string? GetHint(WindowMenuToggle toggle) => hints[(int)toggle];
+    public string? GetHint(WindowMenuToggle toggle) => hintsSet[(int)toggle] ? hints[(int)toggle] : DefaultHints[(int)toggle]?.Text;
 
     /// <summary>Sets a switch's hint.</summary>
     /// <param name="toggle">The switch.</param>
     /// <param name="hint">Its hint, or <see langword="null"/> for none.</param>
-    public void SetHint(WindowMenuToggle toggle, string? hint) => hints[(int)toggle] = hint;
+    public void SetHint(WindowMenuToggle toggle, string? hint)
+    {
+        hints[(int)toggle] = hint;
+        hintsSet[(int)toggle] = true;
+    }
 
     /// <summary>Returns a copy.</summary>
     /// <returns>A copy with its own labels and hints.</returns>
     public WindowMenuStyle Clone()
     {
         var copy = (WindowMenuStyle)MemberwiseClone();
-        copy.labels = (string[])labels.Clone();
+        copy.labels = (string?[])labels.Clone();
         copy.hints = (string?[])hints.Clone();
+        copy.hintsSet = (bool[])hintsSet.Clone();
         return copy;
     }
 }

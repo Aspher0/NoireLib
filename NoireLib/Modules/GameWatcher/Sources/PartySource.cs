@@ -28,7 +28,6 @@ internal sealed class PartySource : GameWatcherSource
         CapturedAt = now,
     };
 
-    /// <inheritdoc/>
     protected override void OnActivate()
     {
         members.Clear();
@@ -36,7 +35,6 @@ internal sealed class PartySource : GameWatcherSource
         seeded = false;
     }
 
-    /// <inheritdoc/>
     protected override void OnDeactivate()
     {
         members.Clear();
@@ -44,7 +42,6 @@ internal sealed class PartySource : GameWatcherSource
         seeded = false;
     }
 
-    /// <inheritdoc/>
     protected override void OnTick(DateTimeOffset now)
     {
         if (!NoireService.ClientState.IsLoggedIn)

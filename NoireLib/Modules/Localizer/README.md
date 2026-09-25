@@ -22,6 +22,19 @@ You are reading the documentation for the `NoireLocalizer` module.
   - [Attribute-Based Registration](#attribute-based-registration)
   - [Automatic Discovery](#automatic-discovery)
 - [Retrieving Translations](#retrieving-translations)
+- [Declared Texts](#declared-texts)
+  - [Declaring Texts](#declaring-texts)
+  - [Placeholders](#placeholders)
+  - [Plurals](#plurals)
+  - [Messages](#messages)
+  - [Source and Log Language](#source-and-log-language)
+  - [Language Files](#language-files)
+  - [Translation Editor](#translation-editor)
+  - [Pseudo-Language](#pseudo-language)
+  - [Missing Keys](#missing-keys)
+  - [Language List](#language-list)
+  - [Japanese, Korean and Chinese](#japanese-korean-and-chinese)
+  - [NoireLib's Own Texts](#noirelibs-own-texts)
   - [Basic Lookup](#basic-lookup)
   - [Locale-Specific Lookup](#locale-specific-lookup)
   - [Indexed Format Arguments](#indexed-format-arguments)
@@ -67,6 +80,8 @@ It is designed to be flexible, safe, and easy to integrate into any plugin.
 - **Built-in ImGui combo box** for user-facing locale selection.
 - **Persistent configuration** - selected locale and default-locale strategy are saved to disk automatically.
 - **Missing-translation tracking** with configurable behavior and statistics.
+- **Declared texts** (`NoireString`, `NoirePlural`): a key and its source text in code, cached per language, CLDR
+  plurals, `.lang` files embedded or in the user's folder with hot reload, a pseudo-language and a missing-key report.
 
 ---
 
@@ -131,7 +146,7 @@ var localizer = new NoireLocalizer(
                                        // selected one (see Default locale precedence)
     currentLocale: "en-US",            // Initial active locale (defaults to defaultLocale)
     returnKeyWhenMissing: false,       // Return the key itself when no translation is found
-    allowParentCultureFallback: true,  // Try parent cultures, so a lookup in fr-CA also tries fr
+    allowParentCultureFallback: true,  // Try parent cultures: a lookup in fr-CA also tries fr
     allowDefaultLocaleFallback: true,  // Fall back to the default locale as last resort
     defaultLocaleSource: DefaultLocaleSource.Custom,
     allowCustomLocales: false,         // Accept non-standard locale codes
@@ -235,12 +250,12 @@ The module automatically persists the following settings to disk via `LocalizerC
 - **`CustomDefaultLocale`**: the default locale selected through `SetDefaultLocale()` / `UseCustomDefaultLocale()`.
 - **`HasCustomDefaultLocaleSelection`**: whether `CustomDefaultLocale` holds such a selection at all.
 
-These are restored automatically when the module initializes, so the user's locale choice survives plugin reloads.
+These are restored automatically when the module initializes: the user's locale choice survives plugin reloads.
 
 #### Default locale precedence
 
-The `defaultLocale` constructor argument is a **declaration**: it is read again on every construction, so it follows
-your plugin's code. `SetDefaultLocale()` is a **selection**: it is stored and restored, so it sticks until something
+The `defaultLocale` constructor argument is a **declaration**: it is read again on every construction: it follows
+your plugin's code. `SetDefaultLocale()` is a **selection**: it is stored and restored: it sticks until something
 changes it. When they disagree, the module resolves the default locale in this order, highest first:
 
 | Precedence | Source | Wins when |
@@ -250,7 +265,7 @@ changes it. When they disagree, the module resolves the default locale in this o
 | 3 | `defaultLocale` constructor argument | Neither of the above applies (a fresh configuration). |
 
 `CustomDefaultLocale` is only consulted alongside `HasCustomDefaultLocaleSelection`: it holds a locale from the
-moment the configuration file exists, so restoring it whenever it is populated would overwrite the constructor
+moment the configuration file exists: restoring it whenever it is populated would overwrite the constructor
 argument with a value nobody picked, and no caller could ever set a default locale.
 
 ```csharp
@@ -485,6 +500,214 @@ if (localizer.TryGet("fr-FR", "Window.Save", out var frSave))
 
 ---
 
+## Declared Texts
+
+A declared text lives in code with its key and its text in the source language. It reads in the active language of
+the most recently activated localizer, and falls back to its source text, never to the default locale.
+
+### Declaring Texts
+
+```csharp
+public static class L
+{
+    public static readonly NoireString Settings = new("window.settings", "Settings");
+    public static readonly NoirePlural Targets = new("overrides.targets", one: "{count} target", other: "{count} targets");
+}
+
+ImGui.TextUnformatted(L.Settings);   // implicit string, cached until the language changes
+```
+
+Every static class of the plugin assembly holding a `NoireString` or `NoirePlural` field is initialized when the
+localizer starts: its keys are known before the first read.
+
+### Placeholders
+
+```csharp
+L.Welcome.With("name", playerName);                      // "Welcome, {name}"
+L.Moved.With("from", a, "to", b);                        // translations may reorder placeholders
+NoireLanguages.Number(count);                            // "1 234" in French, cached for 0 to 255
+```
+
+A filled text is cached per value until the language changes: a label drawn every frame is built once.
+`NoireLanguages.Revision` moves whenever the language or a translation changes; cache derived strings against it.
+
+### Plurals
+
+```csharp
+L.Targets.For(count);   // category picked with the CLDR rules of the active language
+```
+
+Translations are stored under `key.one`, `key.few`, `key.many`, `key.other` and so on. A missing category falls back
+to the language's `other`, then to the source forms. A source language with more forms than one and other declares
+them with `new NoirePlural(key, new Dictionary<PluralCategory, string> { ... })`.
+
+### Messages
+
+```csharp
+var message = new NoireMessage(L.Saved, "name", name);
+NoireLogger.PrintToChat(message.Display);   // active language
+history.Add(message.Record);                // log language
+```
+
+### Source and Log Language
+
+```csharp
+localizer
+    .SetSourceLanguage("en")   // the language the declared texts are written in (default "en")
+    .SetLogLanguage("en");     // the language NoireMessage.Record is written in (default: the source language)
+```
+
+A table for the source language itself holds corrections of the source texts, and applies under every language.
+
+### Language Files
+
+One `key = text` per line; `#` starts a comment, `\n` is a line break, `\\` a backslash.
+
+```
+# Settings
+window.settings = Paramètres
+overrides.targets.one = {count} cible
+overrides.targets.other = {count} cibles
+```
+
+- **Embedded**: every manifest resource ending in `.lang` is loaded at startup; the language is the file name
+  (`Localization/fr.lang` is `fr`). Add `<EmbeddedResource Include="Localization\*.lang" />` to the plugin project.
+- **User folder**: `<plugin config>/Localization/*.lang` is loaded on top of the embedded file: a user file only
+  needs the lines it changes. Saving, adding or deleting a file there reloads that language while the plugin runs.
+
+```csharp
+string file = localizer.ExportLanguageFile("fr");   // the language as a .lang file, each line under its source text
+```
+
+`# Source: text` above a key is the source text its translation was made from; the build and the translation editor
+write it. When the plugin's source text changes, the translation is **outdated**: it still shows, the translation
+editor flags it with a "Still correct" button, `NoireLanguageInfo.Outdated` counts it (the language list reads
+`452/700 (64%) - 24 outdated`), and the file gets a note with the new text under the old one:
+
+```
+# Source: Missing only
+# Outdated, the source is now: Missing or outdated
+noire.translate.missing = Manquantes seulement
+```
+
+Editing the translation, or confirming it, makes it up to date again.
+
+A translation must keep every `{name}` placeholder of its source as it is, since the text fills them by name: a
+`{target}` renamed `{cible}` would show `{cible}` instead of the target. The translation editor shows "Missing tags" and
+"Unknown tags" under the key as soon as one is lost or invented, and the file gets the same notes:
+
+```
+# Source: {target} is blocked.
+# Missing tags: {target}
+# Unknown tags: {cible}
+advice.blocked = {cible} est bloquée.
+```
+
+These notes are written again on every write and never read. Every other comment is the translator's own: it belongs
+to the key under it and is written back with it, blank lines or not.
+
+Neither check stops a translation from showing. Two options of the localizer, both off by default, set such a
+translation aside so the parent language or the source text shows instead:
+
+```csharp
+new NoireLocalizer(rejectOutdated: true, rejectMissingOrExtraTags: true);
+localizer.SetRejectOutdated(true).SetRejectMissingOrExtraTags(true);   // or later, taking effect at once
+```
+
+The translation editor shows each flag in orange while the translation still shows, in red once its option sets it
+aside.
+
+A file credits its translators with an `@credits` line, which an export keeps:
+
+```
+@credits = Anna, Ben
+```
+
+`NoireLanguageInfo.Credits` lists them, and `NoireLanguages.CreditLines` gives one line per credited language
+(`Deutsch: Anna, Ben`) in the active language. `page.Language()` folds them under the translate button.
+
+### Template and Build Step
+
+After every build, in every configuration, the plugin's language files follow its code. A plugin using the NoireLib
+NuGet package gets this on its own; a plugin referencing the NoireLib project imports it once:
+
+```xml
+<Import Project="path\to\NoireLib\NoireLib.LanguageTemplate\NoireLib.LanguageTemplate.targets" />
+```
+
+It runs when the plugin embeds `.lang` files (`NoireLanguageTemplateEnabled` forces it on or off). It writes
+`Localization\template.lang` (`NoireLanguageTemplatePath` moves it): every key the plugin can translate, NoireLib's own,
+the settings' choices and the changelog texts included, each under its source text and empty. A translator copies it to
+`<code>.lang` and fills it in without the game. It also brings every embedded `.lang` file up to date:
+
+- a key the file lacks is added, empty, under its source text;
+- a translation whose source changed is kept and flagged as outdated;
+- an edited changelog text gets the translation of its old text back under its new key, flagged as outdated (the two
+  texts must be alike and belong to the same version);
+- a translation whose key is gone is kept and flagged as unused. Nothing is removed.
+
+One build is enough. The files on disk are updated after the build, since the step reads the plugin it just built, but
+the game shows the same result from that very build: the localizer applies the same rules when it loads the files.
+
+The step runs `noirelangtemplate` in its own short-lived process: it loads the plugin that was just built and calls
+`NoireLanguageTemplate.Build` and `NoireLanguageTemplate.Update` from the NoireLib inside it. The NuGet package carries
+the tool; from the repository it is built the first time it is needed. Problems show as build warnings, and a file is
+only rewritten when it changes.
+
+### Translation Editor
+
+```csharp
+NoireTranslationEditor.Open();   // the active localizer's declared texts beside their translation
+```
+
+Edits show live; Save writes `<plugin config>/Localization/<code>.lang`, creating the folder and watching it from then
+on. "Save to a file..." writes the language file wherever the user picks in the system's save dialog. An emptied translation is removed from that language. A translation changed since the last save shows a Revert button under its
+key, which puts back the saved text and the source it was made from; its hover shows the saved text. The search marks every occurrence in the keys, the originals
+and the translations; with Contains off it finds whole words only. A settings page opens it from `page.Language()` (see the
+`NoireLib.UI` README).
+
+### Pseudo-Language
+
+```csharp
+localizer.SetCurrentLocale(NoireLanguages.Pseudo);       // "qps-ploc"
+localizer.SetCurrentLocale(NoireLanguages.PseudoLong);   // "qps-long"
+```
+
+`Pseudo` shows every declared text accented, bracketed and padded by 30%, to find text that is not declared and text
+that is clipped. `PseudoLong` writes every text twice instead, to find the layouts that clip or overlap a translation
+twice as long as the source. `NoireLanguages.IsPseudo(code)` is true for both, for a plugin that hides them from its
+users.
+
+### Missing Keys
+
+```csharp
+IReadOnlyList<string> missing = localizer.MissingKeys("fr");   // sorted, plural forms included
+```
+
+Empty for the source language, its regions and the pseudo-languages.
+
+### Language List
+
+```csharp
+foreach (var language in localizer.Languages)
+    ImGui.TextUnformatted($"{language.NativeName} {language.Translated}/{language.Total}");
+```
+
+The source language first, then every loaded language, then the two pseudo-languages. `IsActive` marks the active
+language, or its closest listed parent (`fr` for `fr-FR`). `UserFile` marks a language that exists only as a user file.
+
+### Japanese, Korean and Chinese
+
+NoireUI merges the Japanese, Korean and Chinese characters of every loaded translation into its fonts through
+`NoireScriptFonts` (see the `NoireLib.UI` README). Text drawn in Dalamud's own font at its own size still lacks them.
+
+### NoireLib's Own Texts
+
+`NoireStrings` holds NoireLib's own texts under `noire.*` keys. They are translated in the plugin's language files like
+its own and appear in `MissingKeys`.
+
+---
+
 ## Locale Management
 
 ### Ensuring a Locale Exists
@@ -572,6 +795,8 @@ When resolving a translation key, the module walks the following chain in order:
 
 The first locale in this chain that contains the key wins. Circular references are detected and skipped.
 
+[Declared texts](#declared-texts) walk steps 1 to 4, then the source language's chain, then show their source text.
+
 If no translation is found after exhausting the full chain, the missing-translation handler is invoked.
 
 ---
@@ -647,7 +872,7 @@ localizer.DrawLocaleCombo();
 
 // Customized
 localizer.DrawLocaleCombo(
-    label: "Language",
+    label: "Language",     // null shows NoireStrings.LanguageLabel
     width: 220f,           // pixel width (0 = auto)
     showLocaleCode: true   // append locale code, e.g. "English (en-US)"
 );

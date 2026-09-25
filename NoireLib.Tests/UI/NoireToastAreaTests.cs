@@ -82,7 +82,7 @@ public class NoireToastAreaTests
     {
         // The two roundings have to compose: once every slot and gap is on the grid, the total is already on it, so
         // the stack height is exactly the sum. Any slack here would sit between the toasts and the window's edge and
-        // put the whole stack back off the grid, which is what the anchored edge depends on.
+        // put the whole stack back off the grid the anchored edge depends on.
         const float gap = 8f;
 
         var slots = new[] { 41f, 63f, 27f, 55f };

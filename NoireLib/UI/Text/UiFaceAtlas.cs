@@ -56,6 +56,8 @@ internal static class UiFaceAtlas
     private static int buildScheduled;
     private static int generation;
 
+    private static int builtScripts;
+
     internal static int Generation => Volatile.Read(ref generation);
 
     internal static int EntryCount
@@ -159,9 +161,22 @@ internal static class UiFaceAtlas
         tickedFrame = frame;
 
         var kick = false;
+        var scripts = NoireScriptFonts.Generation;
 
         lock (SyncRoot)
         {
+            // A script change rebuilds every size already built.
+            if (scripts != builtScripts)
+            {
+                builtScripts = scripts;
+
+                if (Entries.Count > 0)
+                {
+                    dirty = true;
+                    dirtyFrame = frame - 1;
+                }
+            }
+
             for (var index = Retired.Count - 1; index >= 0; index--)
             {
                 if (Retired[index].Frame >= frame)
@@ -276,6 +291,7 @@ internal static class UiFaceAtlas
         {
             var extra = new SafeFontConfig { SizePx = linePx, MergeFont = font };
             toolkit.AttachExtraGlyphsForDalamudLanguage(ref extra);
+            NoireScriptFonts.Merge(toolkit, font, linePx);
         }
 
         face.OnBuild?.Invoke(toolkit, font, linePx);
@@ -289,7 +305,7 @@ internal static class UiFaceAtlas
         {
             var entry = Entries[index];
 
-            if (Stopwatch.GetElapsedTime(entry.LastUsedTicks, now) < ColdLifetime)
+            if (Stopwatch.GetElapsedTime(entry.LastUsedTicks, now) < ColdLifetime || entry.Face.Keeps(entry.EmPx))
                 continue;
 
             RemoveLocked(entry);

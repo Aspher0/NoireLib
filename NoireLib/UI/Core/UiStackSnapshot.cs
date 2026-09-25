@@ -47,7 +47,7 @@ internal readonly struct UiStackSnapshot
         return total;
     }
 
-    private static int ColorDepth => ImGui.GetCurrentContext().ColorStack.Size;
+    private static int ColorDepth => UiContext.Current.ColorStack.Size;
 
-    private static int StyleVarDepth => ImGui.GetCurrentContext().StyleVarStack.Size;
+    private static int StyleVarDepth => UiContext.Current.StyleVarStack.Size;
 }

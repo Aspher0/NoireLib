@@ -4,9 +4,7 @@ using System.Numerics;
 
 namespace NoireLib.UI;
 
-/// <summary>
-/// Presents the dialogs raised through <see cref="NoireModal"/>, one at a time.
-/// </summary>
+/// <summary>Presents the dialogs raised through <see cref="NoireModal"/>, one at a time.</summary>
 public sealed class NoireModalHost : NoireDrawable
 {
     private const string PopupId = "###NoireModalPopup";
@@ -86,7 +84,21 @@ public sealed class NoireModalHost : NoireDrawable
 
         var title = string.IsNullOrEmpty(request.Title) ? " " : request.Title;
 
-        if (ImGui.BeginPopupModal(title + PopupId, ImGuiWindowFlags.NoSavedSettings | ImGuiWindowFlags.AlwaysAutoResize))
+        var open = true;
+        var flags = ImGuiWindowFlags.NoSavedSettings | ImGuiWindowFlags.AlwaysAutoResize;
+        var shown = request.Options.CloseButton
+            ? ImGui.BeginPopupModal(title + PopupId, ref open, flags)
+            : ImGui.BeginPopupModal(title + PopupId, flags);
+
+        if (shown && !open)
+        {
+            ImGui.CloseCurrentPopup();
+            ImGui.EndPopup();
+            NoireModal.Complete(request, NoireModal.CancelledResult);
+            return;
+        }
+
+        if (shown)
         {
             try
             {
@@ -213,12 +225,22 @@ public sealed class NoireModalHost : NoireDrawable
     {
         var choices = request.Choices!;
         var spacing = NoireTheme.Current.ResolveItemSpacing().X;
+        var cancelLabel = CancelLabelFor(request);
+        var hasCancel = cancelLabel.Length > 0;
 
-        var total = 0f;
+        var total = hasCancel ? MeasureButton(cancelLabel) + spacing : 0f;
         for (var index = 0; index < choices.Count; index++)
             total += MeasureButton(choices[index]) + (index > 0 ? spacing : 0f);
 
         AlignRight(total);
+
+        if (hasCancel)
+        {
+            if (NoireButtons.Button(UiIds.Labelled(cancelLabel, "##NoireModalCancel", string.Empty), ButtonTone.Ghost, new Vector2(MeasureButton(cancelLabel), 0f)))
+                NoireModal.Complete(request, NoireModal.CancelledResult);
+
+            ImGui.SameLine(0f, spacing);
+        }
 
         for (var index = 0; index < choices.Count; index++)
         {

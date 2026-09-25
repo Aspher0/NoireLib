@@ -5,10 +5,7 @@ using Xunit;
 
 namespace NoireLib.Tests;
 
-/// <summary>
-/// Locks the color operations the theme derives its states from, including the two that are easy to get subtly wrong:
-/// lightening must not touch alpha, and fading must scale what is already there rather than replacing it.
-/// </summary>
+/// <summary>Locks the color operations: lightening keeps alpha, fading scales it, and an image's accent skips dark and transparent regions.</summary>
 public class ColorHelperOperationsTests
 {
     private static readonly Vector4 HalfTransparentBlue = new(0.2f, 0.4f, 0.8f, 0.5f);
@@ -97,5 +94,46 @@ public class ColorHelperOperationsTests
     {
         ColorHelper.Luminance(ColorHelper.Readable(new Vector4(0f, 0f, 0f, 1f))).Should().BeGreaterThan(0.5f);
         ColorHelper.Luminance(ColorHelper.Readable(new Vector4(1f, 1f, 1f, 1f))).Should().BeLessThan(0.5f);
+    }
+
+    [Fact]
+    public void RgbToVector4_ReadsRedFromTheHighByte()
+        => ColorHelper.RgbToVector4(0xff8000, 0.5f).Should().Be(new Vector4(1f, 128f / 255f, 0f, 0.5f));
+
+    [Fact]
+    public void GetVividColor_OfASaturatedImage_KeepsItsHue()
+    {
+        var color = ColorHelper.GetVividColor(Image(width: 32, height: 32, blue: 30, green: 40, red: 220, alpha: 255), 32, 32);
+
+        color.Should().NotBeNull();
+        color!.Value.X.Should().BeGreaterThan(color.Value.Y);
+        color.Value.X.Should().BeGreaterThan(color.Value.Z);
+        color.Value.W.Should().Be(1f);
+    }
+
+    [Fact]
+    public void GetVividColor_OfATransparentOrDarkImage_IsNull()
+    {
+        ColorHelper.GetVividColor(Image(32, 32, 200, 200, 200, 0), 32, 32).Should().BeNull("because nothing in it is opaque");
+        ColorHelper.GetVividColor(Image(32, 32, 10, 10, 10, 255), 32, 32).Should().BeNull("because nothing in it is bright");
+    }
+
+    [Fact]
+    public void GetVividColor_OfATruncatedBuffer_IsNull()
+        => ColorHelper.GetVividColor(new byte[16], 32, 32).Should().BeNull();
+
+    private static byte[] Image(int width, int height, byte blue, byte green, byte red, byte alpha)
+    {
+        var pixels = new byte[width * height * 4];
+
+        for (var i = 0; i < pixels.Length; i += 4)
+        {
+            pixels[i] = blue;
+            pixels[i + 1] = green;
+            pixels[i + 2] = red;
+            pixels[i + 3] = alpha;
+        }
+
+        return pixels;
     }
 }

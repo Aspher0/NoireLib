@@ -2,16 +2,13 @@
 using FluentAssertions;
 using NoireLib.UI;
 using System;
+using System.Linq;
 using System.Numerics;
 using Xunit;
 
 namespace NoireLib.Tests;
 
-/// <summary>
-/// Locks <see cref="NoireRibbonField"/> to the canvas math it reproduces (two-circle radial gradient, padded gradient
-/// stops, frame-rate independent smoothing), to geometry that never leaves the rounded view, and to a frame that
-/// allocates nothing.
-/// </summary>
+/// <summary>Locks the ribbon field to its canvas math, to geometry inside the rounded view, and to an allocation-free frame.</summary>
 [Collection(NoireUiTestCollection.Name)]
 public sealed class NoireRibbonFieldTests : IClassFixture<UiHarness>
 {
@@ -166,6 +163,63 @@ public sealed class NoireRibbonFieldTests : IClassFixture<UiHarness>
 
         for (var i = 0; i < keptVertices.Length; i++)
             keptVertices[i].Pos.Should().Be(freshVertices[i].Pos, $"vertex {i} position");
+    }
+
+    [Fact]
+    public void DriftAllowance_ReplaysTheLastLayoutWhileTheRibbonsCannotHaveMovedThatFar()
+    {
+        var lagging = new NoireRibbonField(new RibbonFieldOptions { MaxDriftPixels = 1000f });
+
+        harness.Draw(() => CaptureLive(lagging, false), warmUpFrames: 2);
+        harness.Draw(() => CaptureLive(lagging, true), warmUpFrames: 0);
+
+        keptVertices.Should().NotBeEmpty();
+        freshVertices.Should().Equal(keptVertices, (a, b) => a.Pos == b.Pos && a.Col == b.Col);
+    }
+
+    [Fact]
+    public void DriftAllowance_LaysOutAgainOnceTheRibbonsCouldHaveMovedFurther()
+    {
+        var strict = new NoireRibbonField(new RibbonFieldOptions { MaxDriftPixels = 0.001f });
+
+        harness.Draw(() => CaptureLive(strict, false), warmUpFrames: 2);
+        harness.Draw(() => CaptureLive(strict, true), warmUpFrames: 0);
+
+        keptVertices.Should().NotBeEmpty();
+        freshVertices.Select(v => v.Pos).Should().NotEqual(keptVertices.Select(v => v.Pos), "a frame moves the ribbons further than a thousandth of a pixel");
+    }
+
+    [Fact]
+    public void DriftAllowance_ReplayAllocatesNothing()
+    {
+        driftField = new NoireRibbonField(new RibbonFieldOptions { MaxDriftPixels = 1000f });
+
+        var result = harness.Draw(static () =>
+        {
+            driftField!.Update(ViewMin, ViewMax, null);
+            driftField.Draw(ImGui.GetWindowDrawList(), ViewMin, ViewMax, Radius);
+        }, warmUpFrames: 3);
+
+        result.AllocatedBytes.Should().Be(0L);
+    }
+
+    private static NoireRibbonField? driftField;
+
+    // A running field, not a frozen one: its clock advances every frame.
+    private static void CaptureLive(NoireRibbonField field, bool fresh)
+    {
+        var list = ImGui.GetWindowDrawList();
+
+        field.Update(ViewMin, ViewMax, null);
+
+        var start = list.VtxBuffer.Size;
+        field.DrawRibbons(list, ViewMin, ViewMax, Radius, 0.8f);
+        var taken = list.VtxBuffer.AsSpan()[start..].ToArray();
+
+        if (fresh)
+            freshVertices = taken;
+        else
+            keptVertices = taken;
     }
 
     // Locks the painted picture. If this fails on purpose, rasterise the new picture and put its hash here.

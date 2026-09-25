@@ -4,7 +4,7 @@ using System.Collections.Generic;
 
 namespace NoireLib.GameWatcher;
 
-// The declarative flag→event table behind the Condition source: one row per derived enter/leave pair, not twenty
+// The declarative flag-to-event table behind the Condition source: one row per derived enter/leave pair, not twenty
 // hand-written blocks. A derived state is "any of the row's flags is set"; transitions fire the row's enter/leave
 // events. Pure data - unit-testable without the game.
 internal static class ConditionPairTable
@@ -22,7 +22,6 @@ internal static class ConditionPairTable
         where TLeave : new()
         => new(name, flags, typeof(TEnter), typeof(TLeave), () => new TEnter(), () => new TLeave());
 
-    /// <summary>Every derived pair the Condition source produces.</summary>
     public static readonly IReadOnlyList<Row> Rows = new[]
     {
         Make<CombatEnteredEvent, CombatLeftEvent>("combat", ConditionFlag.InCombat),
@@ -46,12 +45,6 @@ internal static class ConditionPairTable
         Make<DutyEnteredEvent, DutyLeftEvent>("duty", ConditionFlag.BoundByDuty, ConditionFlag.BoundByDuty56, ConditionFlag.BoundByDuty95),
     };
 
-    /// <summary>
-    /// Computes a derived state from a flag reader: true when any of the row's flags is set.
-    /// </summary>
-    /// <param name="row">The table row.</param>
-    /// <param name="isFlagSet">Reads a single condition flag.</param>
-    /// <returns>The derived state.</returns>
     public static bool ComputeState(Row row, Func<ConditionFlag, bool> isFlagSet)
     {
         foreach (var flag in row.Flags)

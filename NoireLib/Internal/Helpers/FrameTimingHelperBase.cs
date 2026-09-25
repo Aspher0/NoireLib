@@ -11,14 +11,10 @@ namespace NoireLib.Internal.Helpers;
 /// </summary>
 public abstract class FrameTimingHelperBase : TimingHelperBase
 {
-    /// <summary>
-    /// The interval in game frames.
-    /// </summary>
+    /// <summary>The interval in game frames.</summary>
     protected long _frames;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="FrameTimingHelperBase"/> class.
-    /// </summary>
+    /// <summary>Initializes a new instance of the <see cref="FrameTimingHelperBase"/> class.</summary>
     /// <param name="frames">The interval in game frames.</param>
     /// <exception cref="ArgumentException">Thrown when the frame count is less than one.</exception>
     protected FrameTimingHelperBase(long frames)
@@ -35,23 +31,14 @@ public abstract class FrameTimingHelperBase : TimingHelperBase
     /// <inheritdoc/>
     protected override long IntervalTicks => _frames;
 
-    /// <summary>
-    /// Gets the current interval in game frames.
-    /// </summary>
+    /// <summary>Gets the current interval in game frames.</summary>
     /// <returns>The interval in frames.</returns>
     public long GetFrames()
     {
         ThrowIfDisposed();
 
-        _lock.Wait();
-        try
-        {
-            return _frames;
-        }
-        finally
-        {
-            _lock.Release();
-        }
+        // Lock-free: callers read this per call from the framework thread.
+        return Volatile.Read(ref _frames);
     }
 
     /// <summary>
@@ -69,7 +56,7 @@ public abstract class FrameTimingHelperBase : TimingHelperBase
         _lock.Wait();
         try
         {
-            _frames = frames;
+            Volatile.Write(ref _frames, frames);
         }
         finally
         {
@@ -82,8 +69,7 @@ public abstract class FrameTimingHelperBase : TimingHelperBase
     {
         var target = FrameClock.Current + _frames;
 
-        // Reading Current above attaches the clock, so this answers whether a game update is behind it. Without
-        // one the count never moves, and waiting on it would never return; the wait resolves inline instead.
+        // Without a game update behind the clock the count never moves: the wait resolves inline.
         if (!FrameClock.IsRunning)
             return !cts.IsCancellationRequested;
 

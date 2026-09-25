@@ -19,7 +19,6 @@ namespace NoireLib.SourceGenerators;
 /// <remarks>
 /// Generated because both hand-written failures still compile: C# bakes an optional parameter's default into the
 /// caller, and the compiler does not expand inherited-documentation tags into the shipped XML file.
-/// See docs/adr/0003-noireui-facade-is-generated.md.
 /// </remarks>
 [Generator]
 public sealed class NoireFacadeGenerator : IIncrementalGenerator
@@ -97,10 +96,7 @@ public sealed class NoireFacadeGenerator : IIncrementalGenerator
         return new RenderedSurface($"{RootType}.{groupedName}.g.cs", builder.ToString());
     }
 
-    /// <summary>
-    /// Emits a creation method on the root for each public constructor of a marked widget, so that a widget an author
-    /// builds and drives is browsable beside the surfaces they call statically.
-    /// </summary>
+    // A widget an author builds and drives is browsable beside the surfaces called statically.
     private static RenderedSurface? RenderFactory(GeneratorAttributeSyntaxContext context)
     {
         if (context.TargetSymbol is not INamedTypeSymbol widget)
@@ -135,9 +131,6 @@ public sealed class NoireFacadeGenerator : IIncrementalGenerator
         return new RenderedSurface($"{RootType}.{name}.Create.g.cs", builder.ToString());
     }
 
-    /// <summary>
-    /// Opens a generated file on the root partial class, which both emitters extend.
-    /// </summary>
     private static StringBuilder OpenRootFile()
     {
         var builder = new StringBuilder();
@@ -175,13 +168,7 @@ public sealed class NoireFacadeGenerator : IIncrementalGenerator
         return builder.ToString();
     }
 
-    /// <summary>
-    /// The grouped name of a surface: the explicit name on the marker, or the surface's own with the library prefix
-    /// removed.
-    /// </summary>
-    /// <remarks>
-    /// Plurality is mirrored as it stands. Normalizing it would give a surface two names.
-    /// </remarks>
+    // Plurality is mirrored as it stands. Normalizing it would give a surface two names.
     private static string GroupedName(INamedTypeSymbol surface, IReadOnlyList<AttributeData> markers)
     {
         foreach (var marker in markers)
@@ -415,9 +402,7 @@ public sealed class NoireFacadeGenerator : IIncrementalGenerator
         return builder.ToString();
     }
 
-    /// <summary>
-    /// Renders a parameter's default as a constant expression that does not depend on what is in scope where it lands.
-    /// </summary>
+    // The default must not depend on what is in scope where it lands.
     private static string? DefaultValue(IParameterSymbol parameter)
     {
         if (!parameter.HasExplicitDefaultValue)
@@ -461,9 +446,7 @@ public sealed class NoireFacadeGenerator : IIncrementalGenerator
             ? name
             : "@" + name;
 
-    /// <summary>
-    /// One surface's finished output. Compared by its text so an edit elsewhere in the library does not re-emit it.
-    /// </summary>
+    // Compared by its text: an edit elsewhere in the library does not re-emit it.
     private sealed class RenderedSurface : IEquatable<RenderedSurface>
     {
         public RenderedSurface(string hintName, string source)

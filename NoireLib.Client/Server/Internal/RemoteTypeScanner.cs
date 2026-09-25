@@ -374,9 +374,7 @@ internal static class RemoteTypeScanner
         return thread == NoireRemoteThread.Framework ? NoireRemoteReadiness.StateReady : NoireRemoteReadiness.None;
     }
 
-    /// <summary>
-    /// Resolves which wires a member is reachable on: its own setting, then the class's, then both.
-    /// </summary>
+    // A member's own setting, then its class's, then both.
     public static NoireRemoteTransport ResolveTransports(NoireRemoteTransport member, NoireRemoteTransport endpoint)
     {
         if (member != NoireRemoteTransport.Inherit)

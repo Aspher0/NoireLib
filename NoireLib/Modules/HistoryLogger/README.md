@@ -11,6 +11,7 @@ You are reading the documentation for the `NoireHistoryLogger` module.
 - [Log Levels](#log-levels)
 - [Displaying the History Logger Window](#displaying-the-history-logger-window)
 - [Using Your Own Window](#using-your-own-window)
+- [Skinned Window](#skinned-window)
 - [Database Persistence](#database-persistence)
 - [Auto-Logging with Proxies](#auto-logging-with-proxies)
 - [Advanced Features](#advanced-features)
@@ -292,6 +293,30 @@ var line = NoireHistoryLogger.FormatEntry(entry);  // "yyyy-MM-dd HH:mm:ss | Lev
 ```
 
 The built-in window clears in-memory entries while not persisting and database entries while persisting. Its display options are persisted in `HistoryLoggerConfig` (`ShowLevelBackgroundColors`, `SelectLinesSeparately`, `HideCategoryColumn`, `HideSourceColumn`, `ItemsPerPage`) for your window to read.
+
+---
+
+## Skinned Window
+
+Once the plugin registers skins (`NoireSkins.Register`, see the UI README), `ShowWindow()` and the other window methods
+show `NoireHistoryLogWindow` instead of the built-in window: the same filters and table, as components the user can
+arrange, in the active skin's frame. A custom window set with `SetCustomWindow` still wins. A window the active skin
+presents as `Presentation.Hidden` is passed over, down to the built-in window.
+
+```csharp
+View<NoireHistoryLogWindow, GlassLogsView>();                 // in a skin's constructor
+
+public sealed class GlassLogsView : NoireView<NoireHistoryLogWindow>
+{
+    protected override void Draw(NoireHistoryLogWindow window) => painter.Draw(window.Log);   // its HistoryLogView
+}
+```
+
+`Log` is the window's own `HistoryLogView`; `Logger` is the module. The built-in window stays in use for a plugin that
+registers no skin.
+
+The stock drawing of the filters and table, shared with the built-in window, formats its row labels and ids as it draws
+and allocates every frame.
 
 ---
 

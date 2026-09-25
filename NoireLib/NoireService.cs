@@ -13,9 +13,6 @@ namespace NoireLib;
 /// </summary>
 public class NoireService
 {
-    /// <summary>
-    /// The window system used by NoireLib for managing module windows.
-    /// </summary>
     internal static WindowSystem? NoireWindowSystem { get; private set; } = null;
 
     /// <summary>
@@ -30,9 +27,7 @@ public class NoireService
     /// </summary>
     public static List<(Type Type, INoireModule Module)> ActiveModules = new();
 
-    /// <summary>
-    /// Should not be called directly. Use <see cref="NoireLibMain.Initialize"/> instead.
-    /// </summary>
+    // Called by NoireLibMain.Initialize only.
     internal static bool Initialize(IDalamudPluginInterface dalamudPluginInterface, IDalamudPlugin plugin)
     {
         if (IsInitialized())
@@ -67,9 +62,7 @@ public class NoireService
     /// </summary>
     public static bool IsInitialized() => PluginInstance != null && PluginInterface != null;
 
-    /// <summary>
-    /// Do not call this method directly. Use <see cref="NoireLibMain.Dispose"/> instead.
-    /// </summary>
+    // Called by NoireLibMain.Dispose only.
     internal static void Dispose()
     {
         if (NoireWindowSystem != null)

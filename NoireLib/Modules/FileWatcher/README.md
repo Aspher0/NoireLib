@@ -69,7 +69,7 @@ That's it! You now have a working filesystem watcher.
 
 ## Thread Contract
 
-**Every handler you register runs on the framework thread, so it is safe to touch game state directly.** This applies to sync callbacks, CLR events (`NotificationReceived`, `Changed`, `Created`, `Deleted`, `Renamed`, `Error`), and every EventBus event the module publishes, including the registration lifecycle events (`FileWatchRegisteredEvent`, `FileWatchStateChangedEvent`, `FileWatchRemovedEvent`, `FileWatchesClearedEvent`).
+**Every handler you register runs on the framework thread: it is safe to touch game state directly.** This applies to sync callbacks, CLR events (`NotificationReceived`, `Changed`, `Created`, `Deleted`, `Renamed`, `Error`), and every EventBus event the module publishes, including the registration lifecycle events (`FileWatchRegisteredEvent`, `FileWatchStateChangedEvent`, `FileWatchRemovedEvent`, `FileWatchesClearedEvent`).
 
 ```csharp
 // Safe: this runs on the framework thread.
@@ -83,15 +83,15 @@ fileWatcher.Changed += n =>
 The underlying `System.IO.FileSystemWatcher` raises events concurrently on thread pool threads. The module queues and drains each notification on the framework thread instead, which gives two guarantees:
 
 - **Handlers run on the framework thread**, not on a thread pool thread.
-- **Handlers never overlap.** Deliveries are drained one at a time, so your callback is never re-entered while it is still running.
+- **Handlers never overlap.** Deliveries are drained one at a time: your callback is never re-entered while it is still running.
 
 ### Async callbacks
 
-An `asyncCallback` is *started* on the framework thread and runs fire-and-forget, so everything before its first `await` gets the same guarantee. What runs after an `await` is governed by that callback's own awaits, not by this module. If a continuation needs to touch game state, marshal it back with `AsyncHelper`.
+An `asyncCallback` is *started* on the framework thread and runs fire-and-forget: everything before its first `await` gets the same guarantee. What runs after an `await` is governed by that callback's own awaits, not by this module. If a continuation needs to touch game state, marshal it back with `AsyncHelper`.
 
 ### Lifecycle events are asynchronous
 
-A lifecycle event is queued like everything else, so it reaches subscribers **after** the call that caused it has already returned:
+A lifecycle event is queued like everything else: it reaches subscribers **after** the call that caused it has already returned:
 
 ```csharp
 eventBus.Subscribe<FileWatchRegisteredEvent>(e => knownWatches.Add(e.Registration.WatchId));
@@ -102,7 +102,7 @@ var watchId = fileWatcher.WatchDirectory(directory);
 
 To get the registration synchronously, use the returned watch ID or `GetWatch(watchId)`; both are up to date the moment `Watch` returns.
 
-A watch does not start raising events until its `FileWatchRegisteredEvent` is queued, so a subscriber that tracks watches by ID is always told a watch exists before it can receive that watch's first `FileWatchNotificationEvent`. Within a single `ClearAllWatches`, the per-watch `FileWatchRemovedEvent` deliveries precede the `FileWatchesClearedEvent`.
+A watch does not start raising events until its `FileWatchRegisteredEvent` is queued: a subscriber that tracks watches by ID is always told a watch exists before it can receive that watch's first `FileWatchNotificationEvent`. Within a single `ClearAllWatches`, the per-watch `FileWatchRemovedEvent` deliveries precede the `FileWatchesClearedEvent`.
 
 ### Delivery ordering and backpressure
 
@@ -117,11 +117,11 @@ The queue does **not** merge notifications. Collapsing the burst of events that 
 
 ### When NoireLib is not initialized
 
-There is no framework thread to marshal onto, so handlers run inline on the calling or observing thread.
+There is no framework thread to marshal onto: handlers run inline on the calling or observing thread.
 
 ### Disposal
 
-**Once `Dispose` returns, no handler of this module runs again.** `Dispose` blocks until any delivery that had already started has finished, so a handler that blocks forever blocks disposal with it.
+**Once `Dispose` returns, no handler of this module runs again.** `Dispose` blocks until any delivery that had already started has finished: a handler that blocks forever blocks disposal with it.
 
 Nothing is published from disposal: `Dispose` removes every watch, but those removals raise no `FileWatchRemovedEvent` or `FileWatchesClearedEvent`.
 
@@ -207,7 +207,9 @@ fileWatcher
 
 When the module is **activated** (going from `IsActive = false` to `true`), all watches that are individually enabled will resume raising events.
 
-When the module is **deactivated** (going from `IsActive = true` to `false`), all underlying watchers stop raising events regardless of their individual enabled state.
+When the module is **deactivated** (going from `IsActive = true` to `false`), all underlying watchers stop raising events regardless of their individual enabled state. Notifications already queued are still delivered.
+
+The module subscribes to the framework update only while deliveries are pending: an idle or deactivated module does no per-frame work.
 
 ---
 
@@ -373,7 +375,7 @@ fileWatcher.EnableAllWatches();
 fileWatcher.DisableAllWatches();
 ```
 
-Both publish one `FileWatchStateChangedEvent` per watch that actually changed, exactly as `SetWatchEnabled` does. Watches already in the requested state are left alone and report nothing, so a bulk enable over watches that are all enabled publishes no events at all.
+Both publish one `FileWatchStateChangedEvent` per watch that actually changed, exactly as `SetWatchEnabled` does. Watches already in the requested state are left alone and report nothing: a bulk enable over watches that are all enabled publishes no events at all.
 
 ### Remove a Watch
 
@@ -472,7 +474,7 @@ Published event types:
 - `FileWatchErrorEvent` - An underlying watcher error occurred. Contains the `FileWatchError`.
 - `FileWatchesClearedEvent` - All watches were removed via `ClearAllWatches`. Contains the `RemovedCount`.
 
-All six are delivered to subscribers on the framework thread, and all six are queued, so a lifecycle event arrives after the call that caused it has returned. Disposal publishes nothing. See [Thread Contract](#thread-contract) for the reasoning and the consequences.
+All six are delivered to subscribers on the framework thread, and all six are queued: a lifecycle event arrives after the call that caused it has returned. Disposal publishes nothing. See [Thread Contract](#thread-contract) for the reasoning and the consequences.
 
 ---
 
@@ -574,7 +576,7 @@ Enum representing the semantic type of a notification:
 - `Changed`
 - `Deleted`
 - `Renamed`
-- `Error` - **never carried by a notification.** A watcher-level error reports an exception rather than a path, so it travels as a `FileWatchError` through the `Error` CLR event and `FileWatchErrorEvent`, not as a `FileWatchNotification`. `FileWatchNotification.EventType` is never set to this value, so a `switch` case testing for it is unreachable. Retained only because removing it would break consumers that name it.
+- `Error` - **never carried by a notification.** A watcher-level error reports an exception rather than a path: it travels as a `FileWatchError` through the `Error` CLR event and `FileWatchErrorEvent`, not as a `FileWatchNotification`. `FileWatchNotification.EventType` is never set to this value: a `switch` case testing for it is unreachable. Retained only because removing it would break consumers that name it.
 
 ---
 
@@ -597,7 +599,7 @@ Enum representing the semantic type of a notification:
 - All callback exceptions (sync, async, and CLR event handlers) are caught and logged automatically. They do not crash the module.
 - Inspect logs for callback failure messages.
 - Check `TotalCallbackExceptionsCaught` in the statistics for a count.
-- Keep callbacks short and delegate heavy work to background tasks. Callbacks run on the framework thread, so a slow one stalls the game's frame.
+- Keep callbacks short and delegate heavy work to background tasks. Callbacks run on the framework thread: a slow one stalls the game's frame.
 - Prefer async callbacks for IO-bound work.
 
 ### Notifications are missing under heavy filesystem activity

@@ -19,6 +19,10 @@ internal sealed unsafe class StateGuard
 
     private ID3D11VertexShader* vs;
     private ID3D11Buffer* vsCb0, vsCb1;
+
+    // The game can leave a geometry shader bound at the injection point. Left there, it would process our draws.
+    private ID3D11GeometryShader* gs;
+
     // The shadow injection reads t0 on the vertex stage inside the game's shadow pass, where skinning may be bound.
     private ID3D11ShaderResourceView* vsSrv0;
 
@@ -77,6 +81,9 @@ internal sealed unsafe class StateGuard
         fixed (ID3D11ShaderResourceView** p = &vsSrv0)
             ctx->VSGetShaderResources(0, 1, p);
 
+        fixed (ID3D11GeometryShader** p = &gs)
+            ctx->GSGetShader(p, null, null);
+
         fixed (ID3D11PixelShader** p = &ps)
             ctx->PSGetShader(p, null, null);
         ctx->PSGetConstantBuffers(0, 2, cbs);
@@ -126,6 +133,9 @@ internal sealed unsafe class StateGuard
 
         captured = true;
         AssertUntouchedStagesClean(ctx);
+
+        if (gs != null && NoireDraw3D.Diagnostics.UnbindGeometryShader)
+            ctx->GSSetShader(null, null, 0);
     }
 
     public void Restore(ID3D11DeviceContext* ctx)
@@ -171,6 +181,8 @@ internal sealed unsafe class StateGuard
         var samps = stackalloc ID3D11SamplerState*[2] { psSamp0, psSamp1 };
         ctx->PSSetSamplers(0, 2, samps);
 
+        ctx->GSSetShader(gs, null, 0);
+
         ctx->VSSetShader(vs, null, 0);
         cbs[0] = vsCb0; cbs[1] = vsCb1;
         ctx->VSSetConstantBuffers(0, 2, cbs);
@@ -188,15 +200,10 @@ internal sealed unsafe class StateGuard
         ReleaseAll();
     }
 
-    // If either assert fires, that slot joins the save and restore contract.
+    // If the assert fires, OM UAVs join the save and restore contract.
     [Conditional("DEBUG")]
     private void AssertUntouchedStagesClean(ID3D11DeviceContext* ctx)
     {
-        ID3D11GeometryShader* gs = null;
-        ctx->GSGetShader(&gs, null, null);
-        Debug.Assert(gs == null, "Draw3D: a geometry shader is bound at present time - add GS to the StateGuard slot contract.");
-        ComPtrUtil.Release(ref gs);
-
         var uavs = stackalloc ID3D11UnorderedAccessView*[8];
         ctx->OMGetRenderTargetsAndUnorderedAccessViews(0, null, null, 0, 8, uavs);
         for (var i = 0; i < 8; i++)
@@ -216,6 +223,7 @@ internal sealed unsafe class StateGuard
         ComPtrUtil.Release(ref vsCb0);
         ComPtrUtil.Release(ref vsCb1);
         ComPtrUtil.Release(ref vsSrv0);
+        ComPtrUtil.Release(ref gs);
         ComPtrUtil.Release(ref ps);
         ComPtrUtil.Release(ref psCb0);
         ComPtrUtil.Release(ref psCb1);

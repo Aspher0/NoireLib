@@ -4,6 +4,7 @@ using Dalamud.Game.ClientState.Objects.Types;
 using Dalamud.Interface.Colors;
 using Dalamud.Interface.Utility.Raii;
 using NoireDraw3DDemoPlugin.Models;
+using NoireLib.Draw3D.Enums;
 using NoireLib.Draw3D.Materials;
 using NoireLib.Draw3D.Scene;
 using System;
@@ -22,10 +23,7 @@ internal sealed class NodeInspector
     private Vector4 decalShapeColor = new(1f, 1f, 0f, 1f);
     private Vector4 decalVolumeColor = new(0.35f, 0.85f, 1f, 1f);
 
-    /// <summary>Draws the inspector for <paramref name="node"/> inside <paramref name="demo"/>.</summary>
-    /// <param name="demo">The scene the node belongs to.</param>
-    /// <param name="node">The node to edit.</param>
-    /// <returns>False when the node was destroyed here. The caller then drops its reference to it.</returns>
+    // False when the node was destroyed here. The caller then drops its reference.
     public bool Draw(DemoScene demo, SceneNode node)
     {
         if (!DrawHeader(demo, node))
@@ -195,6 +193,32 @@ internal sealed class NodeInspector
         }
     }
 
+    private static readonly string[] TranslucentChoices = ["Renderer default", nameof(TranslucentOcclusion.SeeThrough), nameof(TranslucentOcclusion.Occlude)];
+
+    private static void TranslucentRow(MeshRenderer renderer)
+    {
+        Ui.Row("Translucent surfaces", "Whether water and later surfaces hide this material. Renderer default follows the Renderer page.");
+        var index = renderer.Material.TranslucentOcclusion switch
+        {
+            TranslucentOcclusion.SeeThrough => 1,
+            TranslucentOcclusion.Occlude => 2,
+            _ => 0,
+        };
+
+        if (Ui.Combo("##insp.translucent", TranslucentChoices, ref index))
+        {
+            renderer.Material = renderer.Material with
+            {
+                TranslucentOcclusion = index switch
+                {
+                    1 => TranslucentOcclusion.SeeThrough,
+                    2 => TranslucentOcclusion.Occlude,
+                    _ => null,
+                },
+            };
+        }
+    }
+
     private static void DrawMaterial(MeshRenderer renderer)
     {
         Ui.Section("Shading");
@@ -215,6 +239,7 @@ internal sealed class NodeInspector
                 "Opaque (z-tested against other Draw3D meshes), Premultiplied (standard translucent), or Additive (emissive glow, order-independent).");
             Ui.Enum("Depth", () => renderer.Material.Depth, v => renderer.Material = renderer.Material with { Depth = v },
                 "TestOnly: hidden behind walls. Ignore: x-ray. WorldOnly: hidden by walls, drawn over other objects.");
+            TranslucentRow(renderer);
             Ui.Enum("Cull", () => renderer.Material.Cull, v => renderer.Material = renderer.Material with { Cull = v },
                 "Which triangle faces rasterize. Back is the default; None for planes and ribbons seen from both sides; Front is what decal volume boxes use.");
             Ui.Enum("When depth unavailable", () => renderer.Material.WhenDepthUnavailable, v => renderer.Material = renderer.Material with { WhenDepthUnavailable = v });

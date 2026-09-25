@@ -14,9 +14,8 @@ using System.Threading.Tasks;
 namespace NoireLib.CommandRouter;
 
 /// <summary>
-/// A module providing structured slash-command registration and dispatch: subcommands, aliases, typed arguments,
-/// auto-generated help, async handlers, availability predicates, command history, and optional
-/// <see cref="NoireEventBus"/> integration.
+/// Slash commands with subcommands, aliases, typed arguments, generated help, async handlers, conditions and history.
+/// Optionally published on a <see cref="NoireEventBus"/>.
 /// </summary>
 public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
 {
@@ -45,9 +44,7 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
     /// </summary>
     public NoireEventBus? EventBus { get; set; }
 
-    /// <summary>
-    /// Sets the <see cref="NoireEventBus"/> instance for publishing command events.
-    /// </summary>
+    /// <summary>Sets the <see cref="NoireEventBus"/> instance for publishing command events.</summary>
     /// <param name="eventBus">The EventBus instance, or null to disable event publishing.</param>
     /// <returns>The module instance for chaining.</returns>
     public NoireCommandRouter SetEventBus(NoireEventBus? eventBus)
@@ -56,14 +53,10 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
         return this;
     }
 
-    /// <summary>
-    /// Creates an unconfigured instance, for internal module management only.
-    /// </summary>
+    /// <summary>Creates an unconfigured instance, for internal module management only.</summary>
     public NoireCommandRouter() : base() { }
 
-    /// <summary>
-    /// Creates a new instance of the <see cref="NoireCommandRouter"/> module.
-    /// </summary>
+    /// <summary>Creates a new instance of the <see cref="NoireCommandRouter"/> module.</summary>
     /// <param name="moduleId">Optional module ID for multiple router instances.</param>
     /// <param name="active">Whether to activate the module on creation.</param>
     /// <param name="enableLogging">Whether to enable logging for this module.</param>
@@ -148,9 +141,7 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
         }
     }
 
-    /// <summary>
-    /// Sets whether auto-generated help output is enabled.
-    /// </summary>
+    /// <summary>Sets whether auto-generated help output is enabled.</summary>
     /// <param name="enable">True to enable auto-help. False to disable.</param>
     /// <returns>The module instance for chaining.</returns>
     public NoireCommandRouter SetAutoHelp(bool enable)
@@ -172,9 +163,7 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
         }
     }
 
-    /// <summary>
-    /// Sets whether Dalamud help entries are separated by a blank line.
-    /// </summary>
+    /// <summary>Sets whether Dalamud help entries are separated by a blank line.</summary>
     /// <param name="enable">True to separate entries. False to list them back to back.</param>
     /// <returns>The module instance for chaining.</returns>
     public NoireCommandRouter SetSeparateDalamudHelpEntries(bool enable)
@@ -198,9 +187,7 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
         }
     }
 
-    /// <summary>
-    /// Sets the maximum number of command history entries to retain. 0 disables recording entirely.
-    /// </summary>
+    /// <summary>Sets the maximum number of command history entries to retain. 0 disables recording entirely.</summary>
     /// <param name="maxSize">The maximum history size. Must not be negative.</param>
     /// <returns>The module instance for chaining.</returns>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="maxSize"/> is negative.</exception>
@@ -261,9 +248,7 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
         return new RootCommandBuilder(this, registration);
     }
 
-    /// <summary>
-    /// Removes a mapped root command, its aliases, and unregisters them from Dalamud.
-    /// </summary>
+    /// <summary>Removes a mapped root command, its aliases, and unregisters them from Dalamud.</summary>
     /// <param name="command">The root slash command string to remove.</param>
     /// <returns>True if the command was found and removed.</returns>
     public bool Unmap(string command)
@@ -293,9 +278,7 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
         }
     }
 
-    /// <summary>
-    /// Gets whether a command is currently mapped, as a root command or as an alias.
-    /// </summary>
+    /// <summary>Gets whether a command is currently mapped, as a root command or as an alias.</summary>
     /// <param name="command">The slash command string to check.</param>
     /// <returns>True if the command is registered.</returns>
     public bool IsCommandRegistered(string command)
@@ -310,6 +293,9 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
             return registrations.ContainsKey(command) || aliasRegistrations.ContainsKey(command);
     }
 
+    /// <summary>Prints a command's help to chat. A leading slash is optional, and an alias works too.</summary>
+    /// <param name="command">The command or alias.</param>
+    /// <returns>Whether the command is registered.</returns>
     public bool PrintHelp(string command)
     {
         if (string.IsNullOrWhiteSpace(command))
@@ -354,9 +340,7 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
             return history.ToList().AsReadOnly();
     }
 
-    /// <summary>
-    /// Clears the command history.
-    /// </summary>
+    /// <summary>Clears the command history.</summary>
     /// <returns>The module instance for chaining.</returns>
     public NoireCommandRouter ClearHistory()
     {
@@ -1093,6 +1077,17 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
 
         if (!fallbackPrinted)
             PrintFallbackHelpLine(fallback!);
+
+        // The built-in "help" token closes the root listing, as it closes Dalamud's.
+        if (scope == null && registration.ListsBuiltInHelp(EnableAutoHelp))
+        {
+            var line = NoireLogger.CreateChatMessageBuilder();
+            line.AddText(BuildTreePrefix(1), HelpMetaColor);
+            line.AddText("help", HelpCommandColor);
+            line.AddText(" - ");
+            line.AddText(registration.BuiltInHelpDescription(), HelpDescriptionColor);
+            NoireLogger.PrintToChat(XivChatType.Debug, line);
+        }
     }
 
     private static void PrintFallbackHelpLine(FallbackCommandDefinition fallback)

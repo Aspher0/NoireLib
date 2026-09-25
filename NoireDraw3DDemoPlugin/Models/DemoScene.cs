@@ -18,15 +18,14 @@ internal sealed class DemoScene
 
     public Scene3D Scene { get; }
 
-    /// <summary>Whether this section disposes the scene (false for the permanent main scene).</summary>
+    // False for the permanent main scene.
     public bool Owned { get; }
 
     public string Label { get; }
 
-    /// <summary>The click-to-select and gizmo editor for this scene, created lazily.</summary>
+    // Created lazily.
     public SceneEditor? Editor { get; set; }
 
-    /// <summary>The demo-spawned root nodes in this scene, in spawn order (the object list).</summary>
     public IReadOnlyList<SceneNode> Nodes => nodes;
 
     public InteractSelection Selection => Scene.Selection;
@@ -48,7 +47,7 @@ internal sealed class DemoScene
         return Editor;
     }
 
-    /// <summary>Drops destroyed nodes from the object list (called each frame before drawing it).</summary>
+    // Called each frame before the object list is drawn.
     public void PruneDestroyed()
     {
         for (var i = nodes.Count - 1; i >= 0; i--)
@@ -64,7 +63,7 @@ internal sealed class DemoScene
         node.Destroy();
     }
 
-    /// <summary>Disposes the scene when owned. Otherwise releases the attached editor and spawned nodes.</summary>
+    // Disposes the scene when owned. Otherwise releases its editor and spawned nodes.
     public void TearDown()
     {
         if (Owned)

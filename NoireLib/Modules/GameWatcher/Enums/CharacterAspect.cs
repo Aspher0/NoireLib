@@ -38,13 +38,13 @@ public enum CharacterAspect
     /// <summary>Death and revival.</summary>
     Life = 1 << 7,
 
-    /// <summary>Character mode transitions (looping emotes, mounts, crafting stance, …).</summary>
+    /// <summary>Character mode transitions, such as looping emotes, mounts and the crafting stance.</summary>
     Mode = 1 << 8,
 
     /// <summary>The exact emote id currently played (from the character's emote controller) - one-shots, loops and cposes.</summary>
     Emote = 1 << 13,
 
-    /// <summary>Online status (AFK, busy, looking for party, …).</summary>
+    /// <summary>Online status, such as AFK, busy or looking for party.</summary>
     OnlineStatus = 1 << 9,
 
     /// <summary>Class/job and level.</summary>

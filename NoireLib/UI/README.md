@@ -45,11 +45,18 @@ You are reading the documentation for the `NoireLib.UI` helpers.
 - [Tab bars you can drive (NoireTabBar)](#tab-bars-you-can-drive-noiretabbar)
 - [Badges and attention (NoireBadge, NoireAttention)](#badges-and-attention-noirebadge-noireattention)
 - [Keyboard focus (NoireFocus)](#keyboard-focus-noirefocus)
+- [Headless state](#headless-state)
+- [Skins, components and skinned windows](#skins-components-and-skinned-windows)
+- [Settings windows (NoireSettingsWindow)](#settings-windows-noiresettingswindow)
+  - [Forms (NoireForm)](#forms-noireform)
+  - [Colour and translation editors](#colour-and-translation-editors)
+  - [Settings skins (ISettingsSkin)](#settings-skins-isettingsskin)
 - [Custom Tooltips](#custom-tooltips)
 - [Images (UiImageSource)](#images-uiimagesource)
 - [Brand and custom icons (NoireIcons)](#brand-and-custom-icons-noireicons)
 - [The UI scale](#the-ui-scale)
 - [Text at any size (NoireText)](#text-at-any-size-noiretext)
+  - [Scripts the active language needs](#scripts-the-active-language-needs)
   - [Letter-spacing](#letter-spacing)
 - [Fonts of your own (NoireFont)](#fonts-of-your-own-noirefont)
 - [Drawing shapes (NoireShapes)](#drawing-shapes-noireshapes)
@@ -61,6 +68,13 @@ You are reading the documentation for the `NoireLib.UI` helpers.
   - [Pattern fills](#pattern-fills)
   - [Glows, clipping and sweeps](#glows-clipping-and-sweeps)
   - [Shapes NoireUI does not ship](#shapes-noireui-does-not-ship)
+  - [Replaying geometry (NoireMeshCache)](#replaying-geometry-noiremeshcache)
+  - [Span polylines](#span-polylines)
+  - [Artwork rendered to a texture (NoireRaster)](#artwork-rendered-to-a-texture-noireraster)
+- [Gradients and motion (NoireGradient, NoireMotion)](#gradients-and-motion-noiregradient-noiremotion)
+  - [Gradients](#gradients)
+  - [Motion](#motion)
+  - [Triggers and reduced motion](#triggers-and-reduced-motion)
 - [Ribbon backdrop (NoireRibbonField)](#ribbon-backdrop-noireribbonfield)
 
 ---
@@ -81,7 +95,9 @@ You are reading the documentation for the `NoireLib.UI` helpers.
 - **`NoireTheme`** - One palette the whole library follows, plus the type scale. An unset token falls through to the ImGui style, except the button fill and the semantic colors. Set an accent and every widget re-tints.
 - **`NoireText`** - Text at any size without ImGui's resampled-atlas blur: a real font built at the size asked for, behind a four-step type scale the theme owns. Also draws text with matched characters picked out (`Highlighted`), for filter results.
 - **`NoireFont` / `NoireFontFamily`** - A typeface of your own from TTF bytes (an embedded resource, a file), drawn and measured at CSS em sizes with letter-spacing and ellipsis, built asynchronously.
+- **`NoireScriptFonts`** - The Japanese, Korean and Chinese characters the loaded translations and language names use, merged into every NoireText size and NoireFont face.
 - **`NoireShapes`** - The shapes a draw list does not have: gradients at any angle over any shape, notched and rounded plates, beveled edges, glows, hairline frames with corner ticks, arcs and wedges, and two pattern fills. Every one is drawn by three public calls over a public path.
+- **`NoireGradient` / `NoireMotion`** - Gradients with any number of colors in any shape, and looping movement, applied to everything a scope draws without moving the layout.
 
 **Widgets and elements**
 
@@ -95,9 +111,12 @@ You are reading the documentation for the `NoireLib.UI` helpers.
 - **`NoireExcelPicker<TRow>`** - A searchable dropdown with icons over any sheet of game data, in one line. A `NoireComboBox` underneath.
 - **`NoireComboBox<T>`** - A combo box with an optional filter input, arrow-key cycling, and an optional "hold a binding + mouse wheel" shortcut to cycle the closed combo. The shortcut can be driven from the Hotkey Manager.
 - **`NoireTooltip`** - Tooltips independent from `ImGui.SetTooltip()`, with adjustable background opacity and mixed inline content built from `NoireContent`.
-- **`NoireIcons`** - Textured icons drawn like glyphs: built-in brand marks (`NoireIcon.Discord`, `NoireIcon.Kofi`) and artwork a plugin registers by name. `ButtonStyle` takes either.
+- **`NoireIcons`** - Every `NoireIcon` (brand marks as artwork, the rest as FontAwesome glyphs) and artwork a plugin registers by name, drawn like glyphs. `ButtonStyle` takes either.
 - **`NoireRibbonField`** - An animated ribbon backdrop (gradient, translucent ribbons, vignette) laid out once per frame and painted into any number of rounded views as one continuous field.
 - **`NoireContent`** - A reusable block of rich inline content (text, dynamic text, FontAwesome icons, images, keycaps, any widget). Rendered by `NoireTooltip`, and by anything of your own through `Draw()`.
+- **Headless state** - `UiAction`, `NoireMenuState` with `NoireUI.Menu`, `NoireListState`, `NoireSelection`, `NoireClicks`, `NoireDrag`, `NoireReorder`, `NoirePicker`, `NoireHold`, `NoirePill`, `NoireAsk`, `NoireDismiss` and `NoirePlacement`: the rules of lists, menus and popups with no drawing of their own.
+- **Skins** - `NoireSkin` and `NoireSkins`: a look for the whole interface (theme, frame, controls, overlays, icons, fonts, views) with a fallback chain ending at `StockSkin`, switched live. `Component` trees drawn by the active skin inside `NoireSkinnedWindow`s, with a layout the user arranges.
+- **Settings** - `NoireSettingsWindow`: pages of rows driven by generated setting descriptors, with search, reset, confirmations and share codes, laid out by the active skin. `NoireForm` for values that are not settings, `NoireThemeEditor` and `NoireTranslationEditor`.
 
 ---
 
@@ -201,7 +220,9 @@ NoireUI.StringProvider = key => myLocalizer.GetOrNull(key);   // null falls back
 
 Assigning takes it over for good, including `false`. Call `ClearReducedMotion()` to hand it back. Persist the override only when one exists (`TryGet`).
 
-NoireLib depends on no localization system and ships no locale files.
+**Inside a skinned window, the window menu's own switch also counts.** `ReducedMotion` reads true while that window draws when its options ask for it, whatever the plugin and host say.
+
+The texts of the skinned windows, settings and editors are `NoireStrings` declared texts, translated in the plugin's own language files (see the Localizer README's Declared Texts).
 
 ---
 
@@ -254,6 +275,7 @@ Everything here runs on the draw thread every frame. Every widget in this namesp
 - **Nothing off screen is drawn.** Collections of unknown length virtualize past a threshold, with a `Virtualize` override.
 - **Tessellation follows the radius.**
 - **Nothing loop-invariant sits inside a loop.** Expensive ornament is tessellated once and resubmitted.
+- **Geometry that only moves is replayed.** `NoireShapes.Rect`, `RectOutline` and `Glow` record their triangles once per size and replay them. See [Replaying geometry](#replaying-geometry-noiremeshcache).
 - **Literals handed to ImGui are UTF-8** (`"Save"u8`).
 
 Measure with the profiler below and read the **self** column. Allocated bytes are the more reliable figure.
@@ -310,9 +332,9 @@ var value = NoireAnim.Ease("id", "sub", target, duration: 0.3f, curve: t => t * 
 `UiCubicBezier` is a CSS `cubic-bezier(x1, y1, x2, y2)`, with `Ease`, `EaseIn`, `EaseOut` and `EaseInOut` built in. Build one once and pass its cached `Curve`:
 
 ```csharp
-private static readonly UiCubicBezier Silk = new(0.22f, 1f, 0.36f, 1f);
+private static readonly UiCubicBezier Glide = new(0.22f, 1f, 0.36f, 1f);
 
-var left = NoireAnim.Ease("tabs", "pill", target, 0.4f, Silk.Curve);
+var left = NoireAnim.Ease("tabs", "pill", target, 0.4f, Glide.Curve);
 ```
 
 **Pass the id and the property separately.** `$"{id}.hover"` allocates on every property of every widget, every frame.
@@ -793,6 +815,8 @@ Every length, colour, gap, label and hint is a property of `WindowMenuStyle`. It
 - **Values**: sizes, colours, headings, `SetLabel`/`SetHint` per switch, `Note` and `ClickThroughNote`, `TextSteps` or `TextStepNames`.
 - **Delegated widgets**: `OpacitySlider`/`TextStepSlider` draw the rows through `NoireSliders`, `ToggleOn`/`ToggleOff` draw the switches through `NoireButtons`.
 - **Hooks**: `CustomDrawSlider` (`UiWindowMenuSliderDraw`), `CustomDrawToggle` (`UiWindowMenuToggleDraw`), `CustomShowHint` (`UiWindowMenuHint`), and `CustomDrawText`/`MeasureText` (`UiWindowMenuText`) for a font of your own. `PaintSlider` and `PaintToggle` are the built-in painters.
+
+Until a style sets them, the headings, slider and switch labels, hints and click-through note are `NoireStrings` in the active language.
 
 A menu opened from a window in the top layer joins it. It closes on Escape.
 
@@ -2073,6 +2097,394 @@ Arms on `Corners` and `Brackets` are sized by `ArmRatio`, a fraction of the cont
 
 The mark submits no ImGui item.
 
+## Headless state
+
+State and rules with no drawing of their own, for a drawing of your own or a skin. Each holds its state on the instance; keep one per list, menu or button.
+
+### Actions (UiAction)
+
+```csharp
+static readonly UiAction<Entry> Remove = new(L.Remove, NoireIcon.Trash, static e => e.Delete())
+{
+    Available = static e => e.CanDelete,   // null: always
+    HideWhenUnavailable = false,           // menus show it disabled instead of hiding it
+    RequiresCtrl = true,                   // runs only while Ctrl is held
+    Hint = L.HoldCtrl,                     // tooltip, and the reason while it cannot run
+};
+
+Remove.IsAvailable(entry);
+Remove.Run(entry);                         // false when unavailable
+```
+
+### Context menus (NoireMenuState, NoireMenu)
+
+```csharp
+var menu = new NoireMenuState();
+
+if (ImGui.IsItemClicked(ImGuiMouseButton.Right))
+    menu.Open(ImGui.GetMousePos());
+
+NoireUI.Menu(menu, entry, static (body, e) =>
+{
+    body.Title(e.Name, e.IconId);
+    body.Item(Play, e);
+    body.Separator();
+    body.Item(Remove, e);
+});
+```
+
+- **Drawn by the active skin's overlays** (`IOverlaySkin`), in a window NoireLib places and keeps on screen.
+- **Closes on an item click, Escape, or a press outside it** over the game window, on ImGui or in the game world. The press that opened it is ignored. A press in another application never closes it.
+- **Separators tidy themselves.** One before the first item, one after the last and one right after another are dropped.
+- `menu.Min` / `menu.Max` are where it was drawn last frame. `menu.Contains(point)` tests them.
+
+### Dismissal and placement (NoireDismiss, NoirePlacement)
+
+```csharp
+var at = NoirePlacement.Above(anchorMin, anchorMax, size, gap);            // centred above, below when there is no room
+var beside = NoirePlacement.Beside(windowMin, windowMax, size, gap, rowY); // right of a window, left when there is no room
+
+if (NoireDismiss.Outside(popupMin, popupMax, anchorMin, anchorMax))        // Escape, or a press outside both areas
+    open = false;
+
+NoireDismiss.PressedInGame;                                                // a mouse press this frame over the game window
+```
+
+Both keep the box inside the main viewport's work area. `PressedInGame` reads the OS: ImGui sees no click that lands in the game world.
+
+### Lists (NoireListState, NoireSelection, NoireClicks, NoireDrag, NoireReorder)
+
+```csharp
+list.Layout(rows.Count, rowHeight, viewportHeight);   // once per frame; clamps when the list shrinks
+for (var i = list.First; i < list.Last; i++)          // only the visible rows
+    DrawRow(i, list.RowTop(i));
+list.Reveal(index);                                    // eases the row into view, snapping under reduced motion
+list.ScrollTo(offset);                                 // at once, for a dragged scrollbar
+
+selection.Click(index, keys, io.KeyCtrl, io.KeyShift); // click, Ctrl toggles, Shift selects a range
+selection.Focus(key);                                  // before a context menu
+selection.Retain(currentKeys);                         // after a filter or refresh
+
+if (clicks.Click(entry)) Play(entry);                  // true on a double click
+if (clicks.TakeSingle() is { } single) Preview(single);// a single click, once the double click window passed
+
+if (ImGui.IsItemActivated()) drag.Press(entry);
+if (drag.Update() == DragPhase.Dropped) DropOnGame(drag.Payload!, drag.Position);
+
+reorder.Begin(i); reorder.Over(hovered);
+if (released && reorder.End(out var from, out var to)) NoireReorder.Apply(items, from, to);
+```
+
+The Shift anchor is kept by item and survives sorting and filtering. `NoireClicks.Window` is 0.2 s and `NoireDrag.Threshold` 4 px at 100%.
+
+### Pickers (NoirePicker)
+
+```csharp
+var picker = new NoirePicker<Entry>(() => source.All, static (e, query) => e.Name.Contains(query, StringComparison.OrdinalIgnoreCase))
+{
+    Marked = e => favourites.Contains(e.Id),   // listed, not pickable
+};
+
+picker.Search = search;
+picker.Version = source.Version;                // move it when the source changes
+foreach (var e in picker.Visible) { }           // filtered in source order
+```
+
+Filtering runs when `Search` or `Version` changes, never per frame. New results scroll `picker.List` back to the top.
+
+### Hold to confirm (NoireHold)
+
+```csharp
+ImGui.Button("Clear");
+if (hold.Update(ImGui.IsItemActive(), 1.2f)) Clear();   // true once, on the frame it fills
+DrawFill(hold.Progress);
+```
+
+Fills while held, drains when released, completes once and waits for a release. `NoireButtons.HoldToConfirm` runs on the same rules.
+
+### Messages and confirmations (NoirePill, NoireAsk)
+
+```csharp
+pill.Show("Saved", gameIcon, accent: color, seconds: 2.6f);
+if (pill.Active) DrawPill(pill.Text, pill.Progress, pill.Age);
+
+ask.Ask(new NoireConfirm(L.ResetTitle, L.Reset, new ConfirmParagraph(L.ResetBody, ParagraphTone.Danger))
+{
+    Danger = true,
+    CountdownSeconds = 3,
+}, confirmed => { if (confirmed) Reset(); });
+
+var state = ask.State;                                 // Confirm, SecondsLeft, Age
+ask.Answer(ConfirmAnswer.Confirmed);                   // ignored while the countdown runs
+```
+
+Asking again answers the pending confirmation as cancelled.
+
+## Skins, components and skinned windows
+
+A skin is a complete look: theme, window frame, controls, overlays, icons, fonts and its own view of any component or window. A skinned window is a tree of components; the active skin draws each one. Every piece a skin leaves out comes from its fallback, and every chain ends at `StockSkin`.
+
+### Skins (NoireSkin, NoireSkins)
+
+```csharp
+public sealed class GlassSkin : NoireSkin
+{
+    public GlassSkin(NoireSkin classic) : base("glass", L.SkinGlass, classic)   // fallback: StockSkin when omitted
+    {
+        View<MainWindow, GlassMainView>();          // a view of a window or a component type
+        Present<PickerWindow>(Presentation.Modal); // Window, Modal over its owner, or Hidden
+    }
+
+    public override NoireTheme Theme => GlassTheme.Base;
+    public override IReadOnlyList<ThemeRole> EditableColors => GlassTheme.Roles;
+    public override IChromeSkin Chrome { get; } = new GlassChrome();
+    public override IChromeSkin ChromeFor(NoireSkinnedWindowBase window) => window is DockWindow ? BareChrome.Instance : Chrome;
+    public override IControlSkin Controls { get; } = new GlassControls();   // IControlSkin, or derive StockControlSkin
+}
+
+NoireSkins.Register(glass, classic);          // the first is the default; the user's last choice is restored
+NoireSkins.Use(classic);                     // live: views rebuilt, fonts swapped, layouts reloaded, remembered
+NoireSkins.Active; NoireSkins.All; NoireSkins.Get("glass");
+
+NoireSkins.Theme;                            // the active theme with the user's edits
+NoireSkins.ThemeRevision;                    // moves on a switch or an edit
+NoireSkins.EditColor(skin, role, color);     // null restores it
+NoireSkins.EditedColor(skin, role);
+NoireSkins.ResetColors(skin);
+NoireSkins.ExportColors(skin);               // share code
+NoireSkins.ImportColors(skin, code);         // only the skin's editable colours; ShareCodeResult<int>
+```
+
+| Piece | Contract | Stock |
+|---|---|---|
+| Frame | `IChromeSkin` | `NativeChrome` (Dalamud's), `BareChrome` (none) |
+| Controls | `IControlSkin` | `StockControlSkin`: NoireUI widgets, plain ImGui elsewhere |
+| Floating things | `IOverlaySkin` | ImGui popups, `NoireTooltip` |
+| Icons | `IIconSkin` | `NoireIcons` |
+| Fonts | `IFontSkin` | The host font through NoireText's size cache |
+| Settings | `ISettingsSkin` | A table of name, control and help per row, under ImGui's tab bar |
+
+- **A skinned window draws with `NoireSkins.Theme` as `NoireTheme.Current`**: every NoireUI widget inside follows the skin and the user's colours.
+- **Stock's theme is the plugin's own `NoireTheme.Current`.** Without edits it is used as is.
+- The skin, the colours, the layouts and the window options live in `NoireUiState` under `noireui.*`.
+
+### Controls and overlays
+
+```csharp
+var c = NoireSkins.Active.Controls;           // or Controls inside a view
+if (c.Button("save", L.Save, NoireIcon.Check, ButtonTone.Accent)) Save();
+c.Stepper("max", ref max, 1, 10, width);
+if (c.BeginList("list", size, state, rows.Count))
+{
+    for (var i = state.First; i < state.Last; i++) c.Row(ids[i], new RowInfo(name, detail, iconId, selected));
+    c.EndList(state);
+}
+
+NoireUI.Button(action, target);               // a UiAction: label, icon, hint while unavailable
+NoireUI.Tip(text);                            // a tooltip on the last item, by the active skin
+NoireUI.Card("info", min, max, 280f, entry, static e => Describe(e));
+NoireUI.Line(TextRole.Heading, title);
+NoireUI.Paragraph(TextRole.Body, text, ThemeColor.TextMuted);
+NoireUI.Icon(NoireIcon.Star, 16f);
+```
+
+`IOverlaySkin.MenuBegin` and `MenuEnd` bracket a menu's lines inside its window, for a card drawn behind them; both default to nothing. A menu item's icon may be null.
+
+Every control takes an id unique among its siblings and draws at the cursor. Menus drawn with `NoireUI.Menu`, confirmations asked with a window's `Ask`, pills and toasts all go through the active skin's `IOverlaySkin`.
+
+### Components (Component, ComponentList)
+
+```csharp
+public sealed class MainWindow : NoireSkinnedWindow
+{
+    public MainWindow() : base("main", L.WindowMain)
+    {
+        Toolbar = Add("toolbar", new Toolbar { Name = L.Toolbar, CanHide = true });
+        List = Add("list", new EntryList { Grows = true, CanMove = false });
+        HeaderButton("logs", NoireIcon.Logs, L.AllLogs, static () => OpenLogs());
+    }
+}
+
+public sealed class EntryList : Component
+{
+    public EntryList() => Rows = Add("rows", new ComponentList<Entry, EntryRow>(static e => e.Key, static e => new EntryRow(e)));
+    public ComponentList<Entry, EntryRow> Rows { get; }
+    protected override NoireView? DefaultView() => new EntryListView();   // null draws the children stacked
+}
+
+list.Rows.Sync(entries);                      // rows created, kept by item, disposed when their item leaves
+window.Find("list/rows/row[42]");             // path main/list/rows/row[42]
+```
+
+- **An id is unique among its siblings**; `Add` throws on a duplicate or on a child that already has a parent. The path is built once, when the component joins the tree.
+- **Disposing a component disposes its children and its view**; `Remove` detaches and disposes.
+- **A component's view is resolved by its type**, skin by skin down the fallback chain, then its `DefaultView()`.
+- Profiler scopes are named by path.
+
+### Views (NoireView)
+
+```csharp
+public sealed class GlassMainView : NoireView<MainWindow>
+{
+    protected override void Draw(MainWindow window)
+    {
+        DrawSearch();
+        Skin.DrawChildren(window, Area);      // the user's order, hidden ones skipped
+    }
+
+    protected override void Overlay(MainWindow window) => NoireUI.Menu(menu, window, MenuBody);   // windows only
+}
+```
+
+`Skin.Draw(child, area)` draws one child under its id as ImGui id scope, in a group whose new lines start at the area's left edge. `Skin.DrawChildren(parent, area)` stacks the children: fixed ones take the height they drew last frame, growing ones share the rest. A view that places its children itself ignores the layout.
+
+### Skinned windows (NoireSkinnedWindowBase, NoireSkinnedWindow)
+
+```csharp
+DefaultSize = new(620f, 800f); MinimumSize = new(380f, 520f); FixedSize = false; DragFromBody = true;
+Subtitle = L.Subtitle;
+OptionsKey = "shared";                        // windows naming the same key share one options object
+PlacementPerSkin = true;                      // a position and size of its own under each skin
+Attach(preview);                              // front together, hidden while this one is closed or collapsed
+MovesOwner = false;                           // on the attached window: its header drags itself, not its owner
+
+window.Options;                               // opacity, text size, locks, click through, always on top, stay visible, reduced motion
+window.SaveOptions();                         // after changing Options in code
+window.PassingClicks;                         // click through is on and the mouse is off the header this frame
+window.Ask.Ask(confirm, answer => { });       // drawn over this window's body, blocking it
+window.EditingLayout = true;                  // the layout editor beside it
+window.ResetLayout();
+window.SetCollapsed(true);
+NoireSkinnedWindowBase.All;                   // every skinned window of the plugin
+NoireSkinnedWindowBase.Current;               // the window being drawn, for code deep in a view
+```
+
+- **The behaviour is the same for every chrome**: header and body drag, resizing by four edges and two corners, double click to collapse, locks, click through with a live header, always on top, focus shared with attached windows, Escape ignored while the window menu or a confirmation is open.
+- **A native chrome hands the frame to Dalamud**: title buttons become Dalamud title bar buttons, behind one opening the window menu. Override `SetUpNativeWindow()` to set the Dalamud window up yourself (flags, size, constraints, title bar buttons) under a native chrome.
+- **A skin that presents a module's skinned window as `Presentation.Hidden`** makes the module show its next window: the custom window, then the skinned one, then the built-in one.
+- `StayAutoHide` switches Dalamud's automatic hiding off for the plugin while any skinned window asks for it.
+- Override `WindowNameFor(skin)` to name the ImGui window yourself: one id for every skin makes a skin switch keep the position and size, and an earlier version's name keeps what it saved.
+- **The window menu's options are per window**, and every skin shares them.
+- **The layout is per window and per skin**: order and hidden children under each parent drawn through `DrawChildren`, and hidden title buttons.
+- A drawn chrome's `ChromeMetrics.BodyPadding` is the room a window's own layout, as a settings window's, keeps inside the body.
+- `NoireSkinnedWindowBase` takes a body of your own (`DrawBody`); `NoireSkinnedWindow` draws the active skin's view of the window's type, or its components stacked.
+
+## Settings windows (NoireSettingsWindow)
+
+A settings window declares its pages once; each page declares its rows every frame, from the descriptors the
+configuration generator writes (`[NoireConfig(..., SettingsClassName = "Cfg")]`, see the Configuration README). The active
+skin's `ISettingsSkin` lays the rows out.
+
+```csharp
+public sealed class SettingsWindow : NoireSettingsWindow
+{
+    public SettingsWindow() : base("settings", L.Settings) { DefaultSize = new(720f, 680f); }
+
+    protected override IReadOnlyList<INoireSetting> Shared => Cfg.All;   // export and import buttons; empty hides them
+
+    protected override void Pages(NoireSettingsPages pages)
+    {
+        pages.Add("general", L.General, General, NoireIcon.Person);    // the id is remembered as the last page
+        pages.Add("mode", L.Mode, Mode);
+    }
+
+    protected override void AboveTabs() => DrawBanner();              // above the search and tabs on every page
+
+    private static void General(NoireSettingsPage page)
+    {
+        page.Section(L.Interface);
+        page.Appearance();                                             // skin picker, colours, window layouts
+        page.Section(L.Language);
+        page.Language();                                               // languages with progress, "Translate..."
+
+        page.Section(L.Plugin);
+        page.Toggle(Cfg.Enabled, L.Enabled, L.EnabledHelp).OnChange(Ipc.NotifyChanged);
+        page.Toggle(Cfg.Preview, L.Preview).HiddenWhen(static () => !Cfg.Enabled.Value);
+        page.Duration(Cfg.Throttle, L.Throttle).DisabledWhen(static () => !Cfg.Warnings.Value, L.WarningsOff);
+        page.CustomRow(L.ResetAll, L.ResetAllHelp, static (in SettingRowArea area) => DrawHoldButton(area));
+
+        if (page.Skin is GlassSkin)                                     // rows only one skin shows
+            page.Toggle(Cfg.Sparkles, L.Sparkles);
+    }
+
+    private static void Mode(NoireSettingsPage page)
+    {
+        page.Choice(Cfg.Mode, L.Mode).Confirm(Mode.Fast, Confirms.Fast);       // asked over the window first
+        page.Number(Cfg.Kept, L.Kept).Alarm(static () => Cfg.Kept.Value == 0, L.KeptAlarm);
+        page.Notice(NoticeTone.Info, L.ModeNotice, L.ModeDetail);
+        page.Custom(static p => DrawExtras(p.Controls));
+    }
+}
+
+settings.OpenPage("mode");
+```
+
+| Row | Control | Bounds |
+|---|---|---|
+| `Toggle` | `NoireSetting<bool>` | |
+| `Choice<TEnum>` | an enum, in declaration order; labels from the texts keyed `<Enum>.<Value>` | |
+| `Number` | `NoireSetting<int>` | `[Range]` |
+| `Duration` | `NoireSetting<TimeSpan>` | `[Range(typeof(TimeSpan), ...)]` |
+| `CustomRow` | drawn by the plugin in the `SettingRowArea` the skin gives | |
+
+Each row returns a `SettingRow` for its extras: `OnChange`, `Confirm(value, NoireConfirm)`, `Alarm(when, text)` or `Alarm(() => text)` (null while quiet),
+`DisabledWhen(when, reason)`, `HiddenWhen(when)`. Conditions are read each frame.
+
+- **The search covers every page**: a row matches by its name, its help or its setting's name; notices and custom
+  content are left out, and each page with results gets its label as a heading.
+- **A section with no row left is not drawn.**
+- **A modified row shows its reset**, which restores the default and runs `OnChange`.
+- **A confirmed value is written only once the user accepts** the confirmation, asked over the window with `Ask`.
+- **Import applies the code through each setting's rules**, without the rows' `OnChange`.
+- Declaring allocates nothing once warm: rows are pooled, and the extras take `static` lambdas.
+
+### Forms (NoireForm)
+
+Rows laid out exactly like settings, for values that are not configuration.
+
+```csharp
+private readonly SettingRowInfo[] rows = new SettingRowInfo[3];   // rebuilt when NoireLanguages.Revision moves
+
+var form = NoireForm.Begin(rows);
+var name = form.Row(SettingControl.Custom);       // draw the control at name.Min, name.Width wide
+ImGui.SetCursorScreenPos(name.Min);
+Controls.Search("name", ref label, L.NameHint, name.Width);
+form.Toggle("enable", ref enable);
+form.Toggle("priority", ref highest);
+form.End();
+```
+
+### Colour and translation editors
+
+```csharp
+NoireThemeEditor.Open();          // the active skin's editable colours, restore, copy and import as a code
+NoireTranslationEditor.Open();    // the active localizer's texts: missing or outdated, live edits, save, save to a file
+```
+
+Both are plain ImGui windows in NoireLib's window system, opened by `page.Appearance()` and `page.Language()`.
+
+- **The translation editor saves to `<plugin config>/Localization/<code>.lang`**, creating the folder, reading the file
+  back and watching the folder from then on.
+- **An emptied translation is removed** from that language; a line of an embedded file comes back on the next reload.
+- **The search marks every occurrence** in the keys, the originals and the translation fields. With Contains off it
+  finds whole words only.
+- **A lost or invented placeholder is flagged** under its key ("Missing tags: {target}", "Unknown tags: {cible}"), since
+  a text fills its placeholders by name. Both flags are orange while the translation still shows, red once the
+  localizer's `RejectMissingOrExtraTags` or `RejectOutdated` sets it aside.
+- **An outdated translation is flagged** under its key, with the source it was made from on hover and a "Still correct"
+  button; editing it also brings it up to date. The language picker shows the progress and counts them: `452/700 (64%) - 24 outdated`.
+
+### Settings skins (ISettingsSkin)
+
+`ISettingsSkin` receives each group of rows up front (`BeginRows`), then one `Row` per row, which returns where the
+control goes, then the control through `Toggle`, `Choice`, `Number` or `Duration`. `SkinPicker` draws one card per skin
+with `NoireSkin.DrawPreview`, which a skin overrides to draw its own miniature in the colours it is given.
+
+```csharp
+public override ISettingsSkin Settings { get; } = new GlassSettingsSkin();
+public override void DrawPreview(UiRect area, NoireTheme theme) => GlassArt.Draw(area, theme);
+```
+
 ## Custom Tooltips
 
 `NoireTooltip` tooltips are independent windows on the topmost layer. A custom tooltip and `ImGui.SetTooltip()` can show at the same time.
@@ -2200,16 +2612,19 @@ File and game sources go through Dalamud's shared texture cache and load asynchr
 
 ## Brand and custom icons (NoireIcons)
 
-Dalamud's icon font is FontAwesome Solid only, without brand marks. `NoireIcons` draws textured icons through one call.
+Dalamud's icon font is FontAwesome Solid only, without brand marks. `NoireIcons` draws every `NoireIcon` and registered artwork through one call.
 
 ```csharp
 NoireIcons.Draw(NoireIcon.Discord, 16f);                               // built-in, as an ImGui item
+NoireIcons.Draw(NoireIcon.Settings, 16f, tint: muted);                 // a glyph icon, the same way
+NoireIcons.Glyph(NoireIcon.Settings);                                  // FontAwesomeIcon.Cog, null for a brand mark
 NoireIcons.Register("MyPlugin.Patreon", UiImageSource.FromManifestResource(Assembly.GetExecutingAssembly(), "MyPlugin.patreon.png"));
 NoireIcons.Draw("MyPlugin.Patreon", 16f, tint: accent);                // registered
 NoireIcons.DrawAt(drawList, NoireIcon.Kofi, min, sidePx, packedTint);  // into a draw list, no item
 ```
 
-- **Built-in marks** are white (Ko-fi keeps its red heart) on transparent, embedded at 20, 24, 32, 40, 48, 64 and 128 px. `Source(icon, pixelSize)` picks the smallest raster that covers the drawn size. Owners and sources are in `UI/Icons/Assets/ATTRIBUTION.md`.
+- **`NoireIcon` is the icon set every skin maps.** `Discord` and `Kofi` are artwork. Every other value is a FontAwesome glyph, fitted into the same square and drawn in the tint.
+- **Built-in marks** are white (Ko-fi keeps its red heart) on transparent, embedded at 20, 24, 32, 40, 48, 64 and 128 px. `Source(icon, pixelSize)` picks the smallest raster that covers the drawn size, and is `null` for a glyph icon. Owners and sources are in `UI/Icons/Assets/ATTRIBUTION.md`.
 - **Registered names are per plugin.** Names may be registered before `NoireLibMain.Initialize`.
 - **Nothing throws in a frame.** Loading art draws nothing. An unknown name draws nothing and reports one fault per name to `NoireUI.Diagnostics`.
 - **Registered art is fitted** into its square.
@@ -2371,6 +2786,20 @@ Methods that cannot compile early, such as an open generic, are skipped. The war
 
 ---
 
+### Japanese, Korean and Chinese texts
+
+The Japanese, Korean and Chinese characters of every loaded translation and of every language name are merged from Dalamud's Noto Sans CJK Medium into every NoireText size, the host's own size included, and into every `NoireFont` with `MergeLanguageGlyphs` on.
+
+```csharp
+NoireScriptFonts.Ranges   // the merged characters, or null when no loaded text has one
+```
+
+- **Switching language never rebuilds a font.** Every loaded language is merged up front: a language picker shows each language's own name.
+- **Only the characters the texts use are merged**, a few hundred rather than the whole script: a build stays fast.
+- **Fonts rebuild when a translation brings a new character**, from a language file or the translation editor.
+- **Text at the host's own size builds a size of its own while characters are merged.** The host font lacks them.
+- A custom `NoireText.FontBuilder` merges nothing.
+
 ### Letter-spacing
 
 ImGui has no tracking. `NoireText.Tracked` places each glyph.
@@ -2427,7 +2856,8 @@ using (ui[400].Push(13f)) ImGui.TextUnformatted("raw ImGui in the face"u8);
 - **A missing weight is synthesised** like a browser does. `NoireFontFamily.Pick` returns the smear (`NoireFont.SyntheticBoldPixels`) for a weight of 600 or more with no face that heavy. `Draw` takes it as `syntheticBoldPx`.
 - **Never blocks.** Each size rasterizes asynchronously on first use. Until then text draws with the current font stretched to the same line height.
 - **Zero allocation per frame**, tracking and ellipsis included. Drawing needs no font push.
-- **Sizes are shared by step.** `SizeStep` (0.5 real px) rounds sizes. A size unused for 30 seconds is dropped at the next build. `NoireFont.MaxBuiltSizes` (256) bounds the total.
+- **Sizes are shared by step.** `SizeStep` (0.5 real px) rounds sizes. A size unused for 30 seconds is dropped at the next build, unless `Request` asked for it: a requested size stays built while the face lives: a window opened long after it was warmed draws in its font from the first frame. `NoireFont.MaxBuiltSizes` (256) bounds the total.
+- **`MergeLanguageGlyphs` covers Dalamud's own language** and the characters of the plugin's translations through `NoireScriptFonts`.
 
 ---
 
@@ -2623,7 +3053,138 @@ NoireShapes.Stroke(projectedPoints, accent, 1.5f, closed: false);
 
 It writes one triangle strip. A translucent fill has no seams.
 
+### Replaying geometry (NoireMeshCache)
+
+**A shape that looks the same every frame is recorded once and replayed.** `NoireMeshCache<TKey>` keeps the vertices a piece of drawing produced. A replay writes them at a new origin in one reservation, instead of rebuilding every path, fringe and fan:
+
+```csharp
+private readonly record struct IconKey(MyIcon Icon, float Size);
+
+private static readonly NoireMeshCache<IconKey> Icons = new();
+
+var key = new IconKey(icon, size);
+
+if (!Icons.TryReplay(drawList, key, topLeft, color))
+{
+    using var recording = Icons.Record(drawList, key, topLeft, color);
+    DrawIcon(drawList, icon, topLeft, size, color);
+}
+```
+
+- **The key holds what the vertices depend on.** Sizes, thicknesses and shapes go in the key. The position does not. The draw list's antialiasing flags, fringe scale and atlas white pixel are checked by the cache itself.
+- **Leave the color out of the key for one-color drawing.** Record with the color, and replay with `TryReplay(drawList, key, origin, color)`. Every vertex is repainted, and opacity is scaled against the recorded color: a hover fade or a pulse replays one recording.
+- **Drawing that changes every frame is never recorded.** A key is recorded the second frame it is asked for. An opening animation that changes its size every frame draws plainly and allocates nothing.
+- **A recording whose triangles span several draw commands is not kept.** A texture or clip switch inside the drawing splits it. That key then draws plainly for two seconds before recording is tried again.
+- **Never record text or anything clipped on the CPU.** A replay moves the recorded drawing, and only geometry built from positions alone draws the same when moved.
+- **`Hits`, `Misses`, `Rejections` and `Evictions` say how a cache is doing.** A key that misses every frame is changing every frame: take whatever moves out of it.
+
+`NoireShapes.Rect`, `RectOutline` and `Glow` use this for you. An open gradient subdivides fills: under one they draw plainly.
+
+### Span polylines
+
+The ImGui binding's `AddPolyline` takes a pointer. `ImDrawListExtensions` adds the span overload, for drawing straight
+into a list you hold:
+
+```csharp
+Span<Vector2> points = stackalloc Vector2[17];
+var count = Geometry2DHelper.SampleCubic(points, start, control1, control2, end, 16);
+
+drawList.AddPolyline(points[..count], packedColor, thickness, closed: false);
+```
+
+`NoireShapes.Stroke` draws through it, after applying `NoireShapes.AntiAlias` and following the draw-list redirect.
+
+### Artwork rendered to a texture (NoireRaster)
+
+**Artwork too detailed to tessellate every frame is rendered once, on the CPU, into a texture.** `RasterShape` holds
+one outline and its paint, `NoireRaster.Render` turns shapes into RGBA pixels with supersampled edges, and
+`NoireRasterTexture` keeps that texture sharp at whatever scale it is drawn:
+
+```csharp
+RasterShape[] art =
+[
+    RasterShape.Path("M17 40 C15 27 17 15 22 8 C29 12 36 19 40 27 Z").Filled(NoireGradient.Radial(light, dark).WithCenter(0.5f, 0.4f)),
+    RasterShape.Path("M24 20 l3 5").Stroked(outline, 0.8f) with { Opacity = 0.8f },
+    RasterShape.Ellipse(new Vector2(32, 49), new Vector2(7.6f, 8.4f)).Filled(pupil),
+];
+
+private readonly NoireRasterTexture ear = new("Ear", art, viewSize: new Vector2(92, 82), size: new Vector2(78, 70));
+
+if (ear.Get(NoireUI.Scale) is { } texture)
+    drawList.AddImage(texture.Handle, min, min + ear.Size * NoireUI.Scale);
+```
+
+- **Fills follow the non-zero rule.** A hole wound the other way stays empty, as in SVG.
+- **A gradient paint lies over the shape's own bounding box**, in its own units, with its animations left out.
+- **`Get` returns the previous texture while a new scale renders**, off the draw thread, and null before the first
+  render. It allocates nothing unless the scale changed.
+- **`ToLocal` maps a point of the art to the drawn texture**, for pivots and anchors placed on the art.
+- **`NoireRaster.Render` is pure** and runs on any thread: pass a scale and offset of your own, and a supersampling
+  grid other than `DefaultSamples` for coarser or finer edges.
+- **Dispose a `NoireRasterTexture`** with its owner. A render still running discards its result.
+
 ---
+
+## Gradients and motion (NoireGradient, NoireMotion)
+
+A gradient recolors, and a motion moves, everything drawn inside its scope: text, shapes, widgets, images. Both work on what was already drawn, at the moment the scope closes: **the layout never moves**: the item after the scope sits where it would without the effect.
+
+```csharp
+// Build once, keep in a field. Every method returns a new instance: building in the draw loop allocates.
+private static readonly NoireGradient Title = NoireGradient.Linear(GradientDirection.LeftToRight, Gold, Orange, Red)
+    .WithSpace(GradientColorSpace.Oklab)
+    .Shimmering(new Vector4(1f, 1f, 1f, 0.8f));
+
+private static readonly NoireMotion Wiggle = NoireMotion.Create()
+    .Scaling(0.97f, 1.04f, 0.45f)
+    .Rocking(2.5f, 0.35f)
+    .Glitching(2.5f, every: 2f, length: 0.16f);
+
+using (Title.Begin())
+    ImGui.TextUnformatted("Anything drawn here");
+
+Title.Text("One line");                                  // shorthand
+NoireEffects.Text("Both at once", Title, Wiggle);        // a gradient and a motion in one scope
+var result = Wiggle.With(() => DrawCard());              // lambda form, returns what was drawn
+```
+
+**Scopes.** `Begin()` returns an `EffectScope`. Close it with `using`, `Dispose()` or `End()`; closing twice does nothing the second time. Scopes nest: an inner scope's effects apply first, then the outer one's on top. Closing a scope closes every scope still open inside it. A scope left open is closed at the end of a skinned window's body, or at the next frame, with a diagnostic.
+
+**Where it shows.** `End()` returns an `EffectResult`: `LayoutMin`/`LayoutMax` (where the layout placed the drawing), `Min`/`Max` (where it shows this frame), `Size`, `LayoutSize`, `Grown` and `Shift`. `NoireEffects.LastResult` holds the last one closed. To make the page follow a motion, reserve room yourself: `NoireMotion.Measure(min, max)` gives the box now, `NoireMotion.Envelope(min, max)` the largest box it ever takes: reserving the envelope once makes room without the page moving every frame.
+
+### Gradients
+
+| Part | What you can set |
+|---|---|
+| Colors | Any number of `GradientStop`s. A plain `Vector4` spreads evenly; `GradientStop.At(color, position)`, `GradientStop.Band(color, from, to)` holds a color flat, `Midpoint` moves where a transition is half done, `Easing` shapes one transition. |
+| Mixing | `WithSpace`: `Srgb`, `LinearRgb`, `Oklab` (smoothest), `HsvShortest`, `HsvLongest`. `WithEasing` for every transition, `WithSteps(n)` for flat bands. |
+| Repetition | `WithRepeat(None/Repeat/Mirror, count)`, `Reversed()`, `WithOffset(t)`. |
+| Shape | `Linear` (any `GradientDirection` or angle), `Reflected`, `Radial` (ellipse, or `Circular()`), `Conic`, `Diamond`, `Square`, `Noise(scale)`, `PerGlyph` (by character rank), `PerLine`, `Custom(point => t)`. `WithCenter`, `WithRadius`, `WithGlyphStep`. |
+| Area | `Over(EffectArea)`: `Drawn` (default), `LastItem`, `Window`, `Glyph` (every character gets the whole gradient), `Screen` (separate scopes share one gradient), or `Over(min, max)`. |
+| Applying | `WithBlend(Replace/Multiply/Add/Screen/Overlay, amount)`, `WithStrength`, `OnlyOn(Text/Shapes)`. `Replace` keeps the drawing's alpha: antialiased edges stay smooth, and a stop's alpha fades the drawing out. |
+| Animation | `Scrolling`, `Rotating`, `HueCycling`, `Pulsing(color)`, `PulsingAlpha`, `PulsingBrightness`, `Breathing`, `Shimmering(color)`, `Waving`, `Sparkling(color)`, `Blinking`. |
+
+`Sample(t)` reads a color along the gradient; `ColorAt(point, min, max)` reads the color a point shows now, animations included. Presets: `Rainbow` (per character, flowing), `Pastel`, `Fire`, `Ocean`, `Sunset`, `Gold`, `Silver`, `Neon`, `Holographic`, `Aurora`, `Lava`, `Ice`, and `Theme()` from the current accent.
+
+**Shapes.** Text has vertices at every character: any gradient shows in full on it. A filled shape has vertices only at its outline: **`NoireShapes` cuts its fills into small cells** while a gradient that needs them is open (`WithTessellation(cellSize)`, 6 pixels by default), with the same antialiased edge. `FillRect(min, max, rounding)` and `FillCircle(center, radius)` fill with a gradient in one call. A shape drawn straight through ImGui only takes the gradient at its corners.
+
+### Motion
+
+| Kind | Methods |
+|---|---|
+| Fixed | `Rotated`, `Scaled`, `Offset`, `Skewed` |
+| The whole drawing | `Spinning`, `Rocking` (seesaw), `Swinging` (pendulum from the top), `Scaling` (with any `EffectWave`, `Heartbeat` included), `Squashing` (jelly), `Flipping`, `Floating`, `Swaying`, `Bouncing`, `Orbiting`, `Leaning`, `Shaking` |
+| Each character | `Trembling`, `Glitching`, `WavingGlyphs`, `WobblingGlyphs`, `Revealing` |
+
+`WithPivot(x, y)` sets what it turns and scales around (the centre by default). `Over(EffectArea.Glyph)` moves every character around its own centre. `Shaking`, `Trembling` and `Glitching` take `every` and `length` for bursts: `Glitching(2.5f, every: 2f, length: 0.16f)` glitches for 0.16 seconds every 2 seconds.
+
+Movement stays inside the window's clipping: a drawing moved past the window's edge is cut there.
+
+### Triggers and reduced motion
+
+Both kinds take the same triggers: `OnHover()`, `ForSeconds(s)` (from the `startedAt` given to `Begin`), `Once(s)` (the first time a key given to `Begin` is drawn; `NoireEffects.ResetOnce(key)` replays it). At rest an effect shows its time-zero look. Everything stops while `NoireUI.ReducedMotion` is on, unless `IgnoringReducedMotion()`.
+
+**Performance.** Opening, recording and closing a scope allocates nothing. A gradient samples a table built once, when it is created.
 
 ## Ribbon backdrop (NoireRibbonField)
 
@@ -2646,6 +3207,7 @@ field.Lean(null);                                          // back to the rest c
 - **Every number is an option** on `RibbonFieldOptions`: the ribbons (`Ribbon` records, with `Quieter(factor)`), samples and overscan, both wave frequencies, thickness swell, gradient stops, stroke, lean space and sharpness, smoothing, waves, background and vignette. `RibbonLeanSpace.Screen` keeps the pointer in screen pixels, for a field shared by several windows.
 - **Frame-rate independent.** Smoothing fractions are per `ReferenceFrameRate` (60) frame. Time advances by the frame's delta, capped at `MaxTimeStep`.
 - **`Frozen`** stops time and smoothing and clears waves. **`Reset()`** returns the clock, pointer, lean colour and waves to their initial state.
+- **`MaxDriftPixels`** lets the ribbons lag their animation by up to that many real pixels before they are laid out again. Until then the last layout is replayed, at a fraction of the cost. The pointer's lean and the waves count toward the lag. 0, the default, lays them out every frame.
 - `DrawBackground`, `DrawRibbons` and `DrawVignette` paint one layer each. Zero allocation per frame.
 - **Opacity** multiplies each layer's alpha.
 

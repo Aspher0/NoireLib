@@ -13,16 +13,8 @@ using Xunit;
 namespace NoireLib.Tests;
 
 /// <summary>
-/// Game-free tests for the NoireHotkeyManager module: the queue that carries detected triggers from the
-/// detection timer to the framework thread and its deliberate refusal to coalesce, the guarantee that neither
-/// a disposed module nor an unregistered hotkey can reach a consumer callback, the rule that no consumer visible
-/// surface is ever invoked while the manager holds its lock, the rebind capture session that a reader always
-/// sees whole rather than as a mixture of two, the rebind report the binding UI consumes exactly once, the
-/// single case insensitive rule that every comparison of a hotkey id follows, the stored keybinds that every
-/// instance of the module shares, activation while NoireLib is not initialized, and the case insensitive
-/// comparer that a load from disk restores without writing anything back.<br/>
-/// Shares the stored-hotkeys collection with <see cref="NoireHotkeyManagerLiveMutationTests"/> so the two never
-/// run in parallel: both mutate the process-wide <see cref="HotkeyManagerConfig.Hotkeys"/> singleton.
+/// Locks the trigger queue, delivery after disposal or removal, callbacks outside the lock, whole capture sessions, the
+/// once-consumed rebind report, case-insensitive ids and the shared stored keybinds.
 /// </summary>
 [SupportedOSPlatform("windows")]
 [Collection("HotkeyManagerStoredHotkeys")]
@@ -38,12 +30,7 @@ public class NoireHotkeyManagerTests : IDisposable
         PinConfiguration();
     }
 
-    /// <summary>
-    /// Caches the configuration the way an initialized plugin's load does. With no plugin behind the library the
-    /// configuration resolves no path, so its load reports failure and the manager declines to cache it,
-    /// handing every caller a fresh instance; caching it explicitly puts the manager under test and the assertions on
-    /// the one instance they share in game.
-    /// </summary>
+    // Without a plugin the manager declines to cache the configuration. Caching it shares one instance, as in game.
     private static void PinConfiguration()
     {
         NoireConfigManager.UnloadConfig<HotkeyManagerConfigInstance>();
@@ -60,7 +47,6 @@ public class NoireHotkeyManagerTests : IDisposable
             }
             catch
             {
-                // Best effort cleanup.
             }
         }
 
@@ -72,18 +58,15 @@ public class NoireHotkeyManagerTests : IDisposable
             }
             catch
             {
-                // Best effort cleanup.
             }
         }
 
-        // The stored hotkeys are a process wide singleton that outlives a test, so a hotkey one test persists
-        // would otherwise be restored over the hotkey of the next test that registers the same id.
+        // A process-wide singleton: a hotkey one test stored would be restored over the next one.
         HotkeyManagerConfig.Hotkeys.Clear();
     }
 
     private NoireHotkeyManager MakeManager()
     {
-        // shouldSaveKeybinds stays off so that registration never reaches the configuration system.
         var manager = new NoireHotkeyManager(moduleId: null, active: false, enableLogging: false, shouldSaveKeybinds: false);
         managersToClean.Add(manager);
         return manager;
@@ -91,7 +74,7 @@ public class NoireHotkeyManagerTests : IDisposable
 
     private NoireEventBus MakeEventBus()
     {
-        // Publishing is refused by an inactive bus, so these have to be active to observe anything.
+        // An inactive bus refuses to publish.
         var bus = new NoireEventBus(active: true, enableLogging: false);
         busesToClean.Add(bus);
         return bus;
@@ -104,12 +87,7 @@ public class NoireHotkeyManagerTests : IDisposable
         return manager;
     }
 
-    /// <summary>
-    /// Creates a manager that persists its bindings, for the tests that cover the stored keybinds.<br/>
-    /// This stays game-free: with NoireLib uninitialized the configuration resolves no file path, so it keeps
-    /// the bindings in memory and writes nothing. That in-memory dictionary holds exactly what a real save
-    /// would serialize.
-    /// </summary>
+    // Game-free: without NoireLib the configuration keeps the bindings in memory, exactly what a save would write.
     private NoireHotkeyManager MakePersistingManager()
     {
         var manager = new NoireHotkeyManager(moduleId: null, active: false, enableLogging: false, shouldSaveKeybinds: true);
@@ -123,11 +101,7 @@ public class NoireHotkeyManagerTests : IDisposable
     private static HotkeyEntry MakeEntryWithDisplayName(string id, string displayName)
         => new(id, displayName, new HotkeyBinding(65), () => { }, true, HotkeyActivationMode.Pressed);
 
-    /// <summary>
-    /// A configuration that counts saves and exposes the serializer settings the configuration system
-    /// really loads with, so the comparer tests exercise the actual load boundary rather than a friendlier
-    /// approximation of it.
-    /// </summary>
+    // Loads with the real serializer settings: the comparer tests exercise the actual load boundary.
     private sealed class ProbeConfig : HotkeyManagerConfigInstance
     {
         public int SaveCount { get; private set; }
@@ -176,8 +150,7 @@ public class NoireHotkeyManagerTests : IDisposable
         var fired = 0;
         var entry = MakeEntry("repeat.hotkey", () => fired++);
 
-        // A Repeat hotkey at its 80ms default outruns the frame loop below roughly 12 FPS, so the same entry
-        // legitimately triggers more than once between two frames.
+        // A Repeat hotkey at 80 ms outruns a frame loop under 12 FPS.
         manager.QueueTrigger(entry);
         manager.QueueTrigger(entry);
         manager.DrainPendingTriggers();
@@ -257,8 +230,7 @@ public class NoireHotkeyManagerTests : IDisposable
         var entry = MakeEntry("doomed.hotkey", () => fired++);
         manager.RegisterHotkey(entry).Should().BeTrue();
 
-        // Detection queues a trigger a frame before the drain delivers it, so a hotkey really can be removed
-        // while one of its triggers is still waiting.
+        // A trigger waits a frame before delivery: the hotkey can be removed meanwhile.
         manager.QueueTrigger(entry);
         manager.UnregisterHotkey("doomed.hotkey").Should().BeTrue();
         manager.DrainPendingTriggers();
@@ -319,8 +291,7 @@ public class NoireHotkeyManagerTests : IDisposable
         manager.QueueTrigger(MakeEntry("pending.hotkey", () => fired++));
         manager.Dispose();
 
-        // A framework update can still be in flight while the module is torn down, so a drain after the
-        // dispose must find nothing to deliver.
+        // A framework update may still be in flight during teardown.
         manager.DrainPendingTriggers();
 
         fired.Should().Be(0, "a callback delivered after Dispose would run into a plugin that is unloading");
@@ -449,9 +420,7 @@ public class NoireHotkeyManagerTests : IDisposable
 
         manager.OnHotkeyChanged += _ =>
         {
-            // A handler is consumer code of unknown duration. Invoking it under the manager's lock would stall
-            // every other thread that needs a hotkey for as long as the handler ran, and the detection timer
-            // takes that lock every 16ms.
+            // The detection timer takes this lock every 16 ms: a handler under it would stall it.
             var otherThread = Task.Run(() => manager.GetHotkeys());
             otherThreadFinished = otherThread.Wait(TimeSpan.FromSeconds(5));
         };
@@ -540,8 +509,7 @@ public class NoireHotkeyManagerTests : IDisposable
 
         var observed = 0;
 
-        // The EventBus invokes its synchronous subscribers inline on whichever thread publishes, so a subscriber
-        // is consumer code reached straight from the manager and must be treated as such.
+        // The EventBus runs synchronous subscribers inline on the publishing thread.
         bus.Subscribe<HotkeyBindingChangedEvent>(evt =>
         {
             manager.SetHotkeyEnabled(evt.Hotkey.Id, false);
@@ -731,10 +699,7 @@ public class NoireHotkeyManagerTests : IDisposable
         var mismatches = 0;
         var reading = true;
 
-        // The framework thread reads the session every frame to decide what the binding UI draws and which
-        // inputs to swallow, while a consumer starts and replaces sessions from its own thread. Both of those
-        // answers come from the hotkey and the mode together, so a reader able to pair the hotkey of one session
-        // with the mode of another would act on a session that never existed.
+        // Hotkey and mode are read together every frame: pairing two sessions would act on one that never existed.
         var reader = Task.Run(() =>
         {
             while (Volatile.Read(ref reading))
@@ -835,12 +800,7 @@ public class NoireHotkeyManagerTests : IDisposable
         var swallowed = 0;
         var consuming = true;
 
-        // A button drawn for one hotkey consumes its report on the framework thread while the detection timer
-        // captures a rebind of a different hotkey from its own thread, so a rebind really does land between that
-        // button's read of the report and its clearing of it. The consuming side asks in a different case from
-        // the one the rebind was made in, so that the id rule and the conditional clear are exercised together:
-        // deciding the report is this caller's is a question about identity, while clearing it is a question
-        // about whether the record is still the one that was read.
+        // A rebind of another hotkey lands between the read and the clear, asked in a different case.
         var consumer = Task.Run(() =>
         {
             while (Volatile.Read(ref consuming))
@@ -919,9 +879,7 @@ public class NoireHotkeyManagerTests : IDisposable
         var manager = MakeManager();
         manager.RegisterHotkey(MakeEntry("my.hotkey", () => { })).Should().BeTrue();
 
-        // The whole path a binding button walks, spelled a different way at every step. Registering under one
-        // case and drawing under another must not silently produce a button that never shows as listening and
-        // never receives the rebind it captured, while the rest of the module treats the two ids as one hotkey.
+        // Spelled differently at every step: registering and drawing must still name one hotkey.
         manager.StartListening("MY.HOTKEY").Should().BeTrue();
         manager.IsListeningFor("My.Hotkey").Should().BeTrue();
 
@@ -959,7 +917,6 @@ public class NoireHotkeyManagerTests : IDisposable
         first.RegisterHotkey(MakeEntry("first.instance.hotkey", () => { })).Should().BeTrue();
         second.RegisterHotkey(MakeEntry("second.instance.hotkey", () => { })).Should().BeTrue();
 
-        // Turning persistence back on is what saves every bind the instance holds.
         first.SetShouldSaveKeybinds(false).SetShouldSaveKeybinds(true);
 
         HotkeyManagerConfig.Hotkeys.Should().ContainKey(
@@ -1052,8 +1009,7 @@ public class NoireHotkeyManagerTests : IDisposable
             HoldDelay = TimeSpan.FromMilliseconds(700),
         }).Should().BeTrue();
 
-        // A later registration with plain defaults, as after a restart or from a sibling instance, must pick up the
-        // stored option set rather than the values it was registered with, exactly as the stored binding already did.
+        // A plain-default registration picks up the stored options, as it does the stored binding.
         second.RegisterHotkey(new HotkeyEntry("shared.options", "Second", new HotkeyBinding(66), () => { }, true, HotkeyActivationMode.Pressed))
             .Should().BeTrue();
 
@@ -1105,6 +1061,27 @@ public class NoireHotkeyManagerTests : IDisposable
         manager.DrainPendingTriggers();
 
         fired.Should().Be(0, "a trigger detected before the module stopped listening must not reach a consumer afterwards");
+    }
+
+    #endregion
+
+    #region Detection tick faults
+
+    [Fact]
+    public void RunGuardedTick_TickThrows_IsContainedAndTheNextTickRuns()
+    {
+        var manager = MakeManager();
+
+        var act = () => manager.RunGuardedTick(() => throw new InvalidOperationException("tick fault"));
+
+        act.Should().NotThrow("an exception escaping a timer callback is unhandled on the thread pool and terminates the game");
+        manager.TickFaultReported.Should().BeTrue();
+
+        var ran = false;
+        manager.RunGuardedTick(() => ran = true);
+
+        ran.Should().BeTrue("a failed tick must release the in-progress guard, or detection would stop for good");
+        manager.TickFaultReported.Should().BeFalse("a successful tick ends the fault run, so the next fault is reported afresh");
     }
 
     #endregion

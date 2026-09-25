@@ -63,14 +63,12 @@ internal sealed class ObjectSource : GameWatcherSource
         };
     }
 
-    /// <inheritdoc/>
     protected override void OnActivate()
     {
         baseline.Clear();
         SeedBaseline();
     }
 
-    /// <inheritdoc/>
     protected override void OnDeactivate()
     {
         baseline.Clear();
@@ -102,7 +100,6 @@ internal sealed class ObjectSource : GameWatcherSource
         }
     }
 
-    /// <inheritdoc/>
     protected override void OnTick(DateTimeOffset now)
     {
         var duringZoneChange = NoireService.Condition[ConditionFlag.BetweenAreas] || NoireService.Condition[ConditionFlag.BetweenAreas51];

@@ -18,38 +18,28 @@ internal abstract class GameWatcherSource
         Kind = kind;
     }
 
-    /// <summary>The owning module.</summary>
     protected NoireGameWatcher Owner { get; }
 
-    /// <summary>The source's identity in configuration and diagnostics.</summary>
     public SourceKind Kind { get; }
 
-    /// <summary>Whether the source is currently running.</summary>
     public bool IsRunning { get; private set; }
 
-    /// <summary>Whether the source failed to initialize or tick and disabled itself (source isolation).</summary>
+    // Set when initializing or ticking threw. The source then disabled itself.
     public bool HasFailed { get; private set; }
 
-    /// <summary>The failure description when <see cref="HasFailed"/> is true.</summary>
     public string? FailureMessage { get; private set; }
 
-    /// <summary>The number of live registrations holding this source active (managed by the module).</summary>
     public int RefCount { get; internal set; }
 
-    /// <summary>The duration of the last tick, for diagnostics.</summary>
     public TimeSpan LastTickDuration { get; internal set; }
 
-    /// <summary>The default poll cadence when no override is configured. Zero = every tick.</summary>
+    // Zero ticks every frame.
     protected virtual TimeSpan DefaultPollCadence => TimeSpan.Zero;
 
-    /// <summary>Whether this source does per-tick work. Event-driven sources return false and are never ticked.</summary>
+    // Event-driven sources return false and are never ticked.
     public virtual bool IsPolling => true;
 
-    /// <summary>
-    /// Starts the source: install hooks, attach native events, seed baselines. Baseline seeding never fires
-    /// events - subscribers observe changes from now on, not a replay of the present.
-    /// </summary>
-    /// <returns>True when the source started; false when it failed (already logged and marked).</returns>
+    // Seeding baselines never fires events: subscribers see changes from now on.
     public bool Activate()
     {
         if (IsRunning || HasFailed)
@@ -70,9 +60,6 @@ internal abstract class GameWatcherSource
         }
     }
 
-    /// <summary>
-    /// Stops the source: uninstall hooks, detach events, clear cached state.
-    /// </summary>
     public void Deactivate()
     {
         if (!IsRunning)
@@ -90,11 +77,7 @@ internal abstract class GameWatcherSource
         }
     }
 
-    /// <summary>
-    /// Runs one tick when the source is running, polling, and due per its cadence.
-    /// Exceptions mark the source failed and shut it down (source isolation).
-    /// </summary>
-    /// <param name="now">The current UTC timestamp, shared by all sources this tick.</param>
+    // An exception marks the source failed and shuts it down.
     public void Tick(DateTimeOffset now)
     {
         if (!IsRunning || !IsPolling)
@@ -125,16 +108,14 @@ internal abstract class GameWatcherSource
         }
     }
 
-    /// <summary>Source-specific activation. Runs on the framework thread when the module is active in game.</summary>
+    // Framework thread, while the module is active in game.
     protected abstract void OnActivate();
 
-    /// <summary>Source-specific deactivation.</summary>
     protected abstract void OnDeactivate();
 
-    /// <summary>Source-specific per-tick work. Only called for polling sources.</summary>
     protected virtual void OnTick(DateTimeOffset now) { }
 
-    /// <summary>Releases unmanaged resources (hooks). Called once when the module is disposed.</summary>
+    // Called once, when the module is disposed.
     public virtual void DisposeSource() { }
 
     // Marks the source failed and logs it. A failed source never restarts until the module is reactivated;

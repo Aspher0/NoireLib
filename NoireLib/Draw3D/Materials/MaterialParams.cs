@@ -11,6 +11,7 @@ internal struct MaterialData : IEquatable<MaterialData>
     public BlendMode Blend;
     public DepthMode Depth;
     public DepthUnavailableBehavior WhenDepthUnavailable;
+    public TranslucentOcclusion? Translucent; // null follows the renderer-wide setting
     public CullMode Cull;
     public bool Textured;
     public bool UnorderedBatching;
@@ -52,6 +53,7 @@ internal struct MaterialData : IEquatable<MaterialData>
             : material.Blend;
         data.Depth = material.Depth;
         data.WhenDepthUnavailable = material.WhenDepthUnavailable;
+        data.Translucent = material.TranslucentOcclusion;
         data.Cull = domain == MaterialDomain.GroundDecal ? CullMode.Front : material.Cull;
         data.TexSrv = srv;
         data.UnorderedBatching = material.UnorderedBatching || material.Blend == BlendMode.Additive;
@@ -82,6 +84,7 @@ internal struct MaterialData : IEquatable<MaterialData>
         && Blend == other.Blend
         && Depth == other.Depth
         && WhenDepthUnavailable == other.WhenDepthUnavailable
+        && Translucent == other.Translucent
         && Cull == other.Cull
         && Textured == other.Textured
         && UnorderedBatching == other.UnorderedBatching

@@ -11,8 +11,8 @@ using System.Runtime.InteropServices;
 namespace NoireLib.Draw3D.Im;
 
 /// <summary>
-/// The immediate-mode layer. Shapes drawn each frame render through the scene pass.<br/>
-/// Calls inside <see cref="Scene.Scene3D.OnPrepareFrame"/> or an <see cref="Scene.ISceneFeature"/> render the same frame. Elsewhere they may render a frame late.
+/// The immediate-mode layer. Calls inside <see cref="Scene.Scene3D.OnPrepareFrame"/> or a feature render the same frame;
+/// elsewhere they may render a frame late.
 /// </summary>
 public sealed class ImDraw3D
 {
@@ -298,6 +298,7 @@ public sealed class ImDraw3D
             Blend = cmd.Style.Additive ? BlendMode.Additive : BlendMode.Premultiplied,
             Depth = DepthMode.TestOnly,
             WhenDepthUnavailable = DepthUnavailableBehavior.Hide,
+            Translucent = cmd.Style.TranslucentOcclusion,
             Cull = CullMode.Front,
             Params0 = shapeParams,
             Params1 = new Vector4(0f, (float)shape, cmd.Style.OutlineWidth, 1f),
@@ -575,6 +576,7 @@ public sealed class ImDraw3D
         Blend = style.Additive ? BlendMode.Additive : BlendMode.Premultiplied,
         Depth = style.IgnoreDepth ? DepthMode.Ignore : style.OnTopOfObjects ? DepthMode.WorldOnly : DepthMode.TestOnly,
         WhenDepthUnavailable = DepthUnavailableBehavior.Ignore,
+        Translucent = style.TranslucentOcclusion,
         Cull = cullNone ? CullMode.None : CullMode.Back,
         UnorderedBatching = true, // identical shapes instance
         Params1 = new Vector4(style.DepthFade, 0f, 0f, 0f),

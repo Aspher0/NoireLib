@@ -80,6 +80,7 @@ var custom    = Material.Custom("myPipeline", new Vector4(0f, 1f, 1f, 1f));     
 - `additive: true` on `Material.Decal(...)` (or `Blend = BlendMode.Additive`) blends additively. **Stacked coloured decals sum toward white.** A decal is never opaque.
 - `DepthFade` feathers the edge where translucent shapes intersect world geometry.
 - `Depth = DepthMode.Ignore` draws through walls. `WhenDepthUnavailable` decides what happens when the game's depth cannot be read.
+- `TranslucentOcclusion` overrides `NoireDraw3D.TranslucentOcclusion` for this material: `SeeThrough` shows it under water, `Occlude` lets water hide it, `null` (the default) follows the renderer. A see-through decal lands on the seabed, an occluded one on the water surface. `ImShapeStyle.TranslucentOcclusion` is the immediate-mode twin.
 - `UnorderedBatching = true` collapses identical translucent markers into one instanced draw.
 
 > **Seeing the shape.** `node.ShowDecalShape()` traces what the decal paints as a closed line on its own plane. `node.HideDecalShape()` turns it off. It follows `Shape`, `ShapeParams` and `Surface` live. The color defaults to the decal's own: `node.ShowDecalShape(new Vector4(1f, 1f, 0f, 1f))`.
@@ -246,6 +247,7 @@ if (NoireDraw3D.TryScreenToRay(mousePos, out var origin, out var direction))
 | `NoireDraw3D.NativeUi.KeepUiOnTop` | **Default true. Only applies under `OverEverything`.** Masks the layer per pixel under the HUD, addons and nameplates. The mask is the *difference* between the present buffer before and after the game drew its UI. A frame with no injection point composites unmasked. |
 | `NoireDraw3D.NativeUi.Nameplates` | **Default `DepthAware`. Honoured under both layering modes.** Whether the game's own nameplates are occluded by 3D objects in front of them. Under the game UI it stamps depth for the game's plate pass to test; over everything it gates where the `KeepUiOnTop` mask applies. `Covered` requires `OverEverything`. Fail-soft. |
 | `NoireDraw3D.NativeUi.NameplateDim` | **Default 0. Only applies under `OverEverything`** with `KeepUiOnTop` on, and only to a plate `Nameplates` decided is covered. How much a covered plate still shows through: 0 = fully covered, toward 1 = faintly readable. |
+| `NoireDraw3D.TranslucentOcclusion` | **Default `SeeThrough`.** Whether water and the other surfaces the game draws after its opaque pass hide the layer. `SeeThrough` occludes against a copy of the depth the opaque pass left: content under water shows from above while walls, terrain and characters still hide it. `Occlude` uses the full depth, water included. Materials and immediate shapes override it. |
 | `NoireDraw3D.KeepDrawingWhenUiHidden` | Keep **the 3D layer** rendering in cutscenes, GPose and UI-hide. Affects only the layer; plugin windows are unaffected (see below). |
 | `NoireDraw3D.IsGameUiHidden` | Whether the game UI is hidden (user toggle, cutscene, GPose), read from the game state whatever the overrides do. |
 | `NoireDraw3D.Lighting` | Ambient + directional half-Lambert parameters for `Lit` materials. |
@@ -258,6 +260,8 @@ if (NoireDraw3D.TryScreenToRay(mousePos, out var origin, out var direction))
 > **The mask.** FFXIV writes no UI coverage alpha. Draw3D snapshots the present buffer before and after the UI and **differences the two**. Antialiased glyph edges come out as partial coverage. A frame whose injection point cannot fire composites unmasked.
 >
 > `/noire3d uimask` reports whether the difference finds the UI.
+
+> **Water.** The game draws water in a forward pass after its opaque G-buffer pass, and that pass writes its surface into the scene depth. Read at composite time, the depth puts a solid floor at the water line. Under `SeeThrough`, the render-thread tap copies the scene depth as the last G-buffer bind of the frame ends, and see-through content tests against that copy instead. The copy is one GPU copy of the depth texture per frame (about 8 MB at 1080p, 33 MB at 4K), taken only while see-through content drew in the last 120 frames. A frame with no copy falls back to the full depth and counts in `/noire3d stats` as `opaque depth ... missed`. `/noire3d depthwrites` lists every pass that changed the depth in one frame. `/noire3d water` flips the setting.
 
 > **UI-hide and plugin windows.** Only Dalamud's four `Disable*UiHide` flags keep `UiBuilder.Draw` firing. NoireDraw3D **holds them for the layer's lifetime**. `KeepDrawingWhenUiHidden` decides whether the layer draws.
 >
@@ -311,6 +315,8 @@ A disposed texture in any slot skips the draw.
 | `/noire3d uimask` | Reports the over-everything UI mask: whether the render-thread hook is landing its pre-UI snapshot, the health verdict, and the per-sample difference grid. |
 | `/noire3d plates` | Per-nameplate policy factors from last frame, with the distances that decided them. Factor 1 on a covered plate means the mask never found its pixels. Factor 0 on a plate that should read on top means the occlusion test was wrong. |
 | `/noire3d rtlog` | Captures one frame's render-target bind sequence to the log, with every bind's pixel format (injection-point diagnostics). |
+| `/noire3d depthwrites` | The `rtlog` capture plus every bind that changed the scene depth, with its changed and nearer pixel counts and where the opaque-depth copy was taken. Reads the whole depth back once per bind: the frame stalls. |
+| `/noire3d water` | A/B toggle for `TranslucentOcclusion` (see-through against the opaque-pass depth, or occluded by water like before). |
 | `/noire3d framedump [sweep [count]\|<from> [count]]` | Writes out what render-target binds produced, as images, to find the first pass where a pixel is already wrong. `sweep` (the default) spreads them across the whole frame. Bind indices shift with what is on screen. Narrow with an explicit span from the bind table that run prints. Each dump stalls the frame. |
 
 Commands are global across plugins. Everything is also on `NoireDraw3D.Diagnostics`.
@@ -322,5 +328,5 @@ Commands are global across plugins. Everything is also on `NoireDraw3D.Diagnosti
 - **Ownership:** whoever creates a `Mesh` or `GpuTexture` disposes it. Disposing an asset in use is safe: draws skip it.
 - **Threading:** scene mutation and asset creation are safe from any thread. `Im` calls belong in draw-cycle callbacks.
 - **Camera:** the layer projects with **the exact camera constants the GPU drew the frame with**, discovered from the game's constant-buffer uploads. Falls back to the control's view-projection. `/noire3d gpucam` compares the two, `/noire3d cbprobe` reports the discovery.
-- **Depth:** the depth convention is derived from the game's own projection. `/noire3d probe` cross-checks it against collision.
+- **Depth:** the depth convention is derived from the game's own projection. `/noire3d probe` cross-checks it against collision. Water and later surfaces occlude only under `TranslucentOcclusion.Occlude`.
 - **Failure:** everything fails soft and logs once. A failure degrades the narrowest feature.

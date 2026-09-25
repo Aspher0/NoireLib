@@ -15,9 +15,7 @@ public static partial class NoireShapes
 
     #region Rectangles
 
-    /// <summary>
-    /// Fills a rectangle whose corners are cut.
-    /// </summary>
+    /// <summary>Fills a rectangle whose corners are cut.</summary>
     /// <param name="min">The top left corner, in screen space.</param>
     /// <param name="max">The bottom right corner, in screen space.</param>
     /// <param name="color">The fill color.</param>
@@ -26,6 +24,14 @@ public static partial class NoireShapes
     /// <param name="corners">Which corners are cut.</param>
     public static void Rect(Vector2 min, Vector2 max, Vector4 color, CornerShape shape = CornerShape.Square, float cornerSize = 0f, RectCorners corners = RectCorners.All)
     {
+        if (color.W <= 0f)
+            return;
+
+        using var recording = ReplayRect(min, max, color, 0f, shape, cornerSize, corners, out var replayed);
+
+        if (replayed)
+            return;
+
         Span<Vector2> path = stackalloc Vector2[MaxRectPathPoints];
         var count = RectPath(path, min, max, shape, cornerSize, corners);
 
@@ -33,9 +39,7 @@ public static partial class NoireShapes
             Fill(path[..count], color);
     }
 
-    /// <summary>
-    /// Outlines a rectangle whose corners are cut.
-    /// </summary>
+    /// <summary>Outlines a rectangle whose corners are cut.</summary>
     /// <param name="min">The top left corner, in screen space.</param>
     /// <param name="max">The bottom right corner, in screen space.</param>
     /// <param name="color">The line color.</param>
@@ -45,6 +49,14 @@ public static partial class NoireShapes
     /// <param name="corners">Which corners are cut.</param>
     public static void RectOutline(Vector2 min, Vector2 max, Vector4 color, float thickness = 1f, CornerShape shape = CornerShape.Square, float cornerSize = 0f, RectCorners corners = RectCorners.All)
     {
+        if (color.W <= 0f || thickness <= 0f)
+            return;
+
+        using var recording = ReplayRect(min, max, color, thickness, shape, cornerSize, corners, out var replayed);
+
+        if (replayed)
+            return;
+
         Span<Vector2> path = stackalloc Vector2[MaxRectPathPoints];
         var count = RectPath(path, min, max, shape, cornerSize, corners);
 
@@ -52,9 +64,35 @@ public static partial class NoireShapes
             Stroke(path[..count], color, thickness);
     }
 
-    /// <summary>
-    /// Fills a rectangle with a gradient, corners and all.
-    /// </summary>
+    // Recorded once per size and replayed repainted. Never under an open gradient, which subdivides fills.
+    private static NoireMeshRecording<RectKey> ReplayRect(
+        Vector2 min, Vector2 max, Vector4 color, float thickness, CornerShape shape, float cornerSize, RectCorners corners, out bool replayed)
+    {
+        replayed = false;
+
+        var drawList = DrawList;
+
+        if (drawList.IsNull || NoireEffects.WantsTessellation(drawList, out _))
+            return default;
+
+        var key = new RectKey(max - min, thickness, shape, cornerSize, corners, AntiAlias);
+
+        var packed = ColorHelper.Vector4ToUint(color);
+
+        if (RectMeshes.TryReplay(drawList, key, min, packed))
+        {
+            replayed = true;
+            return default;
+        }
+
+        return RectMeshes.Record(drawList, key, min, packed);
+    }
+
+    private readonly record struct RectKey(Vector2 Size, float Thickness, CornerShape Shape, float CornerSize, RectCorners Corners, bool AntiAlias);
+
+    private static readonly NoireMeshCache<RectKey> RectMeshes = new(512);
+
+    /// <summary>Fills a rectangle with a gradient, corners and all.</summary>
     /// <param name="min">The top left corner, in screen space.</param>
     /// <param name="max">The bottom right corner, in screen space.</param>
     /// <param name="fromColor">The color at the start of the axis.</param>
@@ -75,8 +113,6 @@ public static partial class NoireShapes
         FillShaded(path[..count], from, to, fromColor, toColor);
     }
 
-    // Fills a path and shades it in one step, for the shapes that build their own gradient rather than wrapping a
-    // caller's body.
     private static void FillShaded(ReadOnlySpan<Vector2> path, Vector2 from, Vector2 to, Vector4 fromColor, Vector4 toColor)
     {
         using var draw = UiDraw.BeginMethod();
@@ -94,10 +130,7 @@ public static partial class NoireShapes
 
     #region Glow
 
-    /// <summary>
-    /// Paints a soft halo around a rectangle.
-    /// </summary>
-    /// <remarks>Nothing is drawn inside the rectangle itself.</remarks>
+    /// <summary>Paints a soft halo around a rectangle, never inside it.</summary>
     /// <param name="min">The top left corner, in screen space.</param>
     /// <param name="max">The bottom right corner, in screen space.</param>
     /// <param name="color">The glow color at full strength.</param>
@@ -111,14 +144,41 @@ public static partial class NoireShapes
             return;
 
         using var draw = UiDraw.BeginMethod();
+        var drawList = draw.List;
 
-        // A layer roughly every two pixels reads as smooth without spending a draw call per pixel on a wide glow.
+        if (drawList.IsNull)
+            return;
+
+        // Never recorded under an open gradient, which subdivides fills.
+        if (NoireEffects.WantsTessellation(drawList, out _))
+        {
+            GlowLayers(min, max, color, spread, shape, cornerSize, corners);
+            return;
+        }
+
+        // One color: a pulsing or fading glow replays one recording repainted.
+        var key = new GlowKey(max - min, spread, shape, cornerSize, corners, AntiAlias);
+        var packed = ColorHelper.Vector4ToUint(color);
+
+        if (GlowMeshes.TryReplay(drawList, key, min, packed))
+            return;
+
+        using var recording = GlowMeshes.Record(drawList, key, min, packed);
+        GlowLayers(min, max, color, spread, shape, cornerSize, corners);
+    }
+
+    private readonly record struct GlowKey(
+        Vector2 Size, float Spread, CornerShape Shape, float CornerSize, RectCorners Corners, bool AntiAlias);
+
+    private static readonly NoireMeshCache<GlowKey> GlowMeshes = new(128);
+
+    private static void GlowLayers(Vector2 min, Vector2 max, Vector4 color, float spread, CornerShape shape, float cornerSize, RectCorners corners)
+    {
         var layers = Math.Clamp((int)MathF.Ceiling(spread * 0.5f), 3, 12);
 
         Span<Vector2> path = stackalloc Vector2[MaxRectPathPoints];
 
-        // Painted outwards in, so the layers accumulate towards the shape rather than away from it. Each one carries a
-        // fraction of the total alpha, keeping the falloff smooth instead of a stack of visible rings.
+        // Outwards in, each layer carrying a fraction of the alpha: a smooth falloff, not visible rings.
         for (var layer = layers; layer >= 1; layer--)
         {
             var distance = (float)layer / layers;
@@ -135,11 +195,8 @@ public static partial class NoireShapes
         }
     }
 
-    /// <summary>
-    /// Paints a soft halo around any convex shape, following the shape rather than its bounding box.
-    /// </summary>
-    /// <remarks>At most <see cref="MaxGlowPathPoints"/> points; more draws nothing.</remarks>
-    /// <param name="points">The shape to light, convex and clockwise.</param>
+    /// <summary>Paints a soft halo around a convex shape. More than <see cref="MaxGlowPathPoints"/> points draws nothing.</summary>
+    /// <param name="points">The shape, convex and clockwise.</param>
     /// <param name="color">The glow color at full strength.</param>
     /// <param name="spread">How far it reaches beyond the shape, in real pixels.</param>
     public static void GlowPath(ReadOnlySpan<Vector2> points, Vector4 color, float spread)
@@ -169,8 +226,7 @@ public static partial class NoireShapes
 
             bisectors[index] = bisector;
 
-            // How far along the bisector one pixel of offset is worth. Floored so that a corner sharp enough to send
-            // the miter to infinity is blunted instead of shooting a spike across the interface.
+            // Floored: a corner sharp enough to send the miter to infinity is blunted.
             var projection = Vector2.Dot(bisector, first);
             reach[index] = 1f / MathF.Max(0.25f, projection);
         }
@@ -269,8 +325,7 @@ public static partial class NoireShapes
         var edge = side == BracketSide.Left ? min.X : max.X;
         var reach = side == BracketSide.Left ? MathF.Abs(armLength) : -MathF.Abs(armLength);
 
-        // One three-segment path rather than three lines, for the reason the corner ticks are one elbow: lines meeting
-        // end to end are drawn centred on their own paths and leave the outer corner short by half the thickness.
+        // One path, not three lines: lines meeting end to end leave the outer corner short by half the thickness.
         Span<Vector2> path =
         [
             new Vector2(edge + reach, min.Y),
@@ -296,9 +351,7 @@ public static partial class NoireShapes
         Bracket(min, max, color, armLength, thickness, BracketSide.Right);
     }
 
-    /// <summary>
-    /// Draws a short elbow inside each corner of a rect.
-    /// </summary>
+    /// <summary>Draws a short elbow inside each corner of a rect.</summary>
     /// <param name="min">The top left corner of the rect they sit inside, in screen space.</param>
     /// <param name="max">The bottom right corner, in screen space.</param>
     /// <param name="color">The line color.</param>
@@ -380,7 +433,6 @@ public static partial class NoireShapes
             FrameCornerTicks(outerMin, outerMax, gap, style);
     }
 
-    // The gap is how far in the innermost frame line already sits.
     private static void FrameCornerTicks(Vector2 min, Vector2 max, float gap, FrameStyle style)
     {
         var length = style.ScaledTickLength;
@@ -394,8 +446,7 @@ public static partial class NoireShapes
         // Two brackets that would meet or cross read as a smaller frame rather than as corner ticks.
         if (bottomRight.X - topLeft.X < length * 2f || bottomRight.Y - topLeft.Y < length * 2f)
         {
-            // Same inset, arm, thickness and colour, so a frame that changes between the two shapes keeps its marks
-            // where they were and only their span changes.
+            // Same inset, arm, thickness and colour: switching shape keeps the marks in place.
             if (style.TickFallback == TickFallback.Brackets && bottomRight.X - topLeft.X > length * 2f)
                 Brackets(topLeft, bottomRight, color, length, thickness);
 
@@ -409,9 +460,7 @@ public static partial class NoireShapes
 
     #region Separators
 
-    /// <summary>
-    /// Draws a rule that fades out at both ends.
-    /// </summary>
+    /// <summary>Draws a rule that fades out at both ends.</summary>
     /// <param name="from">Where the rule starts, in screen space.</param>
     /// <param name="to">Where it ends, in screen space.</param>
     /// <param name="color">The color at its centre.</param>
@@ -428,7 +477,7 @@ public static partial class NoireShapes
         var centre = (from + to) * 0.5f;
         var packed = ColorHelper.Vector4ToUint(Vector4.One);
 
-        // Two runs rather than one, because a gradient is a single ramp and this needs to come back down again.
+        // Two runs: a gradient is one ramp and this comes back down.
         var start = drawList.VtxBuffer.Size;
         drawList.AddLine(from, centre, packed, thickness);
         Shade(drawList, start, drawList.VtxBuffer.Size, from, centre, transparent, color);

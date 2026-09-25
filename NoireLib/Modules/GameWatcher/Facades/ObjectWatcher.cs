@@ -7,8 +7,8 @@ using System.Threading.Tasks;
 namespace NoireLib.GameWatcher;
 
 /// <summary>
-/// Kind-agnostic object facts: spawn/despawn/changed for anything in the object table (treasure, NPCs, event
-/// objects, …), plus distance-threshold and territory-bound region watchers.<br/>
+/// Kind-agnostic object facts: spawn/despawn/changed for anything in the object table, such as treasure, NPCs and
+/// event objects, plus distance-threshold and territory-bound region watchers.<br/>
 /// Characters are objects too - use <see cref="CharacterWatcher"/> for people, this facade for everything.
 /// </summary>
 public sealed class ObjectWatcher : GameWatcherFacade

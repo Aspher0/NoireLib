@@ -28,7 +28,7 @@ public static unsafe class SoundHelper
     // a normal layout fit.
     private const int MaxOpenPathLength = 126;
 
-    // Marks a path as extended-length, which is what lets Windows read one past 260 characters.
+    // Marks a path as extended-length. Windows reads such a path past 260 characters.
     private const string ExtendedLengthPrefix = @"\\?\";
 
     // How far into an mp3 Windows will look for the first audio frame. A tag longer than this hides the audio from it

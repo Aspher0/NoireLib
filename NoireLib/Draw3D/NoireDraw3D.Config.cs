@@ -43,9 +43,8 @@ public static partial class NoireDraw3D
         }
 
         /// <summary>
-        /// Gets or sets whether the layer is masked per pixel by the difference between the present buffer before and
-        /// after the native UI draws. The HUD, addons and nameplates read on top under
-        /// <see cref="Draw3DLayering.OverEverything"/> (true by default, reported by <c>/noire3d uimask</c>).
+        /// Gets or sets whether the native UI stays on top, masked per pixel by the present buffer before and after it draws.
+        /// True by default. Reported by <c>/noire3d uimask</c>.
         /// </summary>
         public bool KeepUiOnTop
         {
@@ -54,10 +53,8 @@ public static partial class NoireDraw3D
         }
 
         /// <summary>
-        /// Gets or sets whether the game's nameplates are occluded by 3D objects in front of them, by a depth stamp under
-        /// the game UI and by gating the <see cref="KeepUiOnTop"/> mask over everything
-        /// (<see cref="NameplateOcclusion.DepthAware"/> by default, <see cref="NameplateOcclusion.Covered"/> requiring
-        /// <see cref="Draw3DLayering.OverEverything"/>).
+        /// Gets or sets whether nameplates are occluded by 3D objects in front of them. <see cref="NameplateOcclusion.DepthAware"/>
+        /// by default. <see cref="NameplateOcclusion.Covered"/> needs <see cref="Draw3DLayering.OverEverything"/>.
         /// </summary>
         public NameplateOcclusion Nameplates
         {
@@ -98,6 +95,13 @@ public static partial class NoireDraw3D
         {
             get => NoireDraw3D.LayerOpacity;
             set => NoireDraw3D.LayerOpacity = value;
+        }
+
+        /// <summary>Gets or sets whether water and later surfaces hide the layer (see <see cref="NoireDraw3D.TranslucentOcclusion"/>).</summary>
+        public TranslucentOcclusion TranslucentOcclusion
+        {
+            get => NoireDraw3D.TranslucentOcclusion;
+            set => NoireDraw3D.TranslucentOcclusion = value;
         }
 
         /// <summary>Gets or sets whether the 3D layer keeps rendering while the game UI is hidden (see <see cref="NoireDraw3D.KeepDrawingWhenUiHidden"/>).</summary>

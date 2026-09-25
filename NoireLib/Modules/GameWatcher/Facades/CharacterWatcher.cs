@@ -275,7 +275,7 @@ public sealed class CharacterWatcher : GameWatcherFacade
     #region Modes & emotes
 
     /// <summary>
-    /// Subscribes to character mode changes (mounts, crafting stance, looping emotes, …).
+    /// Subscribes to character mode changes, such as mounts, the crafting stance and looping emotes.
     /// </summary>
     /// <param name="handler">The handler.</param>
     /// <param name="scope">Who to watch; null = <see cref="Scope.LocalPlayer"/>.</param>
@@ -338,7 +338,7 @@ public sealed class CharacterWatcher : GameWatcherFacade
     #region Online status, job, level, identity
 
     /// <summary>
-    /// Subscribes to online-status changes (AFK, busy, looking for party, …).
+    /// Subscribes to online-status changes, such as AFK, busy or looking for party.
     /// </summary>
     /// <param name="handler">The handler.</param>
     /// <param name="scope">Who to watch; null = <see cref="Scope.LocalPlayer"/>.</param>

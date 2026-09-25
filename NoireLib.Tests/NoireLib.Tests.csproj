@@ -7,9 +7,7 @@
     <Nullable>enable</Nullable>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
     <Use_DalamudPackager>false</Use_DalamudPackager>
-    <!-- Detour signatures with pointer parameters need pointer delegates in the tests that cover them. -->
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <!-- Tests exercise the Windows-only NoireLib assembly and only ever run on Windows. -->
     <NoWarn>$(NoWarn);CA1416</NoWarn>
   </PropertyGroup>
 
@@ -46,7 +44,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\NoireLib\NoireLib.csproj" />
-    <!-- Wired the way a consumer plugin wires them, to compile probe configuration classes against the generated accessors. -->
     <ProjectReference Include="..\NoireLib.SourceGenerators\NoireLib.SourceGenerators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
@@ -108,10 +105,7 @@
     </ItemGroup>
 
     <ItemGroup>
-      <!-- SQLitePCLRaw's native library. The Dalamud runtime supplies it; copied here for the test host to load it directly. -->
       <None Include="$(DalamudPath)runtimes\win-x64\native\e_sqlite3.dll" CopyToOutputDirectory="PreserveNewest" Visible="false" />
-
-      <!-- cimgui.dll for UiHarness's real ImGui frames. Copied by the build so a clean clone can still run the drawing tests. -->
       <None Include="$(DalamudPath)cimgui.dll" CopyToOutputDirectory="PreserveNewest" Visible="false" />
     </ItemGroup>
 

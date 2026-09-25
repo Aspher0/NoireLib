@@ -30,7 +30,7 @@ internal enum DemoPage
 
 internal readonly record struct DemoPageInfo(DemoPage Page, string Group, string Label, FontAwesomeIcon Icon)
 {
-    /// <summary>Every page, in rail order.</summary>
+    // In rail order.
     public static readonly IReadOnlyList<DemoPageInfo> All = new[]
     {
         new DemoPageInfo(DemoPage.Showcase, "Scenes", "Showcase", FontAwesomeIcon.Cubes),

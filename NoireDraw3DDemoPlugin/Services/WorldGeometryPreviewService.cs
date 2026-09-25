@@ -15,7 +15,7 @@ internal sealed class WorldGeometryPreviewService : IDisposable
 
     public string Status { get; private set; } = string.Empty;
 
-    /// <summary>Toggles the preview. Framework thread only.</summary>
+    // Framework thread only.
     public void Toggle()
     {
         if (scene is { IsDisposed: false } existing)

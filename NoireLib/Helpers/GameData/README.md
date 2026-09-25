@@ -209,7 +209,17 @@ if (arrivals.TryGetValue((destinationTerritory, warp.ArrivalInstanceId), out var
 
 ### Reading any level or scene file
 
-`LayerGroupHelper` is the reader under `LevelFileHelper`: any `.lgb` or `.sgb`, every layer with its layer sets and festival, every entry with its transform and type-specific fields (model and collision paths, collision volume shape and material, door state, sheet row, exit destination).
+`LayerGroupHelper` is the reader under `LevelFileHelper`: any `.lgb` or `.sgb`, every layer with its layer sets and festival, every entry with its transform and type-specific fields (model and collision paths, collision volume shape and material, door state, sheet row, exit destination, PopRange spawn offsets, and the shape and `Priority` of a `MapRange` or water range).
+
+| `LayerGroupEntry` | Of | Holds |
+|---|---|---|
+| `Priority` | `MapRange`, water range | which of overlapping ranges decides, highest first |
+| `WaterRangeFlags` | water range | `0x1` swimmable water, `0x100` an air pocket, `0x0` dry |
+| `FlyingDisabled` | `MapRange` | flight is refused inside it |
+| `MountsAndOrnamentsDisabled` | `MapRange` | mounts and ornaments are refused inside it |
+| `LalafellOnly` | `MapRange` | only Lalafell may enter |
+
+Lumina names no entry type for a water range; `LayerGroupHelper.WaterRangeEntryType` is its type, 86.
 
 ```csharp
 foreach (var layer in LayerGroupHelper.Read("bg/ffxiv/sea_s1/twn/s1t1/level/bg.lgb"))
@@ -843,9 +853,15 @@ The category sheet holds one boolean column per class and job **in `ClassJob` ro
 ```csharp
 IconHelper.Path(iconId);                    // the game path, or null when there is no such icon
 IconHelper.Exists(iconId);
-IconHelper.Get(iconId);                     // the shared texture; hold this, not a wrap
+IconHelper.Get(iconId);                     // the shared texture, cached per lookup: safe every frame
 IconHelper.Wrap(iconId);                    // ready to hand to a draw call; do not dispose it
+
+// The accent color the icon reads as, read off the framework thread on first request. Null until then.
+Vector4 accent = IconHelper.GetVividColor(iconId) ?? fallback;
 ```
+
+`GetVividColor` runs `ColorHelper.GetVividColor` on the icon's pixels: a tile average weighted toward opaque, bright,
+saturated regions, then brightened and pushed away from grey. An icon with no opaque, bright region stays null.
 
 The icon is usually a column on an item, an action or a duty:
 

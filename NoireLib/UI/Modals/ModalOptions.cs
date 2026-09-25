@@ -1,8 +1,6 @@
 namespace NoireLib.UI;
 
-/// <summary>
-/// How a dialog raised through <see cref="NoireModal"/> behaves and looks.
-/// </summary>
+/// <summary>How a dialog raised through <see cref="NoireModal"/> behaves and looks.</summary>
 public class ModalOptions
 {
     /// <summary>
@@ -19,9 +17,7 @@ public class ModalOptions
     /// <summary>Whether the dialog is destructive. The confirming button takes the theme's danger color.</summary>
     public bool Danger { get; set; }
 
-    /// <summary>
-    /// How long the confirming button must be held, in seconds, zero making it an ordinary button.
-    /// </summary>
+    /// <summary>How long the confirming button must be held, in seconds, zero making it an ordinary button.</summary>
     public float HoldSeconds { get; set; }
 
     /// <summary>
@@ -46,6 +42,9 @@ public class ModalOptions
     /// </summary>
     public float Width { get; set; } = 420f;
 
+    /// <summary>Whether the title bar carries a cross that closes the dialog as a decline.</summary>
+    public bool CloseButton { get; set; } = true;
+
     /// <summary>
     /// Whether the caller draws the dialog itself through <see cref="NoireModal.Active"/>, the built-in popup taking over when a frame passes without <see cref="NoireModalView.MarkPresented"/>.
     /// </summary>
@@ -60,18 +59,12 @@ public class ModalOptions
 /// </summary>
 public sealed class PromptOptions : ModalOptions
 {
-    /// <summary>
-    /// The greyed-out hint shown while the field is empty.
-    /// </summary>
+    /// <summary>The greyed-out hint shown while the field is empty.</summary>
     public string? Placeholder { get; set; }
 
-    /// <summary>
-    /// The longest value the field accepts, in characters.
-    /// </summary>
+    /// <summary>The longest value the field accepts, in characters.</summary>
     public int MaxLength { get; set; } = 260;
 
-    /// <summary>
-    /// Whether an empty value may be confirmed.
-    /// </summary>
+    /// <summary>Whether an empty value may be confirmed.</summary>
     public bool AllowEmpty { get; set; }
 }

@@ -12,15 +12,12 @@ using System.Linq;
 
 namespace NoireLib.Helpers;
 
-/// <summary>
-/// In-game character-related helpers.
-/// </summary>
+/// <summary>In-game character-related helpers.</summary>
 public static class CharacterHelper
 {
     /// <summary>
-    /// Whether a character is logged in and their state is loaded. Character data is safe to read. Login alone
-    /// fires before the client finishes assembling the character, and reading the teleport list, housing data or
-    /// quest journal before then walks unfilled pointers and access-violates.
+    /// Whether the character is logged in and loaded. Login fires earlier: reading the teleport list, housing or quests
+    /// before this access-violates.
     /// </summary>
     public static unsafe bool IsStateReady
     {
@@ -34,14 +31,11 @@ public static class CharacterHelper
         }
     }
 
-    /// <summary>
-    /// Whether the character's player object exists in the world. Calling into game code needs this, not <see cref="IsStateReady"/>.<br/>
-    /// Around login and logout a game function reaching for the object access-violates.
-    /// </summary>
+    /// <summary>Whether the player object exists in the world. Calling into game code needs this, not <see cref="IsStateReady"/>.</summary>
     public static bool IsPlayerLoaded
         => IsStateReady && NoireService.IsInitialized() && NoireService.ObjectTable.LocalPlayer != null;
 
-    /// <summary>Whether there is no character at all. With no character an empty unlock read is the answer. Mid-login it is not.</summary>
+    /// <summary>Whether there is no character at all, unlike mid-login. Without one, an empty unlock read is the answer.</summary>
     public static bool IsLoggedOut => !NoireService.IsInitialized() || !NoireService.ClientState.IsLoggedIn;
 
     /// <summary>The logged-in character's content id, or zero when no character state is loaded.</summary>
@@ -57,16 +51,12 @@ public static class CharacterHelper
         }
     }
 
-    /// <summary>
-    /// Retrieves the memory address of the given character.
-    /// </summary>
+    /// <summary>Retrieves the memory address of the given character.</summary>
     /// <param name="character">Character instance.</param>
     /// <returns>The memory address of the character.</returns>
     public static unsafe Character* GetCharacterAddress(ICharacter character) => (Character*)character.Address;
 
-    /// <summary>
-    /// Tries to retrieve a character instance from its memory address based on the Object Table.
-    /// </summary>
+    /// <summary>Tries to retrieve a character instance from its memory address based on the Object Table.</summary>
     /// <param name="characterAddress">The character's memory address.</param>
     /// <returns>The character instance, or null if not found.</returns>
     public static ICharacter? GetCharacterFromAddress(nint characterAddress)
@@ -77,9 +67,7 @@ public static class CharacterHelper
         return NoireService.ObjectTable.FirstOrDefault(p => p is ICharacter && p.Address == characterAddress) as ICharacter;
     }
 
-    /// <summary>
-    /// Tries to retrieve the Content ID (CID) of a player character from its memory address.
-    /// </summary>
+    /// <summary>Tries to retrieve the Content ID (CID) of a player character from its memory address.</summary>
     /// <param name="characterAddress">The character's memory address.</param>
     /// <returns>The Content ID, or null if not found, or if not a player character.</returns>
     public unsafe static ulong? GetCIDFromPlayerCharacterAddress(nint characterAddress)
@@ -94,9 +82,7 @@ public static class CharacterHelper
         return castBattleChara->Character.ContentId;
     }
 
-    /// <summary>
-    /// Tries to retrieve a character instance from its Content ID (CID) based on the Object Table.
-    /// </summary>
+    /// <summary>Tries to retrieve a character instance from its Content ID (CID) based on the Object Table.</summary>
     /// <param name="cid">The Content ID of the character.</param>
     /// <returns>The character instance, or null if not found, or if not a player character.</returns>
     public static ICharacter? GetCharacterFromCID(ulong cid)
@@ -107,9 +93,7 @@ public static class CharacterHelper
             .FirstOrDefault(p => p != null && GetCIDFromPlayerCharacterAddress(p.Address) == cid);
     }
 
-    /// <summary>
-    /// Tries to retrieve a character instance from its Base ID based on the Object Table.
-    /// </summary>
+    /// <summary>Tries to retrieve a character instance from its Base ID based on the Object Table.</summary>
     /// <param name="baseId">The Base ID of the character.</param>
     /// <returns>The character instance, or null if not found.</returns>
     public static ICharacter? GetCharacterFromBaseId(uint baseId)
@@ -120,9 +104,7 @@ public static class CharacterHelper
             .FirstOrDefault(p => p != null && p.BaseId == baseId);
     }
 
-    /// <summary>
-    /// Checks if the character's weapon is currently drawn.
-    /// </summary>
+    /// <summary>Checks if the character's weapon is currently drawn.</summary>
     /// <param name="characterAddress">The character's memory address.</param>
     /// <returns>True if the weapon is drawn, false otherwise.</returns>
     public static unsafe bool IsCharacterWeaponDrawn(nint characterAddress)
@@ -132,9 +114,7 @@ public static class CharacterHelper
         return castChar.StatusFlags.HasFlag(StatusFlags.WeaponOut);
     }
 
-    /// <summary>
-    /// Returns whether the character exists in the Object Table.
-    /// </summary>
+    /// <summary>Returns whether the character exists in the Object Table.</summary>
     /// <param name="character">The character instance.</param>
     /// <returns>True if the character is in the Object Table, false otherwise.</returns>
     public static unsafe bool IsCharacterInObjectTable(ICharacter character)
@@ -143,9 +123,7 @@ public static class CharacterHelper
         return NoireService.ObjectTable.Any(o => o.Address == (nint)GetCharacterAddress(character));
     }
 
-    /// <summary>
-    /// Checks if the character is ground sitting.
-    /// </summary>
+    /// <summary>Checks if the character is ground sitting.</summary>
     /// <param name="character">The character instance.</param>
     /// <returns>True if the character is ground sitting, false otherwise.</returns>
     public static unsafe bool IsCharacterGroundSitting(ICharacter character)
@@ -156,9 +134,7 @@ public static class CharacterHelper
                 native->ModeParam == 1;
     }
 
-    /// <summary>
-    /// Checks if the character is chair sitting.
-    /// </summary>
+    /// <summary>Checks if the character is chair sitting.</summary>
     /// <param name="character">The character instance.</param>
     /// <returns>True if the character is chair sitting, false otherwise.</returns>
     public static unsafe bool IsCharacterChairSitting(ICharacter character)
@@ -167,9 +143,7 @@ public static class CharacterHelper
         return (native->Mode == CharacterModes.EmoteLoop || native->Mode == CharacterModes.InPositionLoop) && native->ModeParam == 2;
     }
 
-    /// <summary>
-    /// Checks if the character is sleeping.
-    /// </summary>
+    /// <summary>Checks if the character is sleeping.</summary>
     /// <param name="character">The character instance.</param>
     /// <returns>True if the character is sleeping, false otherwise.</returns>
     public static unsafe bool IsCharacterSleeping(ICharacter character)
@@ -178,9 +152,7 @@ public static class CharacterHelper
         return (native->Mode == CharacterModes.EmoteLoop || native->Mode == CharacterModes.InPositionLoop) && native->ModeParam == 3;
     }
 
-    /// <summary>
-    /// Checks if the character is mounted.
-    /// </summary>
+    /// <summary>Checks if the character is mounted.</summary>
     /// <param name="character">The character instance.</param>
     /// <returns>True if the character is mounted, false otherwise.</returns>
     public static unsafe bool IsCharacterMounted(ICharacter character)
@@ -189,9 +161,7 @@ public static class CharacterHelper
         return native->Mode == CharacterModes.Mounted;
     }
 
-    /// <summary>
-    /// Checks if the character is riding pillion.
-    /// </summary>
+    /// <summary>Checks if the character is riding pillion.</summary>
     /// <param name="character">The character instance.</param>
     /// <returns>True if the character is riding pillion, false otherwise.</returns>
     public static unsafe bool IsCharacterRidingPillion(ICharacter character)
@@ -240,9 +210,7 @@ public static class CharacterHelper
         return GetCharacterFromAddress(companionAddress);
     }
 
-    /// <summary>
-    /// Gets the memory address of the owner character's pet object, such as a Carbuncle or Eos.
-    /// </summary>
+    /// <summary>Gets the memory address of the owner character's pet object, such as a Carbuncle or Eos.</summary>
     /// <param name="ownerCharacter">The owner character.</param>
     /// <returns>The memory address of the pet object, or 0 if not found.</returns>
     public unsafe static nint GetPetAddress(ICharacter ownerCharacter)
@@ -252,9 +220,7 @@ public static class CharacterHelper
         return (nint)manager->LookupPetByOwnerObject((BattleChara*)native);
     }
 
-    /// <summary>
-    /// Gets the owner character's pet instance, such as a Carbuncle or Eos.
-    /// </summary>
+    /// <summary>Gets the owner character's pet instance, such as a Carbuncle or Eos.</summary>
     /// <param name="ownerCharacter">The owner character.</param>
     /// <returns>The pet character instance, or null if not found.</returns>
     public static ICharacter? GetPet(ICharacter ownerCharacter)
@@ -415,8 +381,8 @@ public static class CharacterHelper
     }
 
     /// <summary>
-    /// The condition flags that mean the local player cannot be made to act: events, cutscenes, crafting, gathering
-    /// and fishing, combat, zoning, jumping and flight, mounting, carrying, performing, housing and the mini games.
+    /// The condition flags that keep the local player from acting: events, cutscenes, crafting, gathering, combat, zoning,
+    /// jumping, mounting, carrying, performing, housing and mini games. Riding and flying are not among them.
     /// </summary>
     public static IReadOnlyList<ConditionFlag> OccupiedConditions { get; } =
     [
@@ -447,7 +413,6 @@ public static class CharacterHelper
         ConditionFlag.LoggingOut,
         ConditionFlag.Jumping,
         ConditionFlag.Jumping61,
-        ConditionFlag.InFlight,
         ConditionFlag.Mounting,
         ConditionFlag.Mounting71,
         ConditionFlag.MountOrOrnamentTransition,
@@ -504,20 +469,14 @@ public static class CharacterHelper
     public static bool IsLocalPlayerOccupied(params ConditionFlag[] ignoredConditions)
         => ReadLocalPlayerOccupancy(ignoredConditions).IsOccupied;
 
-    /// <summary>
-    /// Reads every cause that keeps the local player from acting: missing, dead, casting, untargetable, jumping or
-    /// falling, and each of <see cref="OccupiedConditions"/> raised. Framework thread only.
-    /// </summary>
-    /// <returns>The causes found, <see cref="PlayerOccupancy.NoPlayer"/> without a local player.</returns>
+    /// <summary>Every cause that keeps the local player from acting. Framework thread only.</summary>
+    /// <returns>The causes, <see cref="PlayerOccupancy.NoPlayer"/> without a local player.</returns>
     public static PlayerOccupancy ReadLocalPlayerOccupancy()
         => ReadLocalPlayerOccupancy([]);
 
-    /// <summary>
-    /// Reads every cause that keeps the local player from acting, leaving some of <see cref="OccupiedConditions"/>
-    /// out. Framework thread only.
-    /// </summary>
-    /// <param name="ignoredConditions">The flags not to count, such as the OccupiedInEvent an open market board raises.</param>
-    /// <returns>The causes found, <see cref="PlayerOccupancy.NoPlayer"/> without a local player.</returns>
+    /// <summary>Every cause that keeps the local player from acting, some conditions ignored. Framework thread only.</summary>
+    /// <param name="ignoredConditions">The flags not to count, such as the OccupiedInEvent a market board raises.</param>
+    /// <returns>The causes, <see cref="PlayerOccupancy.NoPlayer"/> without a local player.</returns>
     public static unsafe PlayerOccupancy ReadLocalPlayerOccupancy(params ConditionFlag[] ignoredConditions)
     {
         if (!NoireService.IsInitialized() || NoireService.ObjectTable.LocalPlayer is not { } local || local.Address == 0)
@@ -553,12 +512,9 @@ public static class CharacterHelper
         return new PlayerOccupancy(false, isDead, isCasting, !isTargetable, isAirborne, active);
     }
 
-    /// <summary>
-    /// The player who owns a minion, pet or chocobo, reading CompanionOwnerId for a minion and the object's own
-    /// OwnerId for sub-kinds 2 and 3.
-    /// </summary>
-    /// <param name="characterAddress">The address of the owned object.</param>
-    /// <returns>The owner's address, or 0 when the object is unowned or its owner is not in the object table.</returns>
+    /// <summary>The player owning a minion, pet or chocobo.</summary>
+    /// <param name="characterAddress">The owned object's address.</param>
+    /// <returns>The owner's address, or 0 when unowned or the owner is not in the object table.</returns>
     public static unsafe nint GetOwningPlayerAddress(nint characterAddress)
     {
         var owned = GetCharacterFromAddress(characterAddress);
@@ -580,9 +536,7 @@ public static class CharacterHelper
         return owner?.Address ?? nint.Zero;
     }
 
-    /// <summary>
-    /// The player who owns a minion, pet or chocobo.
-    /// </summary>
+    /// <summary>The player who owns a minion, pet or chocobo.</summary>
     /// <param name="owned">The owned object.</param>
     /// <returns>The owner, or null when the object is unowned or its owner is not in the object table.</returns>
     public static IPlayerCharacter? GetOwningPlayer(IGameObject owned)
@@ -602,12 +556,9 @@ public static class CharacterHelper
     /// <param name="SkeletonId">The human skeleton id, such as "c0801".</param>
     public readonly record struct DrawnBody(nint DrawObject, string SkeletonId);
 
-    /// <summary>
-    /// The drawn model and skeleton of a character.
-    /// </summary>
+    /// <summary>The drawn model and skeleton of a character.</summary>
     /// <param name="character">The character to read.</param>
-    /// <returns>The drawn body, or null when there is no draw object or it is not a human character model, as
-    /// happens while a character is between models.</returns>
+    /// <returns>The drawn body, or null without a human draw object, as between models.</returns>
     public static unsafe DrawnBody? GetDrawnBody(ICharacter character)
     {
         if (character == null || character.Address == 0)
@@ -627,20 +578,15 @@ public static class CharacterHelper
         return new DrawnBody((nint)drawn, EmotePathHelper.NormalizeHumanSkeletonId(((Human*)drawn)->RaceSexId));
     }
 
-    /// <summary>
-    /// The human skeleton id a character is drawn as.
-    /// </summary>
+    /// <summary>The human skeleton id a character is drawn as.</summary>
     /// <param name="character">The character to read.</param>
     /// <returns>The skeleton id, or null while there is no human model to read.</returns>
     public static string? GetDrawnSkeletonId(ICharacter character)
         => GetDrawnBody(character)?.SkeletonId;
 
-    /// <summary>
-    /// The per-weapon animation folder the game serves a character's battle motions from, composed from the
-    /// motion codes their two weapon slots name.
-    /// </summary>
+    /// <summary>The animation folder a character's battle motions come from, such as "bt_swd_sld".</summary>
     /// <param name="character">The character to read.</param>
-    /// <returns>The folder, such as "bt_swd_sld", or null while there is no human model or no motion table.</returns>
+    /// <returns>The folder, or null without a human model or motion table.</returns>
     public static unsafe string? GetWeaponMotionFolder(ICharacter character)
     {
         if (GetDrawnBody(character) == null || WeaponMotionTable.Current is not { } table)
@@ -655,11 +601,9 @@ public static class CharacterHelper
             table.CodeFor(WeaponModelSetId(native, DrawDataContainer.WeaponSlot.OffHand)));
     }
 
-    /// <summary>
-    /// Whether a character carries a second weapon. A two-handed weapon leaves the slot empty.
-    /// </summary>
+    /// <summary>Whether a character carries a second weapon. A two-handed weapon leaves the slot empty.</summary>
     /// <param name="character">The character to read.</param>
-    /// <returns>True when the off hand holds something.</returns>
+    /// <returns>Whether the off hand holds something.</returns>
     public static unsafe bool HasOffHandWeapon(ICharacter character)
     {
         if (GetDrawnBody(character) == null)

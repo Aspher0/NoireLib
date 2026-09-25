@@ -19,6 +19,11 @@ You are reading the documentation for the `NoireConfiguration` system.
   - [1. Write a Migration](#1-write-a-migration)
   - [2. Register It](#2-register-it)
   - [3. When a Migration Fails](#3-when-a-migration-fails)
+- [Settings](#settings)
+  - [1. Generate Them](#1-generate-them)
+  - [2. Rules](#2-rules)
+  - [3. Share Codes](#3-share-codes)
+  - [4. Settings Windows](#4-settings-windows)
 - [Attributes](#attributes)
 - [File Location](#file-location)
 - [Rules Your Configuration Must Follow](#rules-your-configuration-must-follow)
@@ -32,7 +37,7 @@ You are reading the documentation for the `NoireConfiguration` system.
 The `NoireConfiguration` system persists plugin settings as JSON, with:
 - **Plain classes**, plain `List<T>`, `Dictionary<K,V>`, arrays and nested types, at any depth
 - **Automatic saving** of every change in the object graph, including collection and nested changes
-- **Background loading** at initialization, so the game thread never waits on a configuration
+- **Background loading** at initialization: the game thread never waits on a configuration
 - **Debounced atomic writes**, flushed at plugin unload
 - **Versioned migrations** with an automatic backup of the file they run against
 - **A generated static accessor** per configuration
@@ -161,11 +166,12 @@ Reaching a configuration arms one check on the next framework tick. The check ha
 fingerprint, compiled once per type on the background load thread, and compares it to the last persisted state. Only a
 difference serializes and queues a write.
 
-A check that captured something arms itself again, so a burst of changes is followed until one check comes back clean.
-A clean check disarms, and with nothing armed the framework handler detaches. Reading a configuration every frame
-costs one fingerprint per frame, microseconds and no garbage. Touching nothing costs nothing.
+A check that captured something arms itself again: a burst of changes is followed until one check comes back clean.
+A clean check disarms. The framework handler stays attached once the first check ran, since attaching and detaching it
+around each check allocated on every frame a configuration was read; with nothing armed it costs a lock per tick.
+Reading a configuration every frame costs one fingerprint per frame, microseconds and no garbage.
 
-Writes go through a 250ms debounce capped at 2s (`SaveDebounceInterval`, `MaxSaveDelay`), then a temp-then-rename, so
+Writes go through a 250ms debounce capped at 2s (`SaveDebounceInterval`, `MaxSaveDelay`), then a temp-then-rename:
 an interrupted write never truncates the file.
 
 ### 3. What It Does Not Cover
@@ -216,7 +222,7 @@ NoireConfigManager.ClearCache();                             // drop every cache
 ```
 
 Marked configurations load in the background when `NoireLibMain.Initialize` runs, and a caller racing that load waits
-only for its own configuration. A configuration whose load failed against an existing file is not cached, so the next
+only for its own configuration. A configuration whose load failed against an existing file is not cached: the next
 call tries again.
 
 ---
@@ -269,7 +275,7 @@ The version written to the file is the one the class declares, whatever was assi
 
 ### 3. When a Migration Fails
 
-The file still loads, but the instance latches `IsDegraded` and refuses every save, so the partially defaulted values
+The file still loads, but the instance latches `IsDegraded` and refuses every save: the partially defaulted values
 never reach disk. `DegradedBackupPath` points at the backup taken before the attempt.
 
 ```csharp
@@ -283,6 +289,72 @@ if (config.IsDegraded)
 
 ---
 
+## Settings
+
+A setting is one configuration property with its default and its rules, for settings pages, reset buttons and share
+codes.
+
+### 1. Generate Them
+
+```csharp
+[NoireConfig("Configuration", SettingsClassName = "Cfg")]
+public class ConfigurationInstance : NoireConfigBase
+{
+    [Range(1, 50)]
+    public int MaxTargets { get; set; } = 3;
+}
+
+Cfg.MaxTargets.Value = 99;          // clamped to 50, saved
+Cfg.MaxTargets.Default;             // 3, read from a fresh instance
+Cfg.MaxTargets.IsModified;
+Cfg.MaxTargets.Reset();
+foreach (var setting in Cfg.All)    // INoireSetting, in declaration order
+    setting.Reset();
+```
+
+One `NoireSetting<T>` per public read/write property of a simple type: `bool`, numbers, `char`, `string`, enums,
+`TimeSpan`, `DateTime`, `Vector2`/`3`/`4`, and nullable forms of those. Collections and nested objects get none. A
+property named `All` or `NoireDefaults` is skipped.
+
+An enum setting labels each value with the declared text keyed `<Enum>.<Value>` (see
+[Declared Texts](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/Modules/Localizer/README.md#declared-texts)), or the value's name when none is declared.
+
+### 2. Rules
+
+`[Range]`, `[StringLength]` and `[MaxLength]` are read into `NoireSetting<T>.Rules` and applied on every write through
+`Value`, and to the whole configuration on every load: an out-of-range value in the file is clamped, logged, and saved
+back.
+
+```csharp
+[Range(typeof(TimeSpan), "00:00:00", "01:00:00")]
+public TimeSpan Throttle { get; set; } = TimeSpan.FromMinutes(5);
+
+Cfg.Throttle.Rules.Max;   // 01:00:00
+```
+
+### 3. Share Codes
+
+```csharp
+string code = NoireSettingsShare.Export(Cfg.All);             // modified settings only, by name
+ShareCodeResult<int> result = NoireSettingsShare.Import(code, Cfg.All);
+// result.Value: how many applied. Unknown names and unreadable values are skipped; rules apply.
+```
+
+The code is a [share code](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/Helpers/ShareCode/README.md) of kind
+`<plugin internal name>.settings`; another plugin's code is refused.
+
+### 4. Settings Windows
+
+`NoireSettingsWindow` (see the `NoireLib.UI` README) draws these settings as rows with search, reset, confirmations and
+the export and import buttons.
+
+```csharp
+page.Toggle(Cfg.Enabled, L.Enabled, L.EnabledHelp);
+page.Number(Cfg.MaxTargets, L.MaxTargets);   // bounded by [Range]
+```
+
+---
+
 ## Attributes
 
 #### `[NoireConfig]`
@@ -290,7 +362,8 @@ if (config.IsDegraded)
 Generates the static accessor, named by the argument or `<ClassName>Static`.
 
 ```csharp
-[NoireConfig("Config")]   // static class Config
+[NoireConfig("Config")]                            // static class Config
+[NoireConfig("Config", SettingsClassName = "Cfg")] // plus static class Cfg, see Settings
 ```
 
 #### `[AutoSave]`

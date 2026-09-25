@@ -1,4 +1,4 @@
-#nullable enable
+﻿#nullable enable
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -8,23 +8,8 @@ using System.Collections.Immutable;
 
 namespace NoireLib.SourceGenerators;
 
-/// <summary>
-/// Reports a NoireUI surface that acquires an ImGui draw list directly instead of through the
-/// <c>UiDraw</c> gate.
-/// </summary>
-/// <remarks>
-/// A surface that reaches for its own list opens no profiler scope, so its cost lands in whichever
-/// scope encloses it and reads as a caller's expense rather than its own.
-/// <para>
-/// This rule is an Error where the other analyzers in this project are Warnings, and the departure
-/// is deliberate. A warning does not stop a build, so it cannot deliver the guarantee this rule
-/// exists for: that an unmeasured surface is not merely discouraged but impossible to ship.
-/// </para>
-/// <para>
-/// Scoped to <c>NoireLib/UI/</c>. Plugin code outside the library is unaffected: consumers may call
-/// ImGui however they like, and this constrains the library only.
-/// </para>
-/// </remarks>
+// Reports a NoireUI surface acquiring a draw list outside the UiDraw gate: its cost would land in its caller's profiler
+// scope. An error, not a warning: an unmeasured surface must not ship. Only NoireLib/UI/ is constrained.
 [DiagnosticAnalyzer(LanguageNames.CSharp)]
 public class UiDrawListAnalyzer : DiagnosticAnalyzer
 {
@@ -32,18 +17,12 @@ public class UiDrawListAnalyzer : DiagnosticAnalyzer
 
     private const string Category = "Usage";
 
-    /// <summary>
-    /// The gate's own implementation, which has to make these calls so that nothing else does.
-    /// </summary>
-    /// <remarks>
-    /// <c>NoireShapes.DrawList</c> is exempt as the chokepoint the gate resolves the window list through, but only
-    /// that one member: the rest of <c>NoireShapes.cs</c> is a drawing surface like any other, and exempting the whole
-    /// file would let new ungated drawing compile there in silence.
-    /// </remarks>
+    // The gate itself. Only NoireShapes.DrawList and UiContext.WindowDrawList are exempt, never their whole files.
     private static readonly (string File, string? Member)[] Exemptions =
     [
         ("UiDraw.cs", null),
         ("NoireShapes.cs", "DrawList"),
+        ("UiContext.cs", "WindowDrawList"),
     ];
 
     private static readonly DiagnosticDescriptor Rule = new DiagnosticDescriptor(
@@ -83,8 +62,7 @@ public class UiDrawListAnalyzer : DiagnosticAnalyzer
         if (!IsInsideNoireUi(path))
             return;
 
-        // Resolved through the model rather than matched on the receiver's spelling, so a fully qualified call or one
-        // through a using alias is caught the same as a bare ImGui.
+        // Resolved through the model: a fully qualified or aliased call is caught like a bare ImGui one.
         if (context.SemanticModel.GetSymbolInfo(memberAccess, context.CancellationToken).Symbol is not IMethodSymbol symbol)
             return;
 
@@ -102,13 +80,7 @@ public class UiDrawListAnalyzer : DiagnosticAnalyzer
         || method == "GetForegroundDrawList"
         || method == "GetBackgroundDrawList";
 
-    /// <summary>
-    /// Whether a file belongs to the library's UI, which is the only code this rule constrains.
-    /// </summary>
-    /// <remarks>
-    /// Matched on the path rather than on the namespace, because a consumer plugin is free to declare
-    /// types in <c>NoireLib.UI</c> and must not inherit the library's own constraint.
-    /// </remarks>
+    // Matched on the path: a consumer plugin may declare types in NoireLib.UI and must not inherit this rule.
     private static bool IsInsideNoireUi(string path)
     {
         if (string.IsNullOrEmpty(path))
@@ -119,9 +91,6 @@ public class UiDrawListAnalyzer : DiagnosticAnalyzer
         return normalized.IndexOf("/NoireLib/UI/", StringComparison.OrdinalIgnoreCase) >= 0;
     }
 
-    /// <summary>
-    /// Whether a call sits in the gate's own implementation. See <see cref="Exemptions"/>.
-    /// </summary>
     private static bool IsExempt(string path, SyntaxNode node)
     {
         var normalized = path.Replace('\\', '/');
@@ -143,9 +112,6 @@ public class UiDrawListAnalyzer : DiagnosticAnalyzer
         return false;
     }
 
-    /// <summary>
-    /// The name of the member a call sits in, or <see langword="null"/> when it sits outside one.
-    /// </summary>
     private static string? EnclosingMemberName(SyntaxNode node)
     {
         for (var current = node.Parent; current != null; current = current.Parent)

@@ -12,19 +12,13 @@ namespace NoireLib.CommandRouter;
 /// </summary>
 public sealed class RootCommandRegistration
 {
-    /// <summary>
-    /// The root slash command string.
-    /// </summary>
+    /// <summary>The root slash command string.</summary>
     public string Command { get; }
 
-    /// <summary>
-    /// Optional help text describing the root command.
-    /// </summary>
+    /// <summary>Optional help text describing the root command.</summary>
     public string? HelpText { get; internal set; }
 
-    /// <summary>
-    /// Whether this command should appear in Dalamud's help listing.
-    /// </summary>
+    /// <summary>Whether this command should appear in Dalamud's help listing.</summary>
     public bool ShowInHelp { get; internal set; } = true;
 
     /// <summary>
@@ -33,9 +27,7 @@ public sealed class RootCommandRegistration
     /// </summary>
     public bool DetailedDalamudHelp { get; internal set; } = true;
 
-    /// <summary>
-    /// The display order used by Dalamud when listing this root command in help.
-    /// </summary>
+    /// <summary>The display order used by Dalamud when listing this root command in help.</summary>
     public int DisplayOrder { get; internal set; }
 
     /// <summary>
@@ -81,8 +73,7 @@ public sealed class RootCommandRegistration
         var lines = new List<string>();
         lines.Add(string.IsNullOrWhiteSpace(HelpText) ? "No information." : HelpText);
 
-        // A raw handler bypasses subcommand dispatch and the built-in "help" token, so listing either would
-        // advertise paths that can never run.
+        // A raw handler bypasses subcommands and "help": listing them would advertise paths that never run.
         if (RawHandler == null && DetailedDalamudHelp)
         {
             // The fallback line slots among the subcommand lines by display order, a tie listing it first.
@@ -103,7 +94,7 @@ public sealed class RootCommandRegistration
                 lines.Add(BuildFallbackHelpLabel());
 
             if (includeBuiltInHelp)
-                lines.Add(BuildBuiltInHelpLabel(Command, SubCommands));
+                lines.Add(BuildTreePrefix(1) + "help - " + BuiltInHelpDescription());
         }
 
         return string.Join(Environment.NewLine, lines);
@@ -160,21 +151,21 @@ public sealed class RootCommandRegistration
         return builder.ToString();
     }
 
-    private static string BuildBuiltInHelpLabel(string rootCommand, IReadOnlyList<SubCommandDefinition> subCommands)
-    {
-        var builder = new StringBuilder();
-        builder.Append(BuildTreePrefix(1));
-        builder.Append("help - Shows a help message");
+    // Whether the built-in "help" token dispatches for this command, and so is listed: auto-help is on and no raw
+    // handler bypasses dispatch.
+    internal bool ListsBuiltInHelp(bool autoHelp) => autoHelp && RawHandler == null;
 
-        var firstSubCommand = subCommands
+    // What the built-in "help" line says, in Dalamud's listing and in the chat listing alike.
+    internal string BuiltInHelpDescription()
+    {
+        var firstSubCommand = SubCommands
             .OrderBy(subCommand => subCommand.DisplayOrder)
             .ThenBy(subCommand => subCommand.Name, StringComparer.OrdinalIgnoreCase)
             .FirstOrDefault();
 
-        if (firstSubCommand != null)
-            builder.Append($". Also available for subcommands (e.g. {rootCommand} {firstSubCommand.Name} help)");
-
-        return builder.ToString();
+        return firstSubCommand == null
+            ? "Shows a help message"
+            : $"Shows a help message. Also available for subcommands (e.g. {Command} {firstSubCommand.Name} help)";
     }
 
     private static string? BuildArgumentDescriptions(IReadOnlyList<CommandArgumentDefinition> arguments)

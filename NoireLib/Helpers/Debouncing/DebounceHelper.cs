@@ -12,9 +12,6 @@ public static class DebounceHelper
 {
     private static readonly ConcurrentDictionary<string, Debouncer> _debouncers = new();
 
-    /// <summary>
-    /// Throws an exception if the NoireLib is not initialized.
-    /// </summary>
     static DebounceHelper()
     {
         if (!NoireService.IsInitialized())

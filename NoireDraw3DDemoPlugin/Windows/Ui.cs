@@ -18,7 +18,7 @@ internal static class Ui
 
     private const float TooltipWrapEm = 24f;
 
-    /// <summary>The one accent. Nav selection and section rules. Everything else is theme default or grey.</summary>
+    // Nav selection and section rules only. Everything else is theme default or grey.
     public static readonly Vector4 Accent = new(0.45f, 0.72f, 0.90f, 1f);
 
     static Ui() => NoireTheme.Current = NoireTheme.FromAccent(Accent);
@@ -59,10 +59,9 @@ internal static class Ui
 
     private static int formDepth;
 
-    /// <summary>Dalamud's global DPI scale, applied to every hard-coded size here.</summary>
     public static float Scale => ImGuiHelpers.GlobalScale;
 
-    /// <summary>The window's style, tighter than stock ImGui. Pushed once per frame around the whole window.</summary>
+    // Pushed once per frame around the whole window.
     public static IDisposable Style() => new Skin();
 
     private static readonly Vector4 Hairline = new(1f, 1f, 1f, 0.08f);
@@ -126,10 +125,7 @@ internal static class Ui
         }
     }
 
-    /// <summary>
-    /// A group heading: a small accent caption with a rule running out to the right margin. Drawn to the draw list rather
-    /// than as a full-width separator so the label and the rule sit on one line.
-    /// </summary>
+    // Drawn to the draw list: the label and its rule share one line.
     public static void Section(string title)
     {
         ImGui.Spacing();
@@ -147,14 +143,13 @@ internal static class Ui
         ImGui.Spacing();
     }
 
-    /// <summary>Dimmed wrapped prose.</summary>
     public static void Note(string text)
     {
         using var color = ImRaii.PushColor(ImGuiCol.Text, ImGuiColors.DalamudGrey3);
         ImGui.TextWrapped(text);
     }
 
-    /// <summary>A dimmed live status line. Draws nothing when empty.</summary>
+    // Draws nothing when empty.
     public static void Status(string? text)
     {
         if (string.IsNullOrEmpty(text))
@@ -163,8 +158,7 @@ internal static class Ui
         Note(text);
     }
 
-    /// <summary>A coloured callout for a caveat or prerequisite.</summary>
-    /// <param name="color">Its colour. Defaults to Dalamud's warning yellow.</param>
+    // Defaults to Dalamud's warning yellow.
     public static void Callout(string text, Vector4? color = null)
     {
         using var pushed = ImRaii.PushColor(ImGuiCol.Text, color ?? ImGuiColors.DalamudYellow);
@@ -173,16 +167,12 @@ internal static class Ui
 
     public static void Gap() => ImGui.Dummy(new Vector2(0f, 3f * Scale));
 
-    /// <summary>
-    /// A scrolling body filling the rest of the current window or child. Anything that can overflow goes in one of these,
-    /// so whatever sits above it stays put.
-    /// </summary>
+    // Anything that can overflow goes in one. Whatever sits above it stays put.
     public static ImRaii.ChildDisposable Scroll(string id) => ImRaii.Child(id, Vector2.Zero, false);
 
-    /// <summary>A <c>using</c>-scoped block that greys out and blocks everything inside it.</summary>
     public static IDisposable Disabled(bool disabled) => ImRaii.Disabled(disabled);
 
-    /// <summary>Numbers in the mono font. Columns of them line up and stop jittering as they change.</summary>
+    // Mono digits line up and stop jittering as they change.
     public static void Mono(string text, Vector4? color = null)
     {
         using var font = ImRaii.PushFont(UiBuilder.MonoFont);
@@ -196,7 +186,7 @@ internal static class Ui
         ImGui.TextUnformatted(icon.ToIconString());
     }
 
-    /// <param name="width">Button width before scaling. 0 fits the content.</param>
+    // Width before scaling. 0 fits the content.
     public static bool IconButton(FontAwesomeIcon icon, string label, float width = 0f)
     {
         var iconText = icon.ToIconString();
@@ -224,7 +214,6 @@ internal static class Ui
         return pressed;
     }
 
-    /// <summary>The scope opened by <see cref="Form"/>: a two-column caption/control table.</summary>
     public readonly ref struct FormScope
     {
         private readonly bool open;
@@ -250,12 +239,9 @@ internal static class Ui
         }
     }
 
-    /// <summary>Opens a caption/control form. Rows drawn outside one still render, stacked, without corrupting the enclosing table.</summary>
-    /// <param name="labelWidth">Caption-column width before scaling. Narrow it inside a split pane, where the default would starve the controls.</param>
+    // Rows drawn outside a form still render, stacked, without corrupting the enclosing table.
     public static FormScope Form(string id, float labelWidth = LabelColumnWidth) => new(id, labelWidth);
 
-    /// <summary>Opens one form row, caption (and its help marker) left, cursor left in the control cell with the next item stretched to fill.</summary>
-    /// <param name="hint">Optional help, shown on hover of the caption or its marker.</param>
     public static void Row(string label, string? hint = null)
     {
         if (formDepth > 0)
@@ -274,8 +260,7 @@ internal static class Ui
         ImGui.SetNextItemWidth(-1f);
     }
 
-    /// <summary>Appends the "(?)" marker to the item just drawn, and shows <paramref name="hint"/> when either that item or the marker is hovered. The caption itself is a hover target.</summary>
-    /// <param name="hint">The help text. Nothing is drawn when it is empty.</param>
+    // The caption is a hover target too. Nothing is drawn when the hint is empty.
     public static void HelpMarker(string? hint)
     {
         if (string.IsNullOrEmpty(hint))
@@ -288,11 +273,7 @@ internal static class Ui
             Tooltip(hint);
     }
 
-    /// <summary>
-    /// Orientation overrides for imported models, shared by every page that imports one.<br/>
-    /// Off by default and correct that way for the game's own models and for a conforming glTF.
-    /// </summary>
-    /// <returns>Whether a toggle changed this frame.</returns>
+    // Off by default: correct for the game's own models and for a conforming glTF.
     public static bool ImportFlips(string id)
     {
         var flips = NoireDraw3D.Diagnostics.ImportFlips;
@@ -315,7 +296,6 @@ internal static class Ui
         return changed;
     }
 
-    /// <summary>A toggle row that reports whether it changed, for callers that need to react to the edit.</summary>
     public static bool Toggle2(string label, Func<bool> get, Action<bool> set, string? hint = null)
     {
         Row(label, hint);
@@ -327,7 +307,7 @@ internal static class Ui
         return true;
     }
 
-    /// <summary>Draws a wrapped tooltip. Explicit "\n" still forces a break.</summary>
+    // An explicit newline still forces a break.
     public static void Tooltip(string text)
     {
         ImGui.BeginTooltip();
@@ -468,10 +448,7 @@ internal static class Ui
         return true;
     }
 
-    /// <summary>
-    /// An enum dropdown row backed by an external index, for a setting whose live value cannot be read back (a predicate
-    /// the consumer handed over as a lambda).
-    /// </summary>
+    // Backed by an external index, for a setting whose live value cannot be read back.
     public static bool Enum<T>(string label, ref int index, string? hint = null) where T : struct, Enum
     {
         Row(label, hint);
@@ -483,7 +460,7 @@ internal static class Ui
         return Combo($"##{label}", names, ref index);
     }
 
-    /// <summary>A toggle per flag of a <c>[Flags]</c> enum, on one line. The zero member and combined aliases are skipped, since they are states of the single-bit toggles. A dropdown cannot edit flags. It holds one member.</summary>
+    // The zero member and combined aliases are skipped: they are states of the single-bit toggles.
     public static void Flags<T>(string label, Func<T> get, Action<T> set, string? hint = null) where T : struct, Enum
     {
         Row(label, hint);
@@ -514,7 +491,7 @@ internal static class Ui
     // Keyed by widget id. The combo is stateful.
     private static readonly Dictionary<string, (NoireComboBox<string> Combo, string[] Names)> combos = new();
 
-    /// <param name="id">The widget id (pass "##..." to suppress a duplicate caption).</param>
+    // Pass "##..." as the id to suppress a duplicate caption.
     public static bool Combo(string id, string[] names, ref int index)
     {
         if (!combos.TryGetValue(id, out var entry))
@@ -555,7 +532,7 @@ internal static class Ui
         return true;
     }
 
-    /// <summary>A themed button. A zero size component is measured from the label. A negative one fills the space, leaving that many pixels.</summary>
+    // A zero size component is measured from the label. A negative one fills the space, leaving that many pixels.
     public static bool Button(string label, Vector2 size = default)
         => NoireButtons.Button(label, ButtonLook, size);
 

@@ -214,8 +214,7 @@ public sealed class NoireGaugeHookTests : IClassFixture<UiHarness>
             () => NoireGauges.Timer(TimeSpan.FromMilliseconds(13_200), TimeSpan.FromSeconds(60), style),
             warmUpFrames: 0);
 
-        // Was "13s200ms": too wide for the hole it sits in, and a different string on every frame, so a centred label
-        // visibly resized and flickered as the milliseconds ran.
+        // "13s200ms" was too wide and changed every frame: a centred label resized and flickered.
         captured.Label.Should().Be("14s");
     }
 
@@ -269,9 +268,7 @@ public sealed class NoireGaugeHookTests : IClassFixture<UiHarness>
 
         fitted.Should().BeLessThan(14f, "a label wider than the ring's hole has to come down to fit it");
 
-        // Either it fits, or it bottomed out at the readable minimum and is allowed to overflow. Headless there is no
-        // rasterized font, so every size is measured through the same stretched stand-in and the floor is the usual
-        // outcome; in game the sizes are real and the first branch is.
+        // Fits, or bottomed out at the readable minimum. Headless, every size shares one stand-in font.
         (measured <= hole || fitted <= NoireGauges.MinFittedLabelSize).Should().BeTrue();
     }
 
@@ -299,10 +296,10 @@ public sealed class NoireGaugeHookTests : IClassFixture<UiHarness>
                     NoireGauges.Sparkline(Series, HookedSparkline);
                 }
             },
-            warmUpFrames: 2);
+            // A shape is recorded for replay the second frame its size is seen, and this layout settles on the second.
+            warmUpFrames: 3);
 
-        // The records are structs built at the call site and the hooks are preallocated statics, so the hooked path
-        // must cost exactly what the shipped one does: nothing.
+        // Struct records and preallocated hooks: the hooked path costs nothing either.
         result.AllocatedBytes.Should().Be(0L);
     }
 }

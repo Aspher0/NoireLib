@@ -25,7 +25,7 @@ public static class ChatLinkHelper
     // What one name is registered as: the command id the game knows it by, and what a click does.
     private sealed record Registration(uint CommandId, DalamudLinkPayload Payload)
     {
-        /// <summary>The click action, replaced rather than re-registered when a name is reused, so the command id stays the same.</summary>
+        // Replaced rather than re-registered when a name is reused: the command id stays the same.
         public Action OnClick { get; set; } = static () => { };
     }
 

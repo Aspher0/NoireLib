@@ -1,13 +1,14 @@
+using System;
+
 namespace NoireLib.Core.Modules;
 
 /// <summary>
-/// Interface for base modules within the NoireLib library.
+/// A NoireLib module. Construction runs field initializers, <c>InitializeModule</c>, <c>OnActivated</c> when active, then
+/// the derived constructor body: setup <c>OnActivated</c> needs belongs in <c>InitializeModule</c>.
 /// </summary>
-public interface INoireModule
+public interface INoireModule : IDisposable
 {
-    /// <summary>
-    /// Indicates whether the module is currently active.
-    /// </summary>
+    /// <summary>Indicates whether the module is currently active.</summary>
     bool IsActive { get; set; }
 
     /// <summary>
@@ -16,9 +17,7 @@ public interface INoireModule
     /// </summary>
     bool EnableLogging { get; set; }
 
-    /// <summary>
-    /// The identifier for this module, used to differentiate multiple modules of the same type.
-    /// </summary>
+    /// <summary>The identifier for this module, used to differentiate multiple modules of the same type.</summary>
     string? ModuleId { get; set; }
 
     /// <summary>
@@ -32,8 +31,9 @@ public interface INoireModule
     /// <returns>The unique identifier for this module.</returns>
     string GetUniqueIdentifier();
 
-    /// <summary>
-    /// Disposes the module completely, unregistering the window, if any.
-    /// </summary>
-    void Dispose();
+    /// <summary>Disposes the module completely, unregistering the window, if any.</summary>
+    new void Dispose();
+
+    // Covers an implementation that implements only INoireModule.Dispose, explicitly.
+    void IDisposable.Dispose() => Dispose();
 }

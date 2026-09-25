@@ -28,7 +28,7 @@ The `NoireHotkeyManager` is a module that lets you register editable hotkeys and
 It provides:
 - **Keyboard + gamepad hotkeys**
 - **Pressed, released, hold, repeat, hold-and-repeat activation modes** (with delays if applicable)
-- **Framework thread callbacks**, so handlers can touch game state safely
+- **Framework thread callbacks**: handlers can touch game state safely
 - **Optional self-managed persistence** of the whole hotkey, every option and not just the binding
 - **Live reconfiguration**: set a property on the entry and it takes effect and persists, with no remove-and-re-add
 - **EventBus integration** for hotkey lifecycle events
@@ -124,7 +124,7 @@ hotkeyManager?.RegisterHotkey(new HotkeyEntry
 
 ### HotkeyEntry fields
 
-- `Id`: Unique identifier. Required. Matched ignoring case everywhere an id is taken, so `my.hotkey` and
+- `Id`: Unique identifier. Required. Matched ignoring case everywhere an id is taken: `my.hotkey` and
   `My.Hotkey` are the same hotkey.
 - `DisplayName`: Label used by the binding UI. Defaults to `Id` if empty.
 - `Binding`: Initial `HotkeyBinding`.
@@ -162,7 +162,7 @@ Binding = GamepadButtons.R2   // Converts implicitly too
 
 ### Reading a binding yourself
 
-`KeybindsHelper.IsBindingHeld(binding)` answers "is this binding held right now" using the exact rules this module triggers with (exact modifiers for a keyboard binding, required modifiers only for a modifier-only one, raw state for a gamepad button). It reads the physical keyboard, so it needs no active frame and works from any thread.
+`KeybindsHelper.IsBindingHeld(binding)` answers "is this binding held right now" using the exact rules this module triggers with (exact modifiers for a keyboard binding, required modifiers only for a modifier-only one, raw state for a gamepad button). It reads the physical keyboard: it needs no active frame and works from any thread.
 
 Lets another widget be gated by a hotkey the user rebinds here without reimplementing the matching. `NoireComboBox<T>.BindWheelCycleHotkey` is the shipped example; see the [NoireLib.UI documentation](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/UI/README.md#plugging-in-the-hotkey-manager).
 
@@ -225,9 +225,9 @@ if (listeningId != null)
 }
 ```
 
-`ListeningHotkeyId` is null exactly when nothing is being rebound, so reading it once answers both questions at
+`ListeningHotkeyId` is null exactly when nothing is being rebound: reading it once answers both questions at
 once. Prefer that over testing `IsListening` and then reading `ListeningHotkeyId`: the detection timer stops
-listening from its own thread the moment it captures a binding, so a capture landing between those two reads
+listening from its own thread the moment it captures a binding: a capture landing between those two reads
 leaves the second one null. `IsListening` is there for the case where the id is not needed.
 
 ---
@@ -279,7 +279,7 @@ FixedRepeatDelay = TimeSpan.FromMilliseconds(80)
 
 ## Changing a Hotkey at Runtime
 
-The entry `TryGetHotkey` hands back is the **live** entry the module runs on, so reconfiguring a hotkey is just
+The entry `TryGetHotkey` hands back is the **live** entry the module runs on: reconfiguring a hotkey is just
 setting a property on it. There is no remove-and-re-add.
 
 ```csharp
@@ -292,7 +292,7 @@ if (hotkeyManager.TryGetHotkey("my.hotkey", out var hotkey))
 ```
 
 Each assignment takes effect on the next detection tick, and, when the manager persists, is saved as well. A burst
-of sets like the one above coalesces into a single write while the game is running, so writing several options in
+of sets like the one above coalesces into a single write while the game is running: writing several options in
 one frame is one save, not one per property.
 
 - Every configurable option behaves this way: `Enabled`, `ActivationMode`, `HoldDelay`, `FixedRepeatDelay`,
@@ -305,7 +305,7 @@ one frame is one save, not one per property.
   is going on. See [Taking a key for a moment](#taking-a-key-for-a-moment).
 - The convenience methods do the same thing for a single option: `SetHotkeyEnabled`, `SetHotkeyBinding`,
   `SetHotkeyCallback`. `SetHotkeyEnabled` persists its change, just as setting `Enabled` on the entry does.
-- An entry you have unregistered is detached from the manager, so a later property set on it neither takes effect
+- An entry you have unregistered is detached from the manager: a later property set on it neither takes effect
   nor writes its removed hotkey back to storage.
 
 ---
@@ -328,7 +328,7 @@ hotkey.ReleaseGameInputSuppression();
 ```
 
 - Either one takes the key: the blocker honours `BlockGameInput` and an outstanding suppression alike.
-- A suppression is **never persisted** and cannot outlive the session, so forgetting to release one costs the rest
+- A suppression is **never persisted** and cannot outlive the session: forgetting to release one costs the rest
   of the session and nothing beyond it.
 - Calls **nest**. Two callers can suppress the same hotkey, and the key goes back to the game when the last one
   releases. Releasing more than was taken is ignored rather than left as a debt against the next suppression.
@@ -342,10 +342,11 @@ focused in a focused window, and leaves the hotkey's own settings exactly as it 
 ## Threading
 
 Key detection runs on its own 16ms timer rather than on the framework update, because the framework update
-is bound to the frame rate and would drop short keypresses when FPS is low.
+is bound to the frame rate and would drop short keypresses when FPS is low. An exception in a detection tick is
+logged once per run of failing ticks, and detection carries on with the next tick.
 
 Delivery is separate from detection. **Every** callback, CLR event and EventBus publication this module makes is
-invoked on the **framework thread**, so you can read and write game state directly from any of them:
+invoked on the **framework thread**: you can read and write game state directly from any of them:
 
 ```csharp
 Callback = () => NoireService.TargetManager.Target = null,
@@ -362,12 +363,12 @@ of which one reached it.
 
 ### Trigger delivery
 
-- A hotkey fires on the frame *after* detection, so a callback runs up to one frame later than the keypress.
+- A hotkey fires on the frame *after* detection: a callback runs up to one frame later than the keypress.
 - Triggers are never coalesced. If a hotkey triggers more than once between two frames (a `Repeat` hotkey at
   its 80ms default does so below roughly 12 FPS), the callback is invoked once per trigger, in order, rather
   than collapsed into a single call.
 - A hotkey unregistered in that one-frame gap does not fire. Registration is re-checked when the trigger is
-  delivered, so a callback you retire with `UnregisterHotkey` never runs afterwards.
+  delivered: a callback you retire with `UnregisterHotkey` never runs afterwards.
 
 ### Binding and listening delivery
 
@@ -386,7 +387,7 @@ of which one reached it.
 An exception thrown by a callback or handler is caught and logged, and does not prevent the deliveries queued
 behind it.
 
-When NoireLib is not initialized there is no framework thread to marshal onto, so deliveries run inline on the
+When NoireLib is not initialized there is no framework thread to marshal onto: deliveries run inline on the
 calling thread instead. Once the module is disposed, nothing is delivered again.
 
 ---
@@ -424,16 +425,16 @@ user's stored answer from then on. For anything momentary, use [a suppression](#
 ### Upgrading from an older config
 
 Configs written before this (version 1) stored only a binding per id. They are migrated to the version 2 shape on
-load: each stored binding is lifted into a full record whose other options come up at their defaults, so an older
+load: each stored binding is lifted into a full record whose other options come up at their defaults: an older
 plugin's saved bindings are preserved. The migration is handled by NoireLib's configuration framework, which backs
-up the file first and refuses to persist a load that failed, so a migration that cannot complete leaves the file
+up the file first and refuses to persist a load that failed: a migration that cannot complete leaves the file
 untouched.
 
 ### Multiple instances share one store
 
 `HotkeyManagerConfig.json` is keyed by hotkey `Id` alone, and every `NoireHotkeyManager` in the plugin reads
 and writes the same file. Saving therefore **updates** the ids an instance holds and leaves every other id
-untouched, so two instances can persist their hotkeys side by side:
+untouched: two instances can persist their hotkeys side by side:
 
 ```csharp
 var combat = NoireLibMain.AddModule<NoireHotkeyManager>("Hotkeys_Combat");
@@ -443,7 +444,7 @@ var ui = NoireLibMain.AddModule<NoireHotkeyManager>("Hotkeys_UI");
 `UnregisterHotkey(id)` is the only call that deletes a stored hotkey, and it deletes exactly that one id.
 A stored id that no registered hotkey owns is left alone, because it may belong to another instance or to a
 hotkey that has not been registered yet. Give your ids a per-instance prefix if two instances could otherwise
-pick the same one, since a shared id means a shared hotkey. Ids are matched ignoring case here too, so two
+pick the same one, since a shared id means a shared hotkey. Ids are matched ignoring case here too: two
 prefixes that differ only in case are the same prefix.
 
 ---
@@ -522,7 +523,7 @@ var allHotkeys = hotkeyManager?.GetHotkeys();
 - Check `Enabled` on the hotkey entry
 - If `BlockWhenTextInputActive` is true, verify no text input is active
 - Ensure the module was activated *after* NoireLib was initialized. Detection reads the game's key state and
-  delivery runs on the framework thread, so a module activated beforehand records `IsActive` but wires
+  delivery runs on the framework thread: a module activated beforehand records `IsActive` but wires
   nothing, and stays inert until it is activated again. It logs a warning when this happens.
 
 ### Binding not saved

@@ -9,30 +9,12 @@ using System.Xml.Linq;
 
 namespace NoireLib.SourceGenerators;
 
-/// <summary>
-/// Reads a member's real documentation and re-emits it as comment lines for the grouped NoireUI path, resolving
-/// inherited-documentation tags against the member they point at.
-/// </summary>
-/// <remarks>
-/// The compiler leaves inherited-documentation tags unexpanded in the XML documentation file a package ships, so a
-/// forward carrying one reaches consumers as a blank tooltip.
-/// </remarks>
+// The compiler ships inherited-documentation tags unexpanded, which reaches consumers as a blank tooltip.
 internal static class NoireFacadeDocumentation
 {
-    /// <summary>
-    /// How far a chain of inherited-documentation tags is followed before it is treated as a cycle.
-    /// </summary>
+    // How far a chain of inherited-documentation tags is followed before it counts as a cycle.
     private const int MaxInheritDepth = 8;
 
-    /// <summary>
-    /// Renders a member's documentation as <c>///</c> comment lines, or nothing when it has none.
-    /// </summary>
-    /// <param name="symbol">The member whose documentation is read.</param>
-    /// <param name="parameters">The parameters of the member the documentation is emitted on.</param>
-    /// <param name="typeParameters">The type parameters of the member the documentation is emitted on.</param>
-    /// <param name="compilation">The compilation inherited members are resolved against.</param>
-    /// <param name="indent">The indentation the comment lines are written at.</param>
-    /// <returns>The comment lines, or an empty string.</returns>
     public static string Render(
         ISymbol symbol,
         ImmutableArray<IParameterSymbol> parameters,
@@ -69,12 +51,7 @@ internal static class NoireFacadeDocumentation
         return builder.ToString();
     }
 
-    /// <summary>
-    /// Whether a member documents itself at all, which decides whether a creation method borrows its widget's
-    /// documentation instead.
-    /// </summary>
-    /// <param name="symbol">The member to check.</param>
-    /// <returns>True when the member carries documentation of its own.</returns>
+    // Decides whether a creation method borrows its widget's documentation instead.
     public static bool Exists(ISymbol symbol)
         => !string.IsNullOrWhiteSpace(symbol.GetDocumentationCommentXml());
 
@@ -115,13 +92,7 @@ internal static class NoireFacadeDocumentation
         return member;
     }
 
-    /// <summary>
-    /// Drops the parts of inherited documentation that describe something the member it landed on does not have.
-    /// </summary>
-    /// <remarks>
-    /// An overload inheriting from a fuller one carries parameters it never takes: left in place they become build
-    /// warnings. Prose referring to such a parameter keeps the word and loses the link.
-    /// </remarks>
+    // An overload inheriting from a fuller one carries parameters it never takes. Left in, they become build warnings.
     private static void Sanitize(XElement member, HashSet<string> parameters, HashSet<string> typeParameters)
     {
         Prune(member, "param", parameters);
@@ -152,10 +123,7 @@ internal static class NoireFacadeDocumentation
         }
     }
 
-    /// <summary>
-    /// Folds inherited documentation underneath what the member says for itself, so a member that adds a
-    /// <c>param</c> of its own keeps it and gains everything it did not restate.
-    /// </summary>
+    // A member that adds a param of its own keeps it and gains everything it did not restate.
     private static void Merge(XElement member, XElement inherited)
     {
         foreach (var element in inherited.Elements())
@@ -167,9 +135,6 @@ internal static class NoireFacadeDocumentation
         }
     }
 
-    /// <summary>
-    /// Whether two documentation elements describe the same thing, which for the per-name tags means the same name.
-    /// </summary>
     private static bool SameSubject(XElement left, XElement right)
         => left.Attribute("name")?.Value == right.Attribute("name")?.Value;
 
@@ -201,9 +166,7 @@ internal static class NoireFacadeDocumentation
         return null;
     }
 
-    /// <summary>
-    /// The inside of a documentation element, with the common indentation of the source file taken back off.
-    /// </summary>
+    // The common indentation of the source file is taken back off.
     private static string? Body(XElement member)
     {
         var builder = new StringBuilder();

@@ -6,12 +6,11 @@ using System.Numerics;
 
 namespace NoireLib.Helpers;
 
-/// <summary>
-/// Reads part lists out of the game's ULD files and resolves their parts to textures and UVs.
-/// </summary>
+/// <summary>Reads part lists out of the game's ULD files and resolves their parts to textures and UVs.</summary>
 public static class UldHelper
 {
     private static readonly ConcurrentDictionary<string, UldFile?> Files = new();
+    private static readonly ConcurrentDictionary<(string Path, uint PartListId), UldPart[]> PartLists = new();
 
     /// <summary>Every part of a part list, in the order the ULD declares them.</summary>
     /// <param name="uldPath">The game path of the ULD, for instance <c>ui/uld/emote.uld</c>.</param>
@@ -19,6 +18,9 @@ public static class UldHelper
     /// <returns>The parts, or an empty list when the ULD or the part list does not exist.</returns>
     public static IReadOnlyList<UldPart> Parts(string uldPath, uint partListId)
     {
+        if (PartLists.TryGetValue((uldPath, partListId), out var cached))
+            return cached;
+
         if (File(uldPath) is not { } uld)
             return [];
 
@@ -39,7 +41,7 @@ public static class UldHelper
                 parts.Add(new UldPart(texturePath, new Vector2(part.U, part.V), new Vector2(part.W, part.H)));
             }
 
-            return parts;
+            return PartLists.GetOrAdd((uldPath, partListId), parts.ToArray());
         }
 
         return [];
@@ -72,8 +74,18 @@ public static class UldHelper
         if (!NoireService.IsInitialized())
             return null;
 
-        var texture = SafeExecutor.ExecuteSafely<IDalamudTextureWrap?>(
-            () => NoireService.TextureProvider.GetFromGame(part.TexturePath).GetWrapOrDefault(), null);
+        IDalamudTextureWrap? texture;
+
+        // Not SafeExecutor: its lambda would capture the part and allocate on every call, and icons resolve per frame.
+        try
+        {
+            texture = NoireService.TextureProvider.GetFromGame(part.TexturePath).GetWrapOrDefault();
+        }
+        catch (System.Exception ex)
+        {
+            NoireLogger.LogError(ex, $"Could not load the texture of a part of {part.TexturePath}.", nameof(UldHelper));
+            return null;
+        }
 
         if (texture is not { Width: > 0, Height: > 0 })
             return null;

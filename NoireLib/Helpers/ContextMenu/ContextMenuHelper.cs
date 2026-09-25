@@ -1,3 +1,5 @@
+using Dalamud.Game.ClientState.Objects.SubKinds;
+using Dalamud.Game.ClientState.Objects.Types;
 using Dalamud.Game.Gui.ContextMenu;
 using Dalamud.Game.Text;
 using Dalamud.Game.Text.SeStringHandling;
@@ -9,11 +11,8 @@ using System.Linq;
 namespace NoireLib.Helpers;
 
 /// <summary>
-/// Adds entries to the game's right-click menus. One <see cref="Register(ContextMenuEntry)"/> call puts an entry
-/// on every matching opening, and disposing what it returns takes the entry away.
-/// <br/>
-/// The event is subscribed on the first registration and dropped again once the last one is disposed. Filters and
-/// click handlers run on the framework thread.
+/// Adds entries to the game's right-click menus. Disposing what <see cref="Register(ContextMenuEntry)"/> returns removes
+/// the entry. Filters and click handlers run on the framework thread.
 /// </summary>
 public static class ContextMenuHelper
 {
@@ -128,7 +127,7 @@ public static class ContextMenuHelper
 
     #region Filtering and ordering
 
-    /// <summary>Whether an entry belongs on one opening. An <see cref="ContextMenuScope.Item"/> entry needs an item on any menu.</summary>
+    /// <summary>Whether an entry belongs on one opening. The scope, then the addon filter, then the predicate.</summary>
     /// <param name="entry">The entry to test.</param>
     /// <param name="context">What the game was showing when the menu opened.</param>
     /// <returns>True when the scope, the addon filter and the predicate all pass.</returns>
@@ -138,20 +137,32 @@ public static class ContextMenuHelper
         ArgumentNullException.ThrowIfNull(entry);
         ArgumentNullException.ThrowIfNull(context);
 
-        if (entry.Scope == ContextMenuScope.Item)
-        {
-            if (context.ItemId == 0)
-                return false;
-        }
-        else if (entry.Scope != ContextMenuScope.Everywhere && entry.Scope != context.Menu)
-        {
+        if (!InScope(entry.Scope, context))
             return false;
-        }
 
         if (entry.Addons != null && !entry.Addons.Contains(context.AddonName, StringComparer.Ordinal))
             return false;
 
         return entry.ShowWhen?.Invoke(context) ?? true;
+    }
+
+    /// <summary>Whether one opening falls under a scope, ignoring the addon filter and the predicate.</summary>
+    /// <param name="scope">The scope to test.</param>
+    /// <param name="context">What the game was showing when the menu opened.</param>
+    /// <returns>True when the opening belongs to <paramref name="scope"/>.</returns>
+    /// <exception cref="ArgumentNullException">If <paramref name="context"/> is null.</exception>
+    public static bool InScope(ContextMenuScope scope, ContextMenuContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        return scope switch
+        {
+            ContextMenuScope.Everywhere => true,
+            ContextMenuScope.Item => context.ItemId != 0,
+            ContextMenuScope.Character => context.TargetKind != ContextMenuTargetKind.None,
+            ContextMenuScope.Player => context.TargetKind == ContextMenuTargetKind.Player,
+            _ => scope == context.Menu,
+        };
     }
 
     /// <summary>Puts entries in the order the game draws them, lowest priority first.</summary>
@@ -280,6 +291,10 @@ public static class ContextMenuHelper
 
                 return context with
                 {
+                    TargetKind = ContextMenuTargetResolver.Resolve(
+                        target.TargetObject is IPlayerCharacter,
+                        target.TargetObject is ICharacter,
+                        target.TargetContentId),
                     TargetName = target.TargetName ?? string.Empty,
                     TargetObjectId = target.TargetObjectId,
                     TargetContentId = target.TargetContentId,

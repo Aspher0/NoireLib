@@ -4,12 +4,7 @@ using Xunit;
 
 namespace NoireLib.Tests;
 
-/// <summary>
-/// Ported from BypassEmote's emote catalog. The stamp is what stops derived data outliving whatever it was
-/// derived from, and all three parts of it have to agree: a game patch rewrites the source files, a plugin
-/// update can change how they are read, and the schema number covers the case where neither moved but the
-/// author changed their mind about the shape.
-/// </summary>
+/// <summary>A game patch, a plugin update or a schema change each invalidate derived data.</summary>
 public class VersionedJsonCacheTests
 {
     private const string Game = "2026.07.01.0000.0000";

@@ -15,7 +15,6 @@ internal sealed class SessionSource : GameWatcherSource
 
     public SessionSource(NoireGameWatcher owner) : base(owner, SourceKind.Session) { }
 
-    /// <inheritdoc/>
     protected override void OnActivate()
     {
         lastTerritoryId = NoireService.ClientState.TerritoryType;
@@ -35,7 +34,6 @@ internal sealed class SessionSource : GameWatcherSource
         NoireService.ClientState.CfPop += OnCfPop;
     }
 
-    /// <inheritdoc/>
     protected override void OnDeactivate()
     {
         NoireService.ClientState.Login -= OnLogin;
@@ -50,7 +48,6 @@ internal sealed class SessionSource : GameWatcherSource
         NoireService.ClientState.CfPop -= OnCfPop;
     }
 
-    /// <inheritdoc/>
     protected override void OnTick(DateTimeOffset now)
     {
         // Housing interior and gpose have no native events - polled.

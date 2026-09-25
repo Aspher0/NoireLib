@@ -132,7 +132,7 @@ public static unsafe class WorldHelper
     /// Whether data centre travel reaches one physical region from another. Travel stays inside a region, with
     /// Oceania reachable from Japan, North America and Europe and reaching none of them back.
     /// The sheets and the client both know region equality and nothing more. The Oceanian allowance is the lobby
-    /// server's and was read off a live client. docs/Data Centre Travel Reach.md holds the reading.
+    /// server's and was read off a live client.
     /// </summary>
     /// <param name="fromRegionId">The region the character belongs to.</param>
     /// <param name="toRegionId">The region asked for.</param>

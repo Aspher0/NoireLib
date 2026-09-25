@@ -50,6 +50,9 @@ public readonly record struct ImShapeStyle
     /// <summary>Flat shapes only: whether to ignore world geometry entirely.</summary>
     public bool IgnoreDepth { get; init; }
 
+    /// <summary>Whether water and other surfaces drawn after the game's opaque pass hide this shape, null following <see cref="NoireDraw3D.TranslucentOcclusion"/>.</summary>
+    public Enums.TranslucentOcclusion? TranslucentOcclusion { get; init; }
+
     /// <summary>Flat shapes only: draws over other Draw3D objects while occluded by the game world. Ignored with <see cref="IgnoreDepth"/>.</summary>
     public bool OnTopOfObjects { get; init; }
 

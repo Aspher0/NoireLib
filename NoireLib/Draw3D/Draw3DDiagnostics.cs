@@ -32,6 +32,12 @@ public sealed unsafe class Draw3DDiagnostics
     /// <summary>Gets or sets whether the layer is temporally resolved. Occlusion edges against the game's jittered depth settle (default true).</summary>
     public bool TemporalStabilization { get; set; } = true;
 
+    /// <summary>
+    /// Gets or sets whether a geometry shader the game left bound is unbound while the layer draws and rebound after
+    /// (default true). Off, the layer's draws run through the game's geometry shader.
+    /// </summary>
+    public bool UnbindGeometryShader { get; set; } = true;
+
     /// <summary>Gets or sets the weight of the current frame in the temporal resolve (default 0.125, one jitter cycle).</summary>
     public float TemporalWeight { get; set; } = 0.125f;
 
@@ -63,6 +69,26 @@ public sealed unsafe class Draw3DDiagnostics
 
     /// <summary>Logs one frame's render-target bind sequence, a few frames from now.</summary>
     public void CaptureBindSequence() => NoireDraw3D.RenderTargetTapForDiagnostics?.ArmCapture();
+
+    /// <summary>
+    /// Logs one frame's bind sequence together with every bind that changed the scene depth, a few frames from now.
+    /// The frame stalls on one full depth readback per bind.
+    /// </summary>
+    public void CaptureDepthWrites() => NoireDraw3D.RenderTargetTapForDiagnostics?.ArmDepthCensus();
+
+    /// <summary>
+    /// Gets or sets the bind, numbered as in <see cref="CaptureBindSequence"/>, whose end takes the opaque-depth snapshot,
+    /// 0 (the default) taking it as the last G-buffer bind of the frame ends.
+    /// </summary>
+    public int OpaqueDepthBind
+    {
+        get => NoireDraw3D.RenderTargetTapForDiagnostics?.OpaqueDepthBind ?? 0;
+        set
+        {
+            if (NoireDraw3D.RenderTargetTapForDiagnostics is { } tap)
+                tap.OpaqueDepthBind = value;
+        }
+    }
 
     /// <summary>Arms the projection parity validator for the next 10 rendered frames. The gate is a 1 px maximum.</summary>
     public void RunValidate()
@@ -448,10 +474,16 @@ public sealed unsafe class Draw3DDiagnostics
             return;
         }
 
+        // The same texels in this frame's opaque-depth snapshot, when there is one.
+        var opaqueTexture = NoireDraw3D.OpaqueDepthTextureForDiagnostics;
+        var rawOpaque = opaqueTexture != 0
+            ? DepthReadback.TryReadAtPoints(device, info with { Texture = opaqueTexture, GameSrv = 0 }, screens, frame.ViewportSize, out _)
+            : null;
+
         var sb = new StringBuilder();
         sb.AppendLine($"Draw3D ground grid around {groundGridCentre:0.000}, spacing {groundGridSpacing:0.00}: eye {eye:0.000}, "
                       + $"forward {Vector3.Normalize(groundGridCentre - eye):0.000}, jitter uv {jitterUv.X:E2},{jitterUv.Y:E2}.");
-        sb.AppendLine("  point (x, z) | distance | pitch | surface Y | surface Y - point Y");
+        sb.AppendLine($"  point (x, z) | distance | pitch | surface Y | surface Y - point Y | opaque-snapshot Y{(rawOpaque == null ? " (no snapshot this frame)" : string.Empty)}");
         for (var k = 0; k < points.Count; k++)
         {
             var z00 = raw[(k * 4) + 0];
@@ -472,10 +504,24 @@ public sealed unsafe class Draw3DDiagnostics
 
             var sceneW = map.Y / denom;
             var surface = eye + ((p - eye) * (sceneW / clips[k].W));
-            sb.AppendLine($"  {p.X:0.000}, {p.Z:0.000} | {dist:0.00} | {pitch:0.0} | {surface.Y:0.0000} | {(surface.Y - p.Y) * 100f:0.00} cm");
+            sb.AppendLine($"  {p.X:0.000}, {p.Z:0.000} | {dist:0.00} | {pitch:0.0} | {surface.Y:0.0000} | {(surface.Y - p.Y) * 100f:0.00} cm | {OpaqueSurfaceY(rawOpaque, k, f, in map, eye, p, clips[k].W)}");
         }
 
         Report(sb.ToString());
+    }
+
+    private static string OpaqueSurfaceY(float[]? raw, int k, Vector2 f, in Vector4 map, Vector3 eye, Vector3 p, float clipW)
+    {
+        if (raw == null)
+            return "-";
+
+        var z = ((raw[(k * 4) + 0] * (1 - f.X)) + (raw[(k * 4) + 1] * f.X)) * (1 - f.Y) + ((raw[(k * 4) + 2] * (1 - f.X)) + (raw[(k * 4) + 3] * f.X)) * f.Y;
+        var denom = z - map.X;
+        if (float.IsNaN(z) || denom * map.Y <= 1e-12f)
+            return "sky/unwritten";
+
+        var surface = eye + ((p - eye) * ((map.Y / denom) / clipW));
+        return $"{surface.Y:0.0000}";
     }
 
     internal void OnFrameRendered(RenderDevice device, in FrameContext frame, SceneDepth? sceneDepth)

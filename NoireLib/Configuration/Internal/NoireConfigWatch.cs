@@ -9,6 +9,12 @@ internal static class NoireConfigWatch
     private static readonly object Gate = new();
     private static readonly List<NoireConfigBase> Armed = [];
     private static readonly List<NoireConfigBase> Scratch = [];
+
+    // Made once: a method group turned into a delegate allocates on every conversion.
+    private static readonly IFramework.OnUpdateDelegate Pump = OnFrameworkUpdate;
+
+    // Stays attached once a check was first armed. A window reads its configuration every frame, which arms a check every
+    // frame, and attaching and detaching around each one allocated a delegate per frame. Idle, it costs a lock.
     private static bool pumpAttached;
 
     internal static void Arm(NoireConfigBase config)
@@ -34,7 +40,7 @@ internal static class NoireConfigWatch
         if (pumpAttached || !NoireService.IsInitialized())
             return;
 
-        NoireService.Framework.Update += OnFrameworkUpdate;
+        NoireService.Framework.Update += Pump;
         pumpAttached = true;
     }
 
@@ -46,7 +52,7 @@ internal static class NoireConfigWatch
         try
         {
             if (NoireService.IsInitialized())
-                NoireService.Framework.Update -= OnFrameworkUpdate;
+                NoireService.Framework.Update -= Pump;
         }
         catch
         {
@@ -63,10 +69,7 @@ internal static class NoireConfigWatch
         lock (Gate)
         {
             if (Armed.Count == 0)
-            {
-                DetachPumpLocked();
                 return;
-            }
 
             Scratch.Clear();
             Scratch.AddRange(Armed);
@@ -94,12 +97,6 @@ internal static class NoireConfigWatch
         }
 
         Scratch.Clear();
-
-        lock (Gate)
-        {
-            if (Armed.Count == 0)
-                DetachPumpLocked();
-        }
     }
 
     internal static void RunFinalSweep(IReadOnlyList<NoireConfigBase> cachedConfigs)

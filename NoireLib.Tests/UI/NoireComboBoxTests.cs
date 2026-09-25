@@ -11,8 +11,8 @@ namespace NoireLib.Tests;
 
 /// <summary>
 /// Unit tests for the non-drawing logic of <see cref="NoireComboBox{T}"/>: cycling, filtering, selection management, and the
-/// resolution of the binding that gates the closed-combo wheel cycling (including the live read of a hotkey attached from
-/// <see cref="NoireHotkeyManager"/>, which is what lets a rebinding apply with no bookkeeping on the consumer's side).
+/// resolution of the binding that gates the closed-combo wheel cycling, including the live read of a hotkey attached from
+/// <see cref="NoireHotkeyManager"/>. A rebinding applies with no bookkeeping on the consumer's side.
 /// </summary>
 [SupportedOSPlatform("windows")]
 [Collection(NoireUiTestCollection.Name)]

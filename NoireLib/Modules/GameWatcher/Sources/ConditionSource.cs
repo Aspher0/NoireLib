@@ -11,10 +11,8 @@ internal sealed class ConditionSource : GameWatcherSource
 
     public ConditionSource(NoireGameWatcher owner) : base(owner, SourceKind.Condition) { }
 
-    /// <inheritdoc/>
     public override bool IsPolling => false;
 
-    /// <inheritdoc/>
     protected override void OnActivate()
     {
         // Baseline seeding: derived states are computed without firing events.
@@ -26,7 +24,6 @@ internal sealed class ConditionSource : GameWatcherSource
         NoireService.Condition.ConditionChange += OnConditionChange;
     }
 
-    /// <inheritdoc/>
     protected override void OnDeactivate()
     {
         NoireService.Condition.ConditionChange -= OnConditionChange;

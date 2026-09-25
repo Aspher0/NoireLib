@@ -15,6 +15,7 @@ You are reading the documentation for the `NoireDatabase` system.
   - [1. Query Builder Basics](#1-query-builder-basics)
   - [2. Filtering, Joins, and Aggregates](#2-filtering-joins-and-aggregates)
   - [3. Pagination and Chunking](#3-pagination-and-chunking)
+  - [4. Identifiers and Raw Expressions](#4-identifiers-and-raw-expressions)
 - [Relationships](#relationships)
   - [1. HasOne / HasMany](#1-hasone--hasmany)
   - [2. BelongsTo](#2-belongsto)
@@ -228,6 +229,24 @@ ProfileModel.Query().Chunk(50, (chunk, pageNumber) =>
 });
 ```
 
+### 4. Identifiers and Raw Expressions
+
+Column and table arguments (`Where`, `OrderBy`, `Having`, `Join`, the aggregates, `Insert`/`Update`/`Delete` keys) are always quoted as identifiers
+by `NoireDatabase.EscapeColumn`: `"COUNT(*)"` there names a column rather than calling a function.
+Aggregates accept a column name or `*`.
+
+Expressions go through the raw methods, which write their SQL as given: `WhereRaw`, `HavingRaw`, `OrderByRaw`, and the arguments of `Select` and `GroupBy`.
+Never build raw SQL, operators or aliases from user input; pass values as bindings.
+
+```csharp
+var busiest = NoteModel.Query()
+    .Select("profile_id", "COUNT(*) as note_count")
+    .GroupBy("profile_id")
+    .HavingRaw("COUNT(*) >= ?", [ 5 ])
+    .OrderByRaw("COUNT(*) DESC")
+    .Get();
+```
+
 ---
 
 ## Relationships
@@ -320,6 +339,8 @@ if (!model.Save())
 
 Use `Casts` to cast columns automatically on read/write.
 
+`Casts`, `Relations`, `ValidationRules` and `Columns` are read once per model type and cached: they must not depend on instance state.
+
 ```csharp
 protected override IReadOnlyDictionary<string, DbColumnCast> Casts =>
     new Dictionary<string, DbColumnCast>
@@ -357,6 +378,14 @@ db.BeginTransaction();
 // ... do work
 db.Commit();
 ```
+
+Calls on one `NoireDatabase` instance are serialized: it can be shared between threads.
+A transaction belongs to the thread that began it: nested `BeginTransaction` calls create savepoints, and `BeginTransaction`, `Commit` or `Rollback`
+from another thread throws `InvalidOperationException` while it is open. Do not `await` inside a transaction.
+The transaction is connection-wide: statements other threads run on the same database while it is open are part of it.
+`GetConnection()` bypasses the serialization.
+
+`GetColumns()`, `GetChanges()` and `GetErrors()` on a model are read-only views; `ToDictionary()` returns a detached copy.
 
 ---
 

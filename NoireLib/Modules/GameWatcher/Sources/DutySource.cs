@@ -14,7 +14,6 @@ internal sealed class DutySource : GameWatcherSource
 
     public DutySource(NoireGameWatcher owner) : base(owner, SourceKind.Duty) { }
 
-    /// <inheritdoc/>
     protected override void OnActivate()
     {
         lastInQueue = ReadInQueue();
@@ -27,7 +26,6 @@ internal sealed class DutySource : GameWatcherSource
         NoireService.ClientState.CfPop += OnCfPop;
     }
 
-    /// <inheritdoc/>
     protected override void OnDeactivate()
     {
         NoireService.DutyState.DutyStarted -= OnDutyStarted;
@@ -37,7 +35,6 @@ internal sealed class DutySource : GameWatcherSource
         NoireService.ClientState.CfPop -= OnCfPop;
     }
 
-    /// <inheritdoc/>
     protected override void OnTick(DateTimeOffset now)
     {
         var inQueue = ReadInQueue();

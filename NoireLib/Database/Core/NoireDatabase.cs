@@ -10,8 +10,8 @@ using System.Linq;
 namespace NoireLib.Database;
 
 /// <summary>
-/// Internal core class providing access to SQLite database manipulation and querying.<br/>
-/// Typically not needed directly; higher-level abstractions cover common operations.
+/// SQLite access and querying, below the higher-level abstractions. Calls on one instance are serialized, and a
+/// transaction begins and ends on one thread.
 /// </summary>
 public sealed class NoireDatabase : IDisposable
 {
@@ -27,7 +27,9 @@ public sealed class NoireDatabase : IDisposable
     private static bool IsInitialized;
 
     private readonly SQLiteConnection _connection;
+    private readonly object _sync = new();
     private SQLiteTransaction? _transaction;
+    private int _transactionOwnerThreadId;
     private readonly List<DatabaseQueryLog> _queries = new();
     private readonly Dictionary<string, CacheEntry> _cacheResults = new(StringComparer.Ordinal);
     private bool _logQueries = false;
@@ -65,24 +67,16 @@ public sealed class NoireDatabase : IDisposable
 
     #region Public Properties and Methods
 
-    /// <summary>
-    /// Gets the database name.
-    /// </summary>
+    /// <summary>Gets the database name.</summary>
     public string DatabaseName { get; }
 
-    /// <summary>
-    /// Gets or sets the busy timeout used for concurrent access handling.
-    /// </summary>
+    /// <summary>Gets or sets the busy timeout used for concurrent access handling.</summary>
     public static TimeSpan BusyTimeout { get; set; } = TimeSpan.FromSeconds(5);
 
-    /// <summary>
-    /// Gets or sets a value indicating whether write-ahead logging is enabled.
-    /// </summary>
+    /// <summary>Gets or sets a value indicating whether write-ahead logging is enabled.</summary>
     public static bool UseWriteAheadLogging { get; set; } = true;
 
-    /// <summary>
-    /// Gets a shared instance of a database connection for the provided name.
-    /// </summary>
+    /// <summary>Gets a shared instance of a database connection for the provided name.</summary>
     /// <param name="databaseName">The database name.</param>
     /// <returns>A shared <see cref="NoireDatabase"/> instance.</returns>
     public static NoireDatabase GetInstance(string databaseName)
@@ -103,9 +97,7 @@ public sealed class NoireDatabase : IDisposable
         }
     }
 
-    /// <summary>
-    /// Registers a database to be loaded during plugin initialization.
-    /// </summary>
+    /// <summary>Registers a database to be loaded during plugin initialization.</summary>
     /// <param name="databaseName">The database name.</param>
     /// <param name="loadOnInitialize">Whether to load the database at initialization.</param>
     public static void RegisterForInitialization(string databaseName, bool loadOnInitialize = true)
@@ -146,9 +138,7 @@ public sealed class NoireDatabase : IDisposable
         }
     }
 
-    /// <summary>
-    /// Disposes all database instances and clears cached instances.
-    /// </summary>
+    /// <summary>Disposes all database instances and clears cached instances.</summary>
     public static void DisposeAll()
     {
         lock (InstanceLock)
@@ -178,9 +168,7 @@ public sealed class NoireDatabase : IDisposable
         }
     }
 
-    /// <summary>
-    /// Removes the directory override for a database name.
-    /// </summary>
+    /// <summary>Removes the directory override for a database name.</summary>
     /// <param name="databaseName">The database name.</param>
     /// <returns>True if an override was removed; otherwise, false.</returns>
     public static bool RemoveDatabaseDirectoryOverride(string databaseName)
@@ -194,9 +182,7 @@ public sealed class NoireDatabase : IDisposable
         }
     }
 
-    /// <summary>
-    /// Clears all configured database directory overrides.
-    /// </summary>
+    /// <summary>Clears all configured database directory overrides.</summary>
     public static void ClearDatabaseDirectoryOverrides()
     {
         lock (InstanceLock)
@@ -205,9 +191,7 @@ public sealed class NoireDatabase : IDisposable
         }
     }
 
-    /// <summary>
-    /// Resolves the database file path for the provided name.
-    /// </summary>
+    /// <summary>Resolves the database file path for the provided name.</summary>
     /// <param name="databaseName">The database name.</param>
     /// <returns>The resolved file path, or null if it cannot be determined.</returns>
     public static string? GetDatabaseFilePath(string databaseName)
@@ -243,14 +227,12 @@ public sealed class NoireDatabase : IDisposable
     }
 
     /// <summary>
-    /// Gets the underlying SQLite connection.
+    /// Gets the underlying SQLite connection; commands run on it directly are not serialized with this instance's calls.
     /// </summary>
     /// <returns>The active <see cref="SQLiteConnection"/>.</returns>
     public SQLiteConnection GetConnection() => _connection;
 
-    /// <summary>
-    /// Gets the current database schema version.
-    /// </summary>
+    /// <summary>Gets the current database schema version.</summary>
     /// <returns>The schema version number.</returns>
     public int GetSchemaVersion()
     {
@@ -258,9 +240,7 @@ public sealed class NoireDatabase : IDisposable
         return result == null ? 0 : Convert.ToInt32(result);
     }
 
-    /// <summary>
-    /// Sets the database schema version.
-    /// </summary>
+    /// <summary>Sets the database schema version.</summary>
     /// <param name="version">The schema version number.</param>
     public void SetSchemaVersion(int version)
     {
@@ -268,47 +248,50 @@ public sealed class NoireDatabase : IDisposable
         Execute($"PRAGMA user_version = {normalizedVersion}");
     }
 
-    /// <summary>
-    /// Gets the number of logged queries.
-    /// </summary>
+    /// <summary>Gets the number of logged queries.</summary>
     /// <returns>The count of logged queries.</returns>
-    public int GetQueryCount() => _queries.Count;
+    public int GetQueryCount()
+    {
+        lock (_sync)
+            return _queries.Count;
+    }
 
-    /// <summary>
-    /// Gets the logged queries.
-    /// </summary>
-    /// <returns>A read-only list of logged queries.</returns>
-    public IReadOnlyList<DatabaseQueryLog> GetQueries() => _queries.AsReadOnly();
+    /// <summary>Gets the logged queries.</summary>
+    /// <returns>A snapshot of the logged queries.</returns>
+    public IReadOnlyList<DatabaseQueryLog> GetQueries()
+    {
+        lock (_sync)
+            return _queries.ToArray();
+    }
 
-    /// <summary>
-    /// Enables or disables query logging.
-    /// </summary>
+    /// <summary>Enables or disables query logging.</summary>
     /// <param name="logQueries">Whether to log executed queries.</param>
     /// <returns>The current <see cref="NoireDatabase"/> instance for chaining.</returns>
     public NoireDatabase SetLogQueries(bool logQueries)
     {
-        _logQueries = logQueries;
+        lock (_sync)
+            _logQueries = logQueries;
+
         return this;
     }
 
-    /// <summary>
-    /// Clears cached query results.
-    /// </summary>
+    /// <summary>Clears cached query results.</summary>
     /// <param name="key">An optional cache key to clear. If null, will clear all cache keys.</param>
     public void ClearCache(string? key = null)
     {
-        if (key == null)
+        lock (_sync)
         {
-            _cacheResults.Clear();
-            return;
-        }
+            if (key == null)
+            {
+                _cacheResults.Clear();
+                return;
+            }
 
-        _cacheResults.Remove(key);
+            _cacheResults.Remove(key);
+        }
     }
 
-    /// <summary>
-    /// Caches the result of the provided callback for the given key.
-    /// </summary>
+    /// <summary>Caches the result of the provided callback for the given key.</summary>
     /// <typeparam name="T">The result type.</typeparam>
     /// <param name="key">The cache key.</param>
     /// <param name="callback">The factory callback.</param>
@@ -318,81 +301,86 @@ public sealed class NoireDatabase : IDisposable
     {
         var effectiveTtl = ttl ?? TimeSpan.FromMinutes(5);
 
-        if (_cacheResults.TryGetValue(key, out var entry) && entry.ExpiresAt > DateTime.UtcNow)
-            return (T)entry.Data!;
+        lock (_sync)
+        {
+            if (_cacheResults.TryGetValue(key, out var entry) && entry.ExpiresAt > DateTime.UtcNow)
+                return (T)entry.Data!;
 
-        var data = callback(this);
-        _cacheResults[key] = new CacheEntry(data, DateTime.UtcNow.Add(effectiveTtl));
-        return data;
+            var data = callback(this);
+            _cacheResults[key] = new CacheEntry(data, DateTime.UtcNow.Add(effectiveTtl));
+            return data;
+        }
     }
 
-    /// <summary>
-    /// Executes a SQL statement and returns the affected row count.
-    /// </summary>
+    /// <summary>Executes a SQL statement and returns the affected row count.</summary>
     /// <param name="sql">The SQL statement.</param>
     /// <param name="parameters">The parameter values.</param>
     /// <returns>The number of rows affected by the execution.</returns>
     public int Execute(string sql, IReadOnlyList<object?>? parameters = null)
     {
-        using var command = CreateCommand(sql, parameters);
-        return ExecuteNonQuery(command, sql, parameters);
+        lock (_sync)
+        {
+            using var command = CreateCommand(sql, parameters);
+            return ExecuteNonQuery(command, sql, parameters);
+        }
     }
 
-    /// <summary>
-    /// Executes a SQL query and returns the first row, if any.
-    /// </summary>
+    /// <summary>Executes a SQL query and returns the first row, if any.</summary>
     /// <param name="sql">The SQL query.</param>
     /// <param name="parameters">The parameter values.</param>
     /// <returns>A dictionary representing the first row, or null if no rows were returned.</returns>
     public Dictionary<string, object?>? Fetch(string sql, IReadOnlyList<object?>? parameters = null)
     {
-        using var command = CreateCommand(sql, parameters);
-        using var reader = ExecuteReader(command, sql, parameters);
-        if (!reader.Read())
-            return null;
+        lock (_sync)
+        {
+            using var command = CreateCommand(sql, parameters);
+            using var reader = ExecuteReader(command, sql, parameters);
+            if (!reader.Read())
+                return null;
 
-        return ReadRow(reader);
+            return ReadRow(reader);
+        }
     }
 
-    /// <summary>
-    /// Executes a SQL query and returns all rows.
-    /// </summary>
+    /// <summary>Executes a SQL query and returns all rows.</summary>
     /// <param name="sql">The SQL query.</param>
     /// <param name="parameters">The parameter values.</param>
     /// <returns>A list of dictionaries representing the returned rows.</returns>
     public List<Dictionary<string, object?>> FetchAll(string sql, IReadOnlyList<object?>? parameters = null)
     {
-        using var command = CreateCommand(sql, parameters);
-        using var reader = ExecuteReader(command, sql, parameters);
-        var results = new List<Dictionary<string, object?>>();
+        lock (_sync)
+        {
+            using var command = CreateCommand(sql, parameters);
+            using var reader = ExecuteReader(command, sql, parameters);
+            var results = new List<Dictionary<string, object?>>();
 
-        while (reader.Read())
-            results.Add(ReadRow(reader));
+            while (reader.Read())
+                results.Add(ReadRow(reader));
 
-        return results;
+            return results;
+        }
     }
 
-    /// <summary>
-    /// Executes a SQL query and returns the first column of the first row.
-    /// </summary>
+    /// <summary>Executes a SQL query and returns the first column of the first row.</summary>
     /// <param name="sql">The SQL query.</param>
     /// <param name="parameters">The parameter values.</param>
     /// <returns>The value of the first column in the first row, or null if no rows were returned.</returns>
     public object? FetchScalar(string sql, IReadOnlyList<object?>? parameters = null)
     {
-        using var command = CreateCommand(sql, parameters);
-        var stopwatch = Stopwatch.StartNew();
-        var result = command.ExecuteScalar();
-        stopwatch.Stop();
+        lock (_sync)
+        {
+            using var command = CreateCommand(sql, parameters);
+            var stopwatch = Stopwatch.StartNew();
+            var result = command.ExecuteScalar();
+            stopwatch.Stop();
 
-        LogQuery(sql, parameters, stopwatch.Elapsed.TotalSeconds);
+            LogQuery(sql, parameters, stopwatch.Elapsed.TotalSeconds);
 
-        return NormalizeValue(result);
+            return NormalizeValue(result);
+        }
     }
 
-    /// <summary>
-    /// Inserts a new row into the specified table.
-    /// </summary>
+    /// <summary>Inserts a new row into the specified table.</summary>
     /// <param name="table">The table name.</param>
     /// <param name="data">The data to insert.</param>
     /// <returns>The ID of the inserted row, or 0 if the insert failed.</returns>
@@ -402,18 +390,20 @@ public sealed class NoireDatabase : IDisposable
         var placeholders = data.Keys.Select((key, index) => $"@p{index}").ToArray();
         var sql = $"INSERT INTO {EscapeColumn(table)} ({string.Join(", ", columns)}) VALUES ({string.Join(", ", placeholders)})";
 
-        using var command = CreateCommand(sql, data.Values.ToList());
-        var rows = ExecuteNonQuery(command, sql, data.Values.ToList());
-        if (rows <= 0)
-            return 0;
+        // Held across both statements: last_insert_rowid is per connection, and another thread's insert would be read.
+        lock (_sync)
+        {
+            using var command = CreateCommand(sql, data.Values.ToList());
+            var rows = ExecuteNonQuery(command, sql, data.Values.ToList());
+            if (rows <= 0)
+                return 0;
 
-        var id = FetchScalar("SELECT last_insert_rowid()");
-        return id == null ? 0 : Convert.ToInt64(id);
+            var id = FetchScalar("SELECT last_insert_rowid()");
+            return id == null ? 0 : Convert.ToInt64(id);
+        }
     }
 
-    /// <summary>
-    /// Updates rows in the specified table.
-    /// </summary>
+    /// <summary>Updates rows in the specified table.</summary>
     /// <param name="table">The table name.</param>
     /// <param name="data">The data to update.</param>
     /// <param name="where">The filter criteria.</param>
@@ -429,13 +419,14 @@ public sealed class NoireDatabase : IDisposable
         parameters.AddRange(data.Values);
         parameters.AddRange(where.Values);
 
-        using var command = CreateCommand(sql, parameters);
-        return ExecuteNonQuery(command, sql, parameters);
+        lock (_sync)
+        {
+            using var command = CreateCommand(sql, parameters);
+            return ExecuteNonQuery(command, sql, parameters);
+        }
     }
 
-    /// <summary>
-    /// Deletes rows from the specified table.
-    /// </summary>
+    /// <summary>Deletes rows from the specified table.</summary>
     /// <param name="table">The table name.</param>
     /// <param name="where">The filter criteria.</param>
     /// <returns>The number of rows affected by the delete.</returns>
@@ -444,20 +435,21 @@ public sealed class NoireDatabase : IDisposable
         var whereClauses = where.Keys.Select((key, index) => $"{EscapeColumn(key)} = @p{index}").ToArray();
         var sql = $"DELETE FROM {EscapeColumn(table)} WHERE {string.Join(" AND ", whereClauses)}";
 
-        using var command = CreateCommand(sql, where.Values.ToList());
-        return ExecuteNonQuery(command, sql, where.Values.ToList());
+        lock (_sync)
+        {
+            using var command = CreateCommand(sql, where.Values.ToList());
+            return ExecuteNonQuery(command, sql, where.Values.ToList());
+        }
     }
 
-    /// <summary>
-    /// Counts rows in the specified table.
-    /// </summary>
+    /// <summary>Counts rows in the specified table.</summary>
     /// <param name="table">The table name.</param>
     /// <param name="where">Optional filter criteria.</param>
-    /// <param name="column">The column to count.</param>
+    /// <param name="column">The column to count, or <c>*</c> for every row.</param>
     /// <returns>The count of matching rows.</returns>
     public int Count(string table, IReadOnlyDictionary<string, object?>? where = null, string column = "*")
     {
-        var sql = $"SELECT COUNT({column}) FROM {EscapeColumn(table)}";
+        var sql = $"SELECT COUNT({EscapeAggregateColumn(column)}) FROM {EscapeColumn(table)}";
         var parameters = new List<object?>();
 
         if (where != null && where.Count > 0)
@@ -471,9 +463,7 @@ public sealed class NoireDatabase : IDisposable
         return result is null ? 0 : Convert.ToInt32(result);
     }
 
-    /// <summary>
-    /// Determines whether any row matches the criteria.
-    /// </summary>
+    /// <summary>Determines whether any row matches the criteria.</summary>
     /// <param name="table">The table name.</param>
     /// <param name="where">The filter criteria.</param>
     /// <returns>True if at least one matching row exists; otherwise, false.</returns>
@@ -483,162 +473,171 @@ public sealed class NoireDatabase : IDisposable
     }
 
     /// <summary>
-    /// Begins a transaction or creates a savepoint.
+    /// Begins a transaction or creates a savepoint; the calling thread owns the transaction until its outermost commit or rollback.
     /// </summary>
     /// <returns>True if a new transaction was started or a savepoint was created; otherwise, false.</returns>
+    /// <exception cref="InvalidOperationException">Thrown when another thread owns the open transaction.</exception>
     public bool BeginTransaction()
     {
-        if (_transactionLevel == 0)
+        lock (_sync)
         {
-            _transaction ??= _connection.BeginTransaction();
+            ThrowIfTransactionOwnedElsewhere();
 
-            _transactionLevel = 1;
+            if (_transactionLevel == 0)
+            {
+                _transaction ??= _connection.BeginTransaction();
+
+                _transactionLevel = 1;
+                _transactionOwnerThreadId = Environment.CurrentManagedThreadId;
+                return true;
+            }
+
+            Execute($"SAVEPOINT {GetSavepointName(_transactionLevel + 1)}");
+            _transactionLevel++;
             return true;
         }
-
-        var savepointName = GetSavepointName();
-        Execute($"SAVEPOINT {savepointName}");
-        _transactionLevel++;
-        return true;
     }
 
-    /// <summary>
-    /// Commits the current transaction or savepoint.
-    /// </summary>
+    /// <summary>Commits the current transaction or savepoint.</summary>
     /// <returns>True if the transaction or savepoint was successfully committed; otherwise, false.</returns>
+    /// <exception cref="InvalidOperationException">Thrown when another thread owns the open transaction.</exception>
     public bool Commit()
     {
-        if (_transactionLevel <= 0)
+        lock (_sync)
         {
-            _transactionLevel = 0;
-            _transaction?.Commit();
-            _transaction?.Dispose();
-            _transaction = null;
+            ThrowIfTransactionOwnedElsewhere();
+
+            if (_transactionLevel <= 1)
+            {
+                _transaction?.Commit();
+                EndTransaction();
+                return true;
+            }
+
+            Execute($"RELEASE SAVEPOINT {GetSavepointName(_transactionLevel)}");
+            _transactionLevel--;
             return true;
         }
-
-        if (_transactionLevel == 1)
-        {
-            _transaction?.Commit();
-            _transaction?.Dispose();
-            _transaction = null;
-            _transactionLevel = 0;
-            return true;
-        }
-
-        var savepointName = GetSavepointName();
-        Execute($"RELEASE SAVEPOINT {savepointName}");
-        _transactionLevel--;
-        return true;
     }
 
-    /// <summary>
-    /// Rolls back all nested transactions and the root transaction, if any.
-    /// </summary>
+    /// <summary>Rolls back all nested transactions and the root transaction, if any.</summary>
     /// <returns>True if the rollback completed; otherwise, false.</returns>
+    /// <exception cref="InvalidOperationException">Thrown when another thread owns the open transaction.</exception>
     public bool RollbackAll()
     {
-        var rolledBack = false;
-
-        while (_transactionLevel > 0 || _transaction != null)
+        lock (_sync)
         {
-            rolledBack = Rollback();
+            var rolledBack = false;
 
-            if (!rolledBack)
-                break;
+            while (_transactionLevel > 0 || _transaction != null)
+            {
+                rolledBack = Rollback();
+
+                if (!rolledBack)
+                    break;
+            }
+
+            return rolledBack;
         }
-
-        return rolledBack;
     }
 
-    /// <summary>
-    /// Rolls back the current transaction or savepoint.
-    /// </summary>
+    /// <summary>Rolls back the current transaction or savepoint.</summary>
     /// <returns>True if the transaction or savepoint was successfully rolled back; otherwise, false.</returns>
+    /// <exception cref="InvalidOperationException">Thrown when another thread owns the open transaction.</exception>
     public bool Rollback()
     {
-        if (_transactionLevel <= 0)
+        lock (_sync)
         {
-            _transactionLevel = 0;
-            _transaction?.Rollback();
-            _transaction?.Dispose();
-            _transaction = null;
+            ThrowIfTransactionOwnedElsewhere();
+
+            if (_transactionLevel <= 1)
+            {
+                _transaction?.Rollback();
+                EndTransaction();
+                return true;
+            }
+
+            // ROLLBACK TO keeps the savepoint open: it is released too, leaving the enclosing level current.
+            var savepointName = GetSavepointName(_transactionLevel);
+            Execute($"ROLLBACK TO SAVEPOINT {savepointName}");
+            Execute($"RELEASE SAVEPOINT {savepointName}");
+            _transactionLevel--;
             return true;
         }
-
-        if (_transactionLevel == 1)
-        {
-            _transaction?.Rollback();
-            _transaction?.Dispose();
-            _transaction = null;
-            _transactionLevel = 0;
-            return true;
-        }
-
-        var savepointName = GetSavepointName();
-        Execute($"ROLLBACK TO SAVEPOINT {savepointName}");
-        _transactionLevel--;
-        return true;
     }
 
-    /// <summary>
-    /// Returns whether a transaction is currently active.
-    /// </summary>
+    /// <summary>Returns whether a transaction is currently active.</summary>
     /// <returns>True if a transaction is active; otherwise, false.</returns>
-    public bool InTransaction() => _transaction != null;
+    public bool InTransaction()
+    {
+        lock (_sync)
+            return _transaction != null;
+    }
 
-    /// <summary>
-    /// Gets the current transaction nesting level.
-    /// </summary>
+    /// <summary>Gets the current transaction nesting level.</summary>
     /// <returns>The current transaction level, where 0 means no active transaction.</returns>
-    public int GetTransactionLevel() => _transactionLevel;
+    public int GetTransactionLevel()
+    {
+        lock (_sync)
+            return _transactionLevel;
+    }
 
-    /// <summary>
-    /// Disposes the database.
-    /// </summary>
+    /// <summary>Disposes the database.</summary>
     public void Dispose()
     {
         NoireLogger.LogDebug(this, $"Disposing database instance: {DatabaseName}");
-        try
-        {
-            _transaction?.Dispose();
-            _transaction = null;
-        }
-        catch
-        {
-            _transaction = null;
-        }
 
-        try
+        lock (_sync)
         {
-            _connection.Close();
-            SQLiteConnection.ClearPool(_connection);
-        }
-        catch
-        {
-        }
+            try
+            {
+                _transaction?.Dispose();
+            }
+            catch (Exception ex)
+            {
+                NoireLogger.LogError(this, ex, $"Failed to dispose the open transaction of database: {DatabaseName}");
+            }
 
-        _connection.Dispose();
+            _transaction = null;
+            _transactionLevel = 0;
+            _transactionOwnerThreadId = 0;
+
+            try
+            {
+                _connection.Close();
+                SQLiteConnection.ClearPool(_connection);
+            }
+            catch (Exception ex)
+            {
+                NoireLogger.LogError(this, ex, $"Failed to close database: {DatabaseName}");
+            }
+
+            _connection.Dispose();
+        }
     }
 
     /// <summary>
-    /// Escapes a column or table identifier for SQLite.
+    /// Escapes a column or table identifier for SQLite, quoting each dot-separated part; the input is never read as an SQL expression.
     /// </summary>
-    /// <param name="column">The identifier to escape.</param>
+    /// <param name="column">The identifier to escape, optionally qualified as <c>table.column</c>.</param>
     /// <returns>The escaped identifier.</returns>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="column"/> is null or empty.</exception>
     public static string EscapeColumn(string column)
     {
-        if (column.Contains('(') || column.Contains(')'))
-            return column;
+        ArgumentException.ThrowIfNullOrEmpty(column);
 
-        if (column.Contains('.'))
-        {
-            var parts = column.Split('.');
-            return string.Join('.', parts.Select(part => $"\"{part}\""));
-        }
+        if (!column.Contains('.'))
+            return QuoteIdentifier(column);
 
-        return $"\"{column}\"";
+        var parts = column.Split('.');
+        for (var i = 0; i < parts.Length; i++)
+            parts[i] = QuoteIdentifier(parts[i]);
+
+        return string.Join('.', parts);
     }
+
+    // The argument of COUNT, AVG, SUM, MIN and MAX: an escaped identifier, or the bare wildcard.
+    internal static string EscapeAggregateColumn(string column) => column == "*" ? column : EscapeColumn(column);
 
     #endregion
 
@@ -710,7 +709,24 @@ public sealed class NoireDatabase : IDisposable
         return value is DBNull ? null : value;
     }
 
-    private string GetSavepointName() => $"SAVEPOINT_LEVEL_{_transactionLevel}";
+    private static string QuoteIdentifier(string identifier) => $"\"{identifier.Replace("\"", "\"\"")}\"";
+
+    private static string GetSavepointName(int level) => $"SAVEPOINT_LEVEL_{level}";
+
+    // The transaction belongs to the connection: another thread's call would nest into or end the owner's work.
+    private void ThrowIfTransactionOwnedElsewhere()
+    {
+        if (_transactionLevel > 0 && _transactionOwnerThreadId != Environment.CurrentManagedThreadId)
+            throw new InvalidOperationException($"A transaction on database '{DatabaseName}' is owned by another thread. A transaction must begin and end on the same thread.");
+    }
+
+    private void EndTransaction()
+    {
+        _transaction?.Dispose();
+        _transaction = null;
+        _transactionLevel = 0;
+        _transactionOwnerThreadId = 0;
+    }
 
     private void ApplyConcurrencySettings()
     {
@@ -725,9 +741,7 @@ public sealed class NoireDatabase : IDisposable
     #endregion
 }
 
-/// <summary>
-/// Captures a logged database query.
-/// </summary>
+/// <summary>Captures a logged database query.</summary>
 /// <param name="Sql">The executed SQL statement.</param>
 /// <param name="Parameters">The parameter values.</param>
 /// <param name="ExecutionTime">The execution time in seconds.</param>

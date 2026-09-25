@@ -5,9 +5,7 @@ using System.Numerics;
 
 namespace NoireLib.UI;
 
-/// <summary>
-/// The drawing half of <see cref="NoireTabBar"/>.
-/// </summary>
+/// <summary>The drawing half of <see cref="NoireTabBar"/>.</summary>
 public sealed partial class NoireTabBar
 {
     private readonly List<UiTab> drawOrder = [];
@@ -17,7 +15,7 @@ public sealed partial class NoireTabBar
         if (!WheelScrolls)
             return false;
 
-        var bar = ImGui.GetCurrentContext().CurrentTabBar;
+        var bar = UiContext.Current.CurrentTabBar;
 
         if (bar.IsNull)
             return false;
@@ -25,7 +23,7 @@ public sealed partial class NoireTabBar
         var barRect = UiRect.FromBounds(bar.BarRect.Min, bar.BarRect.Max);
         var travel = bar.WidthAllTabs - barRect.Size.X;
 
-        // Nothing has scrolled off, so the wheel was never meant for the strip and the windows around it keep it.
+        // Nothing scrolled off: the wheel belongs to the windows around the strip.
         if (travel <= 0f)
             return false;
 
@@ -39,8 +37,7 @@ public sealed partial class NoireTabBar
         if (wheel == 0f)
             return false;
 
-        // Measured from where the strip is actually resting rather than from the target, so a notch during the glide
-        // moves one notch further on from what is on screen instead of from wherever the animation was heading.
+        // From where the strip rests, not the target: a notch mid-glide moves on from what is on screen.
         var from = wheel > 0f
             ? MathF.Min(bar.ScrollingAnim, bar.ScrollingTarget)
             : MathF.Max(bar.ScrollingAnim, bar.ScrollingTarget);
@@ -49,8 +46,7 @@ public sealed partial class NoireTabBar
         return true;
     }
 
-    // Pulls the window's work rectangle in to the width the bar is allowed, so ImGui builds the strip to that edge
-    // rather than to the window's own.
+    // Narrows the window's work rectangle: ImGui builds the strip to the bar's allowed width.
     private void ConstrainWorkRect(ImGuiWindowPtr window)
     {
         if (window.IsNull)
@@ -77,9 +73,7 @@ public sealed partial class NoireTabBar
             window.Flags |= ImGuiWindowFlags.NoScrollWithMouse;
     }
 
-    /// <summary>
-    /// Draws the bar and the body of whichever tab is open.
-    /// </summary>
+    /// <summary>Draws the bar and the body of whichever tab is open.</summary>
     /// <returns>True when the open tab changed this frame.</returns>
     public bool Draw()
     {
@@ -115,9 +109,7 @@ public sealed partial class NoireTabBar
         {
             window.WorkRect = workRect;
 
-            // The bar was not begun, so no tab item will run and the pending request has not been applied. Kept rather
-            // than cleared: a switch asked for while the bar is clipped or its window collapsed is meant to take effect
-            // when it draws again, not to be quietly lost.
+            // Kept: a switch asked for while the bar is clipped or collapsed applies when it draws again.
             return false;
         }
 
@@ -132,10 +124,7 @@ public sealed partial class NoireTabBar
         foreach (var tab in drawOrder)
             DrawTab(tab, ref opened, ref closed);
 
-        // Handled after the tabs and before the bar ends. It has to be inside the bar, because that is the only time
-        // ImGui will hand its scroll state over, and it has to be after the tabs, because ImGui lays a tab bar out
-        // lazily on the first tab item rather than in BeginTabBar: read any earlier and the width of all the tabs is
-        // last frame's (zero on the first) and the bar rectangle has not yet been narrowed by the scroll arrows.
+        // Inside the bar, after the tabs: ImGui lays a tab bar out on its first tab item. Earlier reads give last frame's widths.
         HandleWheelScroll();
 
         ImGui.EndTabBar();
@@ -159,8 +148,7 @@ public sealed partial class NoireTabBar
         if (string.Equals(pendingTab, tab.Id, StringComparison.Ordinal))
             itemFlags |= ImGuiTabItemFlags.SetSelected;
 
-        // The label carries the id after a triple hash, so ImGui keys the tab on something stable while the caller is
-        // free to change what is written on it, including its length, every frame.
+        // The id follows a triple hash: ImGui keys the tab on it while the caller changes the label freely.
         var label = UiIds.Labelled(tab.Label, "###NoireTab_", Id, tab.Id);
         var open = true;
 
@@ -200,7 +188,7 @@ public sealed partial class NoireTabBar
         if (count <= 0 || header.IsEmpty)
             return;
 
-        var bar = ImGui.GetCurrentContext().CurrentTabBar;
+        var bar = UiContext.Current.CurrentTabBar;
 
         if (bar.IsNull)
         {
@@ -261,8 +249,7 @@ public sealed partial class NoireTabBar
     {
         Tabs.Remove(tab);
 
-        // Dropped along with the tab, so an id that is added again later is not silently refused on the strength of a
-        // warning about the tab that used to hold it.
+        // Dropped with the tab: an id added again later is not refused over a warning about its old tab.
         refusalsLogged.Remove(tab.Id);
 
         if (string.Equals(Current, tab.Id, StringComparison.Ordinal))

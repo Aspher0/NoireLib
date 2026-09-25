@@ -52,6 +52,10 @@ public static class NoireTooltip
     /// <param name="style">The style.</param>
     /// <param name="id">A stable id, needed only when tooltips are shown in a varying order.</param>
     public static void Show(NoireContent content, TooltipStyle? style = null, string? id = null)
+        => Show(content, style, id, null);
+
+    // An anchor rectangle stands in for the last item when the style places the tooltip by item.
+    internal static void Show(NoireContent content, TooltipStyle? style, string? id, (Vector2 Min, Vector2 Max)? anchor)
     {
         if (content == null || content.IsEmpty)
             return;
@@ -64,7 +68,7 @@ public static class NoireTooltip
 
         try
         {
-            DrawTooltipWindow(windowId, content, style);
+            DrawTooltipWindow(windowId, content, style, anchor);
         }
         catch (Exception ex)
         {
@@ -72,9 +76,9 @@ public static class NoireTooltip
         }
     }
 
-    private static void DrawTooltipWindow(string windowId, NoireContent content, TooltipStyle style)
+    private static void DrawTooltipWindow(string windowId, NoireContent content, TooltipStyle style, (Vector2 Min, Vector2 Max)? anchor)
     {
-        var (anchorPosition, pivot) = ResolveAnchor(style);
+        var (anchorPosition, pivot) = ResolveAnchor(style, anchor);
 
         // An auto-resizing window only learns its size by being drawn. An unmeasured tooltip is parked off screen.
         var measured = SizeCache.TryGetValue(windowId, out var cached);
@@ -158,14 +162,14 @@ public static class NoireTooltip
         UiHook.Invoke(customDraw, args, nameof(NoireTooltip), CallbackFault);
     }
 
-    private static (Vector2 Position, Vector2 Pivot) ResolveAnchor(TooltipStyle style)
+    private static (Vector2 Position, Vector2 Pivot) ResolveAnchor(TooltipStyle style, (Vector2 Min, Vector2 Max)? anchor)
     {
         if (style.Placement == TooltipPlacement.Mouse)
             return (ImGui.GetMousePos() + style.ScaledMouseOffset, Vector2.Zero);
 
         // Must be read before Begin.
-        var itemMin = ImGui.GetItemRectMin();
-        var itemMax = ImGui.GetItemRectMax();
+        var itemMin = anchor?.Min ?? ImGui.GetItemRectMin();
+        var itemMax = anchor?.Max ?? ImGui.GetItemRectMax();
         var itemCenter = (itemMin + itemMax) / 2f;
 
         var (position, pivot) = style.Placement switch

@@ -4,11 +4,7 @@ using Dalamud.Game.Inventory;
 
 namespace NoireLib.Helpers;
 
-/// <summary>
-/// What the game was showing when a context menu opened, flattened into the values a filter or a click handler
-/// actually reads. <see cref="Menu"/> is <see cref="ContextMenuScope.Default"/> or <see cref="ContextMenuScope.Inventory"/>,
-/// and every field a menu does not carry is left at its empty value.
-/// </summary>
+/// <summary>What the game showed when a context menu opened. Fields a menu does not carry stay empty.</summary>
 public sealed record ContextMenuContext
 {
     /// <summary>Which menu opened.</summary>
@@ -28,6 +24,9 @@ public sealed record ContextMenuContext
 
     /// <summary>Where <see cref="ItemId"/> was read from.</summary>
     public ContextMenuItemSource ItemSource { get; init; }
+
+    /// <summary>What kind of character the menu opened on.</summary>
+    public ContextMenuTargetKind TargetKind { get; init; }
 
     /// <summary>The targeted name, empty when the menu carries none.</summary>
     public string TargetName { get; init; } = string.Empty;

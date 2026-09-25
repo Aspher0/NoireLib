@@ -9,6 +9,8 @@ You are reading the documentation for the `Geometry` static helpers.
 - [Volumes and Polygons](#volumes-and-polygons)
 - [Frustum Culling](#frustum-culling)
 - [2D Point Tests](#2d-point-tests)
+- [Curves](#curves)
+- [SVG Paths](#svg-paths)
 - [Rotations](#rotations)
 - [Used by](#used-by)
 - [Troubleshooting](#troubleshooting)
@@ -18,13 +20,14 @@ You are reading the documentation for the `Geometry` static helpers.
 
 ## Overview
 
-Four types in the `NoireLib.Helpers` namespace covering the geometry a plugin needs to hit-test and place what it
-draws:
+Five types in the `NoireLib.Helpers` namespace covering the geometry a plugin needs to hit-test, build and place what
+it draws:
 
 - **`Geometry3DHelper`** - ray/plane, ray/sphere, ray/triangle, ray/box and ray/ring intersections, closest-approach
   solvers, AABB overlap, and a convex-polygon clip.
-- **`Geometry2DHelper`** - point-to-segment distance and point-in-convex-quad, for hit-testing a shape after it is
-  drawn.
+- **`Geometry2DHelper`** - point-to-segment distance, point-in-convex-quad and winding numbers for hit-testing a shape,
+  and Bezier and Catmull-Rom samplers for building one.
+- **`SvgPathHelper`** - reads an SVG path's `d` attribute into flattened point lists.
 - **`TransformHelper`** - `LookRotation`, `FromToRotation` and a `Matrix4x4.Decompose` that cannot hand back garbage.
 - **`FrustumPlanes`** - Gribb-Hartmann plane extraction from a view-projection matrix, plus a sphere test.
 
@@ -127,7 +130,50 @@ bool inside = Geometry2DHelper.PointInConvexQuad(cursor, a, b, c, d);
 
 // The building block both rest on: which side of a directed edge a point falls on.
 float side = Geometry2DHelper.Cross(a, b, p);
+
+// The same distance squared, for comparing against a squared limit in a tight loop.
+float d2 = Geometry2DHelper.PointToSegmentDistanceSquared(cursor, a, b);
+
+// Non-zero means inside under the non-zero fill rule: concave and self-crossing outlines fill as SVG fills them.
+bool filled = Geometry2DHelper.WindingNumber(outline, cursor) != 0;
 ```
+
+---
+
+## Curves
+
+Every sampler writes into a caller's span and returns how many points it wrote: nothing allocates.
+
+```csharp
+Span<Vector2> points = stackalloc Vector2[33];
+
+// 16 segments: 17 points, the start included.
+int n = Geometry2DHelper.SampleCubic(points, start, control1, control2, end, 16);
+
+// Chained pieces skip their start, which ends the previous piece.
+n += Geometry2DHelper.SampleQuadratic(points[n..], end, control, next, 8, includeStart: false);
+
+// Through every point, the end tangents taken from the end points: (count - 1) * 10 + 1 points.
+int m = Geometry2DHelper.SampleCatmullRom(points, keyPoints, 10);
+```
+
+---
+
+## SVG Paths
+
+```csharp
+// Every command, absolute and relative: M L H V C S Q T A Z.
+SvgSubpath[] subpaths = SvgPathHelper.Flatten("M2 2h12v12H2z M5 5l6 6");
+
+foreach (var subpath in subpaths)
+    drawList.AddPolyline(subpath.Points, color, 1f, subpath.Closed);
+
+// Curves are cut until no point of the true curve is further than the tolerance, in path units.
+SvgSubpath[] fine = SvgPathHelper.Flatten(iconPath, tolerance: 0.01f);
+```
+
+A subpath with fewer than two points is left out. Reading stops at the first character that is neither a command nor
+a number, keeping what was read before it.
 
 ---
 
@@ -151,6 +197,8 @@ TransformHelper.DecomposeSafe(in world, out Vector3 scale, out Quaternion rotati
 
 Draw3D's picker (`NoireDraw3D.Pick`), the mesh BVH, the native gizmo's handle hit-tests and drag solvers, scene
 frustum culling, world-decal polygon trimming, and `SceneNode.LookAt`. `GizmoMath` builds its drag solvers on it.
+NoireUI's `NoireRaster` fills and strokes with `WindingNumber` and `PointToSegmentDistanceSquared`, and
+`RasterShape.Path` reads its outline with `SvgPathHelper`.
 
 ---
 

@@ -30,7 +30,7 @@ public sealed record CharacterSnapshot
     /// <summary>The current world row id, or 0 when unavailable.</summary>
     public required uint CurrentWorldId { get; init; }
 
-    /// <summary>The object kind (player, battle NPC, companion, …), as the raw Dalamud enum value.</summary>
+    /// <summary>The object kind, such as player, battle NPC or companion, as the raw Dalamud enum value.</summary>
     public required Dalamud.Game.ClientState.Objects.Enums.ObjectKind ObjectKind { get; init; }
 
     /// <summary>Precomputed relationship flags (local player, party, alliance, friend), captured with the snapshot.</summary>
@@ -66,7 +66,7 @@ public sealed record CharacterSnapshot
     /// <summary>Maximum crafting points. Only meaningful for the local player.</summary>
     public required uint MaxCp { get; init; }
 
-    /// <summary>The shield percentage (0–100).</summary>
+    /// <summary>The shield percentage, from 0 to 100.</summary>
     public required byte ShieldPercentage { get; init; }
 
     /// <summary>Whether the character is casting.</summary>
@@ -112,7 +112,7 @@ public sealed record CharacterSnapshot
     /// </summary>
     public required ushort EmoteId { get; init; }
 
-    /// <summary>The online-status row id (AFK, busy, looking for party, …).</summary>
+    /// <summary>The online-status row id, such as AFK, busy or looking for party.</summary>
     public required uint OnlineStatusId { get; init; }
 
     /// <summary>The world-space position at capture time.</summary>
@@ -130,10 +130,10 @@ public sealed record CharacterSnapshot
     /// <summary>Whether the subject is a player character.</summary>
     public bool IsPlayer => ObjectKind == Dalamud.Game.ClientState.Objects.Enums.ObjectKind.Pc;
 
-    /// <summary>The current HP fraction (0–1).</summary>
+    /// <summary>The current HP fraction, from 0 to 1.</summary>
     public float HpPercent => MaxHp == 0 ? 0f : CurrentHp / (float)MaxHp;
 
-    /// <summary>The current MP fraction (0–1).</summary>
+    /// <summary>The current MP fraction, from 0 to 1.</summary>
     public float MpPercent => MaxMp == 0 ? 0f : CurrentMp / (float)MaxMp;
 
     /// <summary>The effective shield HP computed from <see cref="MaxHp"/> and <see cref="ShieldPercentage"/>.</summary>

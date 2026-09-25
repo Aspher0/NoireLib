@@ -13,9 +13,6 @@ public static class DelayerHelper
 {
     private static readonly ConcurrentDictionary<string, Delayer> _delayers = new();
 
-    /// <summary>
-    /// Throws an exception if the NoireLib is not initialized.
-    /// </summary>
     static DelayerHelper()
     {
         if (!NoireService.IsInitialized())

@@ -10,12 +10,15 @@ using System.Reflection;
 namespace NoireLib.UI;
 
 /// <summary>
-/// One font face loaded from TrueType data, drawn and measured at any size with CSS sizing semantics.<br/>
-/// Each size rasterizes on first use. Until then the current ImGui font draws stretched to the same line height. Draw thread only, except <see cref="Request(float)"/>.
+/// A TrueType face drawn and measured at any size with CSS sizing. A size rasterizes on first use, drawn stretched from
+/// the current font until then. Draw thread only, except <see cref="Request(float)"/>.
 /// </summary>
 public sealed class NoireFont : IDisposable
 {
     private readonly Dictionary<float, UiFaceEntry> entries = new();
+
+    // The sizes Request asked for, at 100%. They stay built while the face lives, drawn or not.
+    private readonly HashSet<float> keptSizes = new();
     private readonly HotPathCache<FitKey, TextFit> fits = new(2048);
 
     private int[] planStarts = new int[64];
@@ -28,7 +31,7 @@ public sealed class NoireFont : IDisposable
 
     private readonly record struct FitKey(string Text, nint Font, float DrawSize, float Tracking, float MaxWidth, bool Kerned, int Generation);
 
-    // Laying a string out walks the kerning table and asks ImGui for each glyph. The plan is kept and only AddText repeats.
+    // The laid-out glyph quads are kept: a draw writes vertices directly instead of one AddText per run.
     private sealed class TextPlan
     {
         public int Count;
@@ -36,6 +39,27 @@ public sealed class NoireFont : IDisposable
         public byte[] Utf8 = [];
         public int[] ByteStart = [];
         public int[] ByteLength = [];
+        public GlyphQuad[] Quads = [];
+        public int QuadCount;
+        public int TextureIndex = -1;
+        public float LineHeight;
+        public float Left;
+        public float Right;
+        public bool Direct;
+        public bool Kerned;
+    }
+
+    // One glyph as ImGui's RenderText places it: offsets from the run's pixel-aligned origin, already scaled.
+    private struct GlyphQuad
+    {
+        public int Run;
+        public float X0;
+        public float Y0;
+        public float X1;
+        public float Y1;
+        public Vector2 Uv0;
+        public Vector2 Uv1;
+        public bool Colored;
     }
 
     private readonly record struct TextFit(Vector2 Size, int Visible, bool Ellipsis, float PrefixWidth, TextPlan Plan);
@@ -83,9 +107,7 @@ public sealed class NoireFont : IDisposable
         return new NoireFont(data, name);
     }
 
-    /// <summary>
-    /// Creates a face from a font file on disk.
-    /// </summary>
+    /// <summary>Creates a face from a font file on disk.</summary>
     /// <param name="path">The path of the .ttf or .otf file.</param>
     /// <returns>The face.</returns>
     public static NoireFont FromFile(string path)
@@ -94,9 +116,7 @@ public sealed class NoireFont : IDisposable
         return new NoireFont(File.ReadAllBytes(path), Path.GetFileNameWithoutExtension(path));
     }
 
-    /// <summary>
-    /// Creates a face from a font embedded as a manifest resource.
-    /// </summary>
+    /// <summary>Creates a face from a font embedded as a manifest resource.</summary>
     /// <param name="assembly">The assembly holding the resource, usually the plugin's own.</param>
     /// <param name="resourceName">The resource's manifest name.</param>
     /// <returns>The face.</returns>
@@ -138,27 +158,19 @@ public sealed class NoireFont : IDisposable
     /// </summary>
     public float LineRatio => (Ascender - Descender) / (float)UnitsPerEm;
 
-    /// <summary>
-    /// The glyphs rasterized, as pairs of first and last codepoint terminated by zero, or <see langword="null"/> for
-    /// Latin, Latin Extended-A, punctuation, currency, arrows and miscellaneous symbols. Read at each build.
-    /// </summary>
+    /// <summary>The glyph ranges rasterized, zero-terminated first/last pairs. Null for Latin, punctuation and common symbols.</summary>
     public ushort[]? GlyphRanges { get; set; }
 
-    /// <summary>Whether the glyphs Dalamud's configured language needs are merged in from its own fonts. Read at each build.</summary>
+    /// <summary>Whether the glyphs Dalamud's configured language and the plugin's active language need are merged in, the latter through <see cref="NoireScriptFonts"/>. Read at each build.</summary>
     public bool MergeLanguageGlyphs { get; set; } = true;
 
     /// <summary>The horizontal oversampling, or <see langword="null"/> for Dalamud's default. Read at each build.</summary>
     public int? Oversample { get; set; }
 
-    /// <summary>
-    /// Whether the face's own pair adjustments are applied, as a browser applies them. ImGui has no notion of kerning,
-    /// so this is what keeps a run of text the width the same run has in a browser.
-    /// </summary>
+    /// <summary>Whether the face's pair adjustments apply, keeping a run the width a browser gives it.</summary>
     public bool Kerning { get; set; } = true;
 
-    /// <summary>
-    /// The granularity sizes are rasterized at, in real pixels. Two requests closer than this share one built size.
-    /// </summary>
+    /// <summary>The step sizes are rasterized at, in real pixels. Closer requests share one built size.</summary>
     public float SizeStep { get; set; } = 0.5f;
 
     /// <summary>
@@ -178,20 +190,36 @@ public sealed class NoireFont : IDisposable
 
     #region Sizes
 
-    /// <summary>
-    /// Asks for a size to be built without drawing anything. Safe outside a frame, for warming a UI before it opens.
-    /// </summary>
+    /// <summary>Builds a size without drawing, kept for the face's life. Safe outside a frame.</summary>
     /// <param name="sizePx">The em size at 100%.</param>
-    public void Request(float sizePx) => GetEntry(sizePx, buildNow: true);
+    public void Request(float sizePx)
+    {
+        lock (entries)
+            keptSizes.Add(sizePx);
 
-    /// <summary>
-    /// Asks for several sizes to be built without drawing anything. See <see cref="Request(float)"/>.
-    /// </summary>
+        GetEntry(sizePx, buildNow: true);
+    }
+
+    /// <summary>Builds several sizes without drawing. See <see cref="Request(float)"/>.</summary>
     /// <param name="sizesPx">The em sizes at 100%.</param>
     public void Request(ReadOnlySpan<float> sizesPx)
     {
         foreach (var size in sizesPx)
-            GetEntry(size, buildNow: true);
+            Request(size);
+    }
+
+    internal bool Keeps(float emPx)
+    {
+        lock (entries)
+        {
+            foreach (var size in keptSizes)
+            {
+                if (EmPixels(size) == emPx)
+                    return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>Whether a size is built.</summary>
@@ -199,9 +227,7 @@ public sealed class NoireFont : IDisposable
     /// <returns>True once the size is rasterized.</returns>
     public bool IsReady(float sizePx) => !Font(sizePx).IsNull;
 
-    /// <summary>
-    /// The built ImGui font for a size, or a null pointer while it is not built yet. Asks for it to be built.
-    /// </summary>
+    /// <summary>The built ImGui font for a size, or a null pointer until it is built.</summary>
     /// <param name="sizePx">The em size at 100%.</param>
     /// <returns>The font, valid for the current frame.</returns>
     public ImFontPtr Font(float sizePx)
@@ -226,16 +252,12 @@ public sealed class NoireFont : IDisposable
         return MathF.Max(step, MathF.Round(real / step) * step);
     }
 
-    /// <summary>
-    /// The height of one line at its natural line height (ascender to descender), in real pixels.
-    /// </summary>
+    /// <summary>The height of one line at its natural line height (ascender to descender), in real pixels.</summary>
     /// <param name="sizePx">The em size at 100%.</param>
     /// <returns>The line height in real pixels.</returns>
     public float LineHeight(float sizePx) => EmPixels(sizePx) * LineRatio;
 
-    /// <summary>
-    /// The distance from the top of a line to the baseline, in real pixels.
-    /// </summary>
+    /// <summary>The distance from the top of a line to the baseline, in real pixels.</summary>
     /// <param name="sizePx">The em size at 100%.</param>
     /// <returns>The ascent in real pixels.</returns>
     public float Ascent(float sizePx) => EmPixels(sizePx) * Ascender / UnitsPerEm;
@@ -298,7 +320,7 @@ public sealed class NoireFont : IDisposable
 
     #region Measuring and drawing
 
-    /// <summary>Measures text as <see cref="Draw(ImDrawListPtr, Vector2, uint, string, float, float, float)"/> would draw it.</summary>
+    /// <summary>Measures text as <see cref="Draw(ImDrawListPtr, Vector2, uint, string, float, float, float, float)"/> would draw it.</summary>
     /// <param name="text">The text.</param>
     /// <param name="sizePx">The em size at 100%.</param>
     /// <param name="trackingPx">Extra space between characters at 100%, a CSS <c>letter-spacing</c>.</param>
@@ -312,9 +334,7 @@ public sealed class NoireFont : IDisposable
         return Fit(text, font, drawSize, EmPixels(sizePx), trackingPx * NoireUI.Scale, maxWidth, LineHeight(sizePx)).Size;
     }
 
-    /// <summary>
-    /// Whether text would be cut with an ellipsis at a width.
-    /// </summary>
+    /// <summary>Whether text would be cut with an ellipsis at a width.</summary>
     /// <param name="text">The text.</param>
     /// <param name="sizePx">The em size at 100%.</param>
     /// <param name="trackingPx">Extra space between characters at 100%.</param>
@@ -371,9 +391,7 @@ public sealed class NoireFont : IDisposable
         return fit.Size;
     }
 
-    /// <summary>
-    /// How far a browser smears a face to stand in for a bold it does not have, at a size.
-    /// </summary>
+    /// <summary>How far a browser smears a face to stand in for a bold it does not have, at a size.</summary>
     /// <param name="sizePx">The em size at 100%.</param>
     /// <returns>The smear in logical pixels.</returns>
     public static float SyntheticBoldPixels(float sizePx)
@@ -383,31 +401,27 @@ public sealed class NoireFont : IDisposable
         return sizePx * ((1f / 24f) + (((1f / 32f) - (1f / 24f)) * t));
     }
 
-    /// <summary>
-    /// Draws text into a draw list with this face. See <see cref="Draw(ImDrawListPtr, Vector2, uint, string, float, float, float)"/>.
-    /// </summary>
-    /// <param name="drawList">The draw list to draw into.</param>
+    /// <summary>Draws text into a draw list with this face.</summary>
+    /// <param name="drawList">The draw list.</param>
     /// <param name="position">The top left of the line, in screen pixels.</param>
     /// <param name="color">The color.</param>
     /// <param name="text">The text.</param>
     /// <param name="sizePx">The em size at 100%.</param>
     /// <param name="trackingPx">Extra space between characters at 100%.</param>
-    /// <param name="maxWidth">The width past which the text is cut with an ellipsis, in real pixels, or 0 for none.</param>
-    /// <param name="syntheticBoldPx">How far the glyphs are smeared to stand in for a missing bold. See <see cref="SyntheticBoldPixels"/>.</param>
+    /// <param name="maxWidth">The width past which the text is cut with an ellipsis, in real pixels. 0 for none.</param>
+    /// <param name="syntheticBoldPx">How far the glyphs are smeared to stand in for a missing weight.</param>
     /// <returns>The drawn size in real pixels.</returns>
     public Vector2 Draw(ImDrawListPtr drawList, Vector2 position, Vector4 color, string text, float sizePx, float trackingPx = 0f, float maxWidth = 0f, float syntheticBoldPx = 0f)
         => Draw(drawList, position, ColorHelper.Vector4ToUint(color), text, sizePx, trackingPx, maxWidth, syntheticBoldPx);
 
-    /// <summary>
-    /// Draws text into the current window's draw list with this face, without submitting an ImGui item.
-    /// </summary>
+    /// <summary>Draws text into the current window's draw list, without submitting an ImGui item.</summary>
     /// <param name="position">The top left of the line, in screen pixels.</param>
     /// <param name="color">The color.</param>
     /// <param name="text">The text.</param>
     /// <param name="sizePx">The em size at 100%.</param>
     /// <param name="trackingPx">Extra space between characters at 100%.</param>
-    /// <param name="maxWidth">The width past which the text is cut with an ellipsis, in real pixels, or 0 for none.</param>
-    /// <param name="syntheticBoldPx">How far the glyphs are smeared to stand in for a missing bold. See <see cref="SyntheticBoldPixels"/>.</param>
+    /// <param name="maxWidth">The width past which the text is cut with an ellipsis, in real pixels. 0 for none.</param>
+    /// <param name="syntheticBoldPx">How far the glyphs are smeared to stand in for a missing weight.</param>
     /// <returns>The drawn size in real pixels.</returns>
     public Vector2 DrawAt(Vector2 position, Vector4 color, string text, float sizePx, float trackingPx = 0f, float maxWidth = 0f, float syntheticBoldPx = 0f)
     {
@@ -479,7 +493,7 @@ public sealed class NoireFont : IDisposable
     private static ReadOnlySpan<char> DotsText => "...";
 
     // Kept for the frame. Only an atlas rebuild changes the answer, and it bumps the generation.
-    private readonly ResolvedSize[] resolvedSizes = new ResolvedSize[16];
+    private readonly ResolvedSize[] resolvedSizes = new ResolvedSize[64];
     private int resolvedFrame = -1;
     private int resolvedGeneration = -1;
     private int resolvedCount;
@@ -718,10 +732,115 @@ public sealed class NoireFont : IDisposable
         if (plan == null || fit.Visible <= 0)
             return;
 
+        if (plan.Direct && TryDrawQuads(drawList, font, position, color, plan))
+            return;
+
         var utf8 = plan.Utf8.AsSpan();
 
         for (var i = 0; i < plan.Count; i++)
             drawList.AddText(font, drawSize, position + new Vector2(plan.Pen[i], 0f), color, utf8.Slice(plan.ByteStart[i], plan.ByteLength[i]));
+    }
+
+    // As ImGui's RenderText: run origins truncated, clipped per line vertically and per glyph horizontally.
+    private static unsafe bool TryDrawQuads(ImDrawListPtr drawList, ImFontPtr font, Vector2 position, uint color, TextPlan plan)
+    {
+        var native = drawList.Handle;
+        var atlas = font.Handle->ContainerAtlas;
+
+        if (atlas == null || (uint)plan.TextureIndex >= (uint)atlas->Textures.Size)
+            return false;
+
+        if (plan.Kerned && (ImGui.GetIO().ConfigFlags & ImGuiConfigFlags.NoKerning) != 0)
+            return false;
+
+        var clip = native->CmdHeader.ClipRect;
+        var y = (float)(int)position.Y;
+
+        if (y > clip.W || y + plan.LineHeight < clip.Y)
+            return true;
+
+        var quads = plan.Quads;
+        var pens = plan.Pen;
+
+        // A run lands at most a pixel left of its place: with that pixel spare, every glyph is inside.
+        var inside = position.X + plan.Left - 1f >= clip.X && position.X + plan.Right <= clip.Z;
+        var shown = inside ? plan.QuadCount : 0;
+
+        if (!inside)
+        {
+            for (var i = 0; i < plan.QuadCount; i++)
+            {
+                ref var quad = ref quads[i];
+                var origin = (float)(int)(position.X + pens[quad.Run]);
+
+                if (origin + quad.X0 <= clip.Z && origin + quad.X1 >= clip.X)
+                    shown++;
+            }
+        }
+
+        if (shown == 0)
+            return true;
+
+        // Pushed once around the line rather than around every glyph: the draw commands merge the same.
+        var texture = atlas->Textures.Data[plan.TextureIndex].TexID;
+        var pushed = texture.Handle != native->CmdHeader.TextureId.Handle;
+
+        if (pushed)
+            drawList.PushTextureID(texture);
+
+        drawList.PrimReserve(shown * 6, shown * 4);
+
+        // Read after the reservation, never before: reserving can roll the index offset over.
+        var vertex = native->VtxWritePtr;
+        var index = native->IdxWritePtr;
+        var current = native->VtxCurrentIdx;
+        var untinted = color | 0x00FFFFFFu;
+        var run = -1;
+        var x = 0f;
+
+        for (var i = 0; i < plan.QuadCount; i++)
+        {
+            ref var quad = ref quads[i];
+
+            if (quad.Run != run)
+            {
+                run = quad.Run;
+                x = (float)(int)(position.X + pens[run]);
+            }
+
+            var x0 = x + quad.X0;
+            var x1 = x + quad.X1;
+
+            if (!inside && (x0 > clip.Z || x1 < clip.X))
+                continue;
+
+            var y0 = y + quad.Y0;
+            var y1 = y + quad.Y1;
+            var col = quad.Colored ? untinted : color;
+
+            vertex[0] = new ImDrawVert { Pos = new Vector2(x0, y0), Uv = quad.Uv0, Col = col };
+            vertex[1] = new ImDrawVert { Pos = new Vector2(x1, y0), Uv = new Vector2(quad.Uv1.X, quad.Uv0.Y), Col = col };
+            vertex[2] = new ImDrawVert { Pos = new Vector2(x1, y1), Uv = quad.Uv1, Col = col };
+            vertex[3] = new ImDrawVert { Pos = new Vector2(x0, y1), Uv = new Vector2(quad.Uv0.X, quad.Uv1.Y), Col = col };
+
+            index[0] = (ushort)current;
+            index[1] = (ushort)(current + 1);
+            index[2] = (ushort)(current + 2);
+            index[3] = (ushort)current;
+            index[4] = (ushort)(current + 2);
+            index[5] = (ushort)(current + 3);
+
+            vertex += 4;
+            index += 6;
+            current += 4;
+        }
+
+        NoireShapes.AdvancePrimWrite(drawList, shown * 4, shown * 6);
+
+        if (pushed)
+            drawList.PopTextureID();
+
+        return true;
     }
 
     private TextPlan BuildPlan(ImFontPtr font, float drawSize, float emPx, ReadOnlySpan<char> text, float tracking)
@@ -787,7 +906,7 @@ public sealed class NoireFont : IDisposable
             written += bytes;
         }
 
-        return new TextPlan
+        var plan = new TextPlan
         {
             Count = count,
             Pen = pens[..count],
@@ -795,6 +914,101 @@ public sealed class NoireFont : IDisposable
             ByteStart = byteStart,
             ByteLength = byteLength,
         };
+
+        BuildQuads(plan, font, drawSize, text, starts, lengths);
+
+        return plan;
+    }
+
+    // A plan spanning several atlas textures, a substitute glyph or control or astral characters keeps AddText.
+    private static unsafe void BuildQuads(TextPlan plan, ImFontPtr font, float drawSize, ReadOnlySpan<char> text, int[] starts, int[] lengths)
+    {
+        if (font.IsNull || font.FontSize <= 0f)
+            return;
+
+        var native = font.Handle;
+        var scale = drawSize / native->FontSize;
+        var kerning = native->KerningPairs.Size > 0;
+        var quads = new GlyphQuad[text.Length];
+        var quadCount = 0;
+        var texture = -1;
+        var kerned = false;
+
+        for (var run = 0; run < plan.Count; run++)
+        {
+            var x = 0f;
+            ushort previous = 0;
+            var end = starts[run] + lengths[run];
+
+            for (var at = starts[run]; at < end; at++)
+            {
+                var c = text[at];
+
+                if (c < 32 || char.IsSurrogate(c))
+                    return;
+
+                var glyph = font.FindGlyphNoFallback(c);
+
+                if (glyph == null)
+                    return;
+
+                if (kerning)
+                {
+                    var adjust = font.GetDistanceAdjustmentForPair(previous, c);
+
+                    if (adjust != 0f)
+                    {
+                        x += adjust * scale;
+                        kerned = true;
+                    }
+                }
+
+                previous = (ushort)glyph->Codepoint;
+
+                if (glyph->Visible != 0)
+                {
+                    var index = (int)glyph->TextureIndex;
+
+                    if (texture == -1)
+                        texture = index;
+                    else if (texture != index)
+                        return;
+
+                    quads[quadCount++] = new GlyphQuad
+                    {
+                        Run = run,
+                        X0 = x + (glyph->X0 * scale),
+                        Y0 = glyph->Y0 * scale,
+                        X1 = x + (glyph->X1 * scale),
+                        Y1 = glyph->Y1 * scale,
+                        Uv0 = new Vector2(glyph->U0, glyph->V0),
+                        Uv1 = new Vector2(glyph->U1, glyph->V1),
+                        Colored = glyph->Colored != 0,
+                    };
+                }
+
+                x += glyph->AdvanceX * scale;
+            }
+        }
+
+        var left = float.MaxValue;
+        var right = float.MinValue;
+
+        for (var i = 0; i < quadCount; i++)
+        {
+            var pen = plan.Pen[quads[i].Run];
+            left = MathF.Min(left, pen + quads[i].X0);
+            right = MathF.Max(right, pen + quads[i].X1);
+        }
+
+        plan.Quads = quads;
+        plan.QuadCount = quadCount;
+        plan.Left = left;
+        plan.Right = right;
+        plan.TextureIndex = texture;
+        plan.LineHeight = native->FontSize * scale;
+        plan.Kerned = kerned;
+        plan.Direct = texture >= 0;
     }
 
     private void Grow(int length)
@@ -1056,9 +1270,7 @@ public sealed class NoireFont : IDisposable
 
     #endregion
 
-    /// <summary>
-    /// Releases every size built for this face. Drawing with it afterwards uses the stand-in.
-    /// </summary>
+    /// <summary>Releases every size built for this face. Drawing afterwards uses the stand-in.</summary>
     public void Dispose()
     {
         if (disposed)
@@ -1076,6 +1288,9 @@ public sealed class NoireFont : IDisposable
 
         foreach (var entry in held)
             UiFaceAtlas.Remove(entry);
+
+        lock (entries)
+            keptSizes.Clear();
 
         fits.Clear();
     }

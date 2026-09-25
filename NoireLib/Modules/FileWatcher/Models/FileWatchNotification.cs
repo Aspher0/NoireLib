@@ -3,9 +3,7 @@ using System.IO;
 
 namespace NoireLib.FileWatcher;
 
-/// <summary>
-/// Describes one filesystem event captured by <see cref="NoireFileWatcher"/>.
-/// </summary>
+/// <summary>Describes one filesystem event captured by <see cref="NoireFileWatcher"/>.</summary>
 /// <param name="WatchId">The ID of the watch registration that captured this event.</param>
 /// <param name="RootPath">The root path of the watch registration that captured this event.</param>
 /// <param name="TargetType">The type of the target that triggered this event.</param>
@@ -30,9 +28,7 @@ public sealed record FileWatchNotification(
     string? OldName = null,
     string? WatchKey = null)
 {
-    /// <summary>
-    /// The path relative to <see cref="RootPath"/> if possible.
-    /// </summary>
+    /// <summary>The path relative to <see cref="RootPath"/> if possible.</summary>
     public string RelativePath
     {
         get
@@ -43,15 +39,14 @@ public sealed record FileWatchNotification(
             }
             catch
             {
+                // GetRelativePath rejects an empty or malformed path; the absolute path is the only meaningful answer.
                 return FullPath;
             }
         }
     }
 }
 
-/// <summary>
-/// Describes one filesystem watcher error event.
-/// </summary>
+/// <summary>Describes one filesystem watcher error event.</summary>
 /// <param name="WatchId">The ID of the watch registration that captured this error event.</param>
 /// <param name="RootPath">The root path of the watch registration that captured this error event.</param>
 /// <param name="Exception">The exception that was thrown by the underlying filesystem watcher.</param>

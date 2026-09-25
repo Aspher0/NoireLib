@@ -20,16 +20,12 @@ namespace NoireLib.Configuration;
 /// Base class for NoireLib configuration classes that provides automatic JSON serialization and file management.
 /// </summary>
 [Serializable]
-public abstract class NoireConfigBase : INoireConfig
+public abstract partial class NoireConfigBase : INoireConfig
 {
-    /// <summary>
-    /// Backing field for <see cref="IsDegraded"/>
-    /// </summary>
+    /// <summary>Backing field for <see cref="IsDegraded"/></summary>
     protected bool degradedLoad;
 
-    /// <summary>
-    /// Backing field for <see cref="DegradedBackupPath"/>
-    /// </summary>
+    /// <summary>Backing field for <see cref="DegradedBackupPath"/></summary>
     protected string? degradedBackupPath;
 
     private bool degradedSaveRefusalLogged;
@@ -50,7 +46,6 @@ public abstract class NoireConfigBase : INoireConfig
     // When the oldest unwritten change arrived. Caps how long a run of changes defers the write.
     private long pendingSince;
 
-    // The background loop draining the queued payload, or null when none is running.
     private Task? flushTask;
 
     // The file text as last read or written by this instance, or null when unknown. What the unchanged-save skip
@@ -75,14 +70,10 @@ public abstract class NoireConfigBase : INoireConfig
     // The configurations holding a payload that is not on disk yet.
     private static readonly ConcurrentDictionary<NoireConfigBase, byte> PendingWriters = new(ReferenceComparer.Instance);
 
-    /// <summary>
-    /// How long <see cref="RequestSave"/> waits for further changes before it writes.
-    /// </summary>
+    /// <summary>How long <see cref="RequestSave"/> waits for further changes before it writes.</summary>
     public static TimeSpan SaveDebounceInterval { get; set; } = TimeSpan.FromMilliseconds(250);
 
-    /// <summary>
-    /// The longest a change may stay unwritten while further changes keep arriving.
-    /// </summary>
+    /// <summary>The longest a change may stay unwritten while further changes keep arriving.</summary>
     public static TimeSpan MaxSaveDelay { get; set; } = TimeSpan.FromSeconds(2);
 
     private const int FlushPollMilliseconds = 250;
@@ -120,7 +111,6 @@ public abstract class NoireConfigBase : INoireConfig
         return serializer;
     }
 
-    // Serializes this instance to the JSON written to the configuration file.
     private string SerializeConfigToJson()
     {
         var builder = new StringBuilder(256);
@@ -134,7 +124,6 @@ public abstract class NoireConfigBase : INoireConfig
         return builder.ToString();
     }
 
-    // Deserializes the contents of a configuration file into a new instance of the given type.
     private static object? DeserializeConfigFromJson(string json, Type type)
     {
         using var stringReader = new StringReader(json);
@@ -148,16 +137,11 @@ public abstract class NoireConfigBase : INoireConfig
     /// </summary>
     public abstract int Version { get; set; }
 
-    /// <summary>
-    /// The configuration file name (with or without extension). Override to provide a custom name.
-    /// </summary>
-    /// <returns>The configuration file name.</returns>
+    /// <summary>The configuration file name, with or without extension.</summary>
+    /// <returns>The file name.</returns>
     public abstract string GetConfigFileName();
 
-    /// <summary>
-    /// Whether this configuration loads in the background when NoireLib initializes. Leave it true unless you want
-    /// the load to happen on first access instead.
-    /// </summary>
+    /// <summary>Whether this configuration loads in the background when NoireLib initializes, instead of on first access.</summary>
     [JsonIgnore]
     public virtual bool LoadFromDiskOnInitialization => true;
 
@@ -184,7 +168,7 @@ public abstract class NoireConfigBase : INoireConfig
     // milliseconds.
     private static readonly ConcurrentDictionary<Type, int> DefaultVersions = new();
 
-    // Whether each type carries utoSaveAttribute, computed once per type.
+    // Whether each type carries AutoSaveAttribute, computed once per type.
     private static readonly ConcurrentDictionary<Type, bool> EnrollmentByType = new();
 
     /// <summary>
@@ -214,11 +198,8 @@ public abstract class NoireConfigBase : INoireConfig
         return Version;
     }
 
-    /// <summary>
-    /// The full path to the configuration file, from <see cref="GetConfigFileName"/> against the plugin's
-    /// configuration directory. Override to relocate the file. Every file operation goes through it.
-    /// </summary>
-    /// <returns>The full path, or null when NoireLib is not initialized or the file name is invalid.</returns>
+    /// <summary>The configuration file path. Override to relocate the file.</summary>
+    /// <returns>The path, or null when NoireLib is not initialized or the file name is invalid.</returns>
     protected virtual string? GetConfigFilePath()
     {
         var fileName = GetConfigFileName();
@@ -234,11 +215,8 @@ public abstract class NoireConfigBase : INoireConfig
         return FileHelper.GetPluginConfigFilePath(fileName);
     }
 
-    /// <summary>
-    /// Saves to the JSON file, blocking until the write lands. Refused while <see cref="IsDegraded"/> is true.
-    /// </summary>
-    /// <returns>True if the save operation was successful; otherwise, false.</returns>
-    /// <seealso cref="IsDegraded"/>
+    /// <summary>Saves to the JSON file, blocking until the write lands. Refused while <see cref="IsDegraded"/>.</summary>
+    /// <returns>Whether the save succeeded.</returns>
     /// <seealso cref="RequestSave"/>
     public virtual bool Save()
     {
@@ -286,10 +264,7 @@ public abstract class NoireConfigBase : INoireConfig
     private const double SlowSerializeMs = 20;
 #endif
 
-    /// <summary>
-    /// Captures the configuration on the calling thread and writes it on a background thread shortly after. A change
-    /// made after this returns belongs to the next write.
-    /// </summary>
+    /// <summary>Captures the configuration now and writes it shortly after, on a background thread.</summary>
     /// <seealso cref="FlushPendingSave"/>
     public virtual void RequestSave()
     {
@@ -320,13 +295,12 @@ public abstract class NoireConfigBase : INoireConfig
             return;
         }
 
-        // Refreshed here so the autosave check does not capture the same state a second time on the next tick.
+        // Refreshed so the autosave check does not capture this state again.
         RefreshFingerprintBaseline();
 
         QueueSerializedPayload(currentJson, filePath);
     }
 
-    // Queues an already-serialized payload for the debounced background write shared with RequestSave.
     internal void QueueSerializedPayload(string json, string filePath)
     {
         var now = Environment.TickCount64;
@@ -394,7 +368,6 @@ public abstract class NoireConfigBase : INoireConfig
         return allSuccess;
     }
 
-    // Stamps the instance with the schema this build declares and serializes it on the calling thread.
     private string SerializeForSave()
     {
         // From a fresh instance, not the property: a version assigned over it would mislabel the file.
@@ -414,8 +387,7 @@ public abstract class NoireConfigBase : INoireConfig
 #endif
     }
 
-    // Writes serialized JSON to disk, skipping the write when the file already holds it. Callers hold writeGate, which
-    // also guards lastPersistedJson.
+    // Skips a write the file already holds. Callers hold writeGate, which guards lastPersistedJson.
     private bool WriteSerializedConfig(string filePath, string json)
     {
         // The only disk read on this path, and only for a file this session has never touched.
@@ -428,7 +400,7 @@ public abstract class NoireConfigBase : INoireConfig
             return true;
         }
 
-        // Written atomically, so a crash mid-write leaves the previous file intact.
+        // Atomic: a crash mid-write leaves the previous file intact.
         var success = FileHelper.ReplaceFileAtomically(filePath, Encoding.UTF8.GetBytes(json));
 
         if (success)
@@ -440,7 +412,6 @@ public abstract class NoireConfigBase : INoireConfig
         return success;
     }
 
-    // Waits out the debounce window and writes the queued payload, then exits once nothing is left queued.
     private async Task RunFlushLoop()
     {
         while (true)
@@ -451,7 +422,7 @@ public abstract class NoireConfigBase : INoireConfig
             {
                 if (pendingJson == null)
                 {
-                    // Cleared under the lock a request takes, so a request either joins this loop or starts one.
+                    // Under the lock a request takes: a request either joins this loop or starts one.
                     flushTask = null;
                     PendingWriters.TryRemove(this, out _);
                     return;
@@ -462,7 +433,7 @@ public abstract class NoireConfigBase : INoireConfig
 
             if (remaining > 0)
             {
-                // Sliced rather than waited out in one go, so a flush ends this loop promptly.
+                // Sliced: a flush ends this loop promptly.
                 await Task.Delay((int)Math.Min(remaining, FlushPollMilliseconds)).ConfigureAwait(false);
                 continue;
             }
@@ -471,7 +442,6 @@ public abstract class NoireConfigBase : INoireConfig
         }
     }
 
-    // Takes the queued payload and writes it, blocking while another write of this configuration is running.
     private bool WritePendingPayload()
     {
         // Taken inside the lock, not before it: otherwise a slow writer overwrites newer values with older ones.
@@ -512,8 +482,7 @@ public abstract class NoireConfigBase : INoireConfig
         }
     }
 
-    // Logs a save refused for sDegraded: the first refusal of a degraded state at error level, the ones after it at
-    // verbose.
+    // The first refusal of a degraded state logs at error level, the rest at verbose.
     private void LogDegradedSaveRefusal()
     {
         if (degradedSaveRefusalLogged)
@@ -555,7 +524,7 @@ public abstract class NoireConfigBase : INoireConfig
                 $"the partially defaulted values held in memory.");
         }
 
-        // Cleared before delegating, so a derived Save() override sees a consistent state.
+        // Cleared before delegating: a derived Save override sees a consistent state.
         degradedLoad = false;
         degradedBackupPath = null;
         degradedSaveRefusalLogged = false;
@@ -677,8 +646,9 @@ public abstract class NoireConfigBase : INoireConfig
             // The copy above brought the file's version across; leaving it would skip the next needed migration.
             Version = targetVersion;
 
-            // Un-migrated JSON deserializes silently, so only the latch marks it. Assigned unconditionally, so a
-            // later successful load clears a stale one.
+            var corrected = EnforceRules();
+
+            // Un-migrated JSON deserializes silently: only the latch marks it. Assigned every load to clear a stale one.
             var migrationFailed = fileVersion < targetVersion && !migrationSuccess;
             degradedLoad = migrationFailed;
             degradedBackupPath = migrationFailed ? backupPath : null;
@@ -696,6 +666,9 @@ public abstract class NoireConfigBase : INoireConfig
 
             // The migrated branch's Save already recorded what it wrote; only an unmigrated load knows the disk text.
             CompleteLoadSetup(migrated ? null : rawDiskText);
+
+            if (corrected && !migrated)
+                RequestSave();
 
             NoireConfigManager.AddConfigToCache(GetType(), this);
 
@@ -716,7 +689,6 @@ public abstract class NoireConfigBase : INoireConfig
         }
     }
 
-    // Prepares the instance once: enrollment, compiled fingerprint, serializer warmup and change baselines.
     internal void CompleteLoadSetup(string? diskText)
     {
         if (setupComplete)
@@ -765,7 +737,7 @@ public abstract class NoireConfigBase : INoireConfig
         setupComplete = true;
     }
 
-    // Whether a type carries utoSaveAttribute on the class or on any public instance member.
+    // On the class or on any public instance member.
     private static bool ComputeEnrollment(Type type)
     {
         if (type.GetCustomAttribute<AutoSaveAttribute>(inherit: true) != null)
@@ -776,7 +748,7 @@ public abstract class NoireConfigBase : INoireConfig
             .Any(member => member.GetCustomAttribute<AutoSaveAttribute>(inherit: true) != null);
     }
 
-    // Arms one autosave check on the next framework tick. Called by every access path.
+    // Called by every access path.
     internal void MarkAccessed()
     {
         if (!autoSaveEnrolled)
@@ -786,10 +758,9 @@ public abstract class NoireConfigBase : INoireConfig
             NoireConfigWatch.Arm(this);
     }
 
-    // Clears the armed flag before a check runs. An access during the check arms the next one.
+    // An access during the check arms the next one.
     internal void ResetArm() => Volatile.Write(ref accessArmed, 0);
 
-    // Compares the content fingerprint to the baseline and queues a write when they differ.
     internal bool RunAutoSaveCheck()
     {
         if (degradedLoad || fingerprint == null)
@@ -849,10 +820,9 @@ public abstract class NoireConfigBase : INoireConfig
         }
     }
 
-    // Copies the configuration file to a sibling backup before a migration is attempted.
     private static string? CreateMigrationBackup(string filePath, int fileVersion)
     {
-        // Named for the version rather than the moment, so retrying a failing migration keeps one backup per schema.
+        // Named for the version: retrying a failing migration keeps one backup per schema.
         var backupPath = $"{filePath}.v{fileVersion}.bak";
 
         // Kept rather than overwritten: a later degraded write must not replace the last good copy.
@@ -890,9 +860,7 @@ public abstract class NoireConfigBase : INoireConfig
         return 0;
     }
 
-    /// <summary>
-    /// Copies all properties from another instance to this instance.
-    /// </summary>
+    /// <summary>Copies all properties from another instance to this instance.</summary>
     /// <param name="source">The source configuration to copy from.</param>
     protected virtual void CopyPropertiesFrom(object source)
     {
@@ -918,9 +886,7 @@ public abstract class NoireConfigBase : INoireConfig
         }
     }
 
-    /// <summary>
-    /// Deletes the configuration file.
-    /// </summary>
+    /// <summary>Deletes the configuration file.</summary>
     /// <returns>True if the delete operation was successful; otherwise, false.</returns>
     public virtual bool Delete()
     {
@@ -947,9 +913,7 @@ public abstract class NoireConfigBase : INoireConfig
         }
     }
 
-    /// <summary>
-    /// Checks if the configuration file exists.
-    /// </summary>
+    /// <summary>Checks if the configuration file exists.</summary>
     /// <returns>True if the file exists; otherwise, false.</returns>
     public virtual bool Exists()
     {
@@ -957,7 +921,6 @@ public abstract class NoireConfigBase : INoireConfig
         return FileHelper.FileExists(filePath);
     }
 
-    // Whether this instance is at its defaults because no file exists yet, rather than because a load failed. oad
-    // returns false for both.
+    // At defaults because no file exists yet, not because a load failed: Load returns false for both.
     internal bool IsUnwrittenDefault => !string.IsNullOrEmpty(GetConfigFilePath()) && !Exists();
 }

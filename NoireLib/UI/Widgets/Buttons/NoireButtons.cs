@@ -10,9 +10,8 @@ using System.Threading.Tasks;
 namespace NoireLib.UI;
 
 /// <summary>
-/// The buttons ImGui does not ship: hold-to-confirm for destructive actions, an async button that runs a task and
-/// reports on it, a split button, an animated toggle and a segmented control. All are immediate, take colors from
-/// <see cref="NoireTheme.Current"/>, and expose a style object plus a custom-draw hook.
+/// Hold-to-confirm, async, split, animated toggle and segmented buttons, themed from <see cref="NoireTheme.Current"/>, each
+/// with a style object and a custom-draw hook.
 /// </summary>
 [NoireFacade]
 public static class NoireButtons
@@ -29,9 +28,7 @@ public static class NoireButtons
 
     private static ButtonStyle CaretScratch => caretScratch ??= new ButtonStyle();
 
-    /// <summary>
-    /// How long a hold-to-confirm button must be held by default, in seconds.
-    /// </summary>
+    /// <summary>How long a hold-to-confirm button must be held by default, in seconds.</summary>
     public static float DefaultHoldSeconds { get; set; } = 1.2f;
 
     /// <summary>The text shown on an asynchronous button while its task runs. Empty or <see langword="null"/> shows only the spinner.</summary>
@@ -93,25 +90,7 @@ public static class NoireButtons
         var held = ImGui.IsItemActive();
 
         var state = UiFrameState.Get<HoldState>(id, "hold", HoldState.Ready);
-        var completed = false;
-        var step = NoireUI.DeltaTime;
-
-        if (held && state.Armed)
-        {
-            state.Progress += step / holdSeconds;
-
-            if (state.Progress >= 1f)
-            {
-                completed = true;
-                state.Progress = 0f;
-                state.Armed = false;
-            }
-        }
-        else if (!held)
-        {
-            state.Progress = MathF.Max(0f, state.Progress - step / (holdSeconds * 0.4f));
-            state.Armed = true;
-        }
+        var completed = NoireHold.Advance(ref state.Progress, ref state.Armed, held, holdSeconds, NoireUI.DeltaTime);
 
         UiFrameState.Set(id, "hold", state);
 
@@ -119,18 +98,29 @@ public static class NoireButtons
         return completed;
     }
 
+    internal static bool Hold(string label, NoireHold hold, float holdSeconds, ButtonStyle style, Vector2 size)
+    {
+        NoireUI.EnsureFrameServices();
+
+        ImGui.InvisibleButton(label, Measure(label, style, size));
+        var completed = hold.Update(ImGui.IsItemActive(), holdSeconds);
+
+        Paint(label, style, hold.Progress, true);
+        return completed;
+    }
+
     #endregion
 
     #region Asynchronous
 
-    /// <summary>Draws a button that runs a task and shows a spinner until it finishes. A failure is reported through <see cref="UiDiagnostics"/>.</summary>
+    /// <summary>Draws a button that runs a task and spins until it finishes. A failure goes to <see cref="UiDiagnostics"/>.</summary>
     /// <param name="label">The button label.</param>
-    /// <param name="action">The work to start, invoked on the draw thread.</param>
-    /// <param name="style">The style. A neutral themed button when <see langword="null"/>.</param>
-    /// <param name="size">The size. Measured from the label when zero.</param>
-    /// <param name="onCompleted">Invoked on the draw thread when the task finishes, with the exception that failed it.</param>
-    /// <returns>True on the frame the task was started.</returns>
-    /// <exception cref="ArgumentNullException"><paramref name="action"/> is <see langword="null"/>.</exception>
+    /// <param name="action">The work to start, on the draw thread.</param>
+    /// <param name="style">The style. Neutral when null.</param>
+    /// <param name="size">The size, measured from the label when zero.</param>
+    /// <param name="onCompleted">Called on the draw thread when the task ends, with its exception.</param>
+    /// <returns>True on the frame the task started.</returns>
+    /// <exception cref="ArgumentNullException">When <paramref name="action"/> is null.</exception>
     public static bool Async(string label, Func<Task> action, ButtonStyle? style = null, Vector2 size = default, Action<Exception?>? onCompleted = null)
     {
         ArgumentNullException.ThrowIfNull(label);
@@ -182,9 +172,7 @@ public static class NoireButtons
         return started;
     }
 
-    /// <summary>
-    /// Whether an asynchronous button's task is currently running.
-    /// </summary>
+    /// <summary>Whether an asynchronous button's task is currently running.</summary>
     /// <param name="label">The same label the button is drawn with.</param>
     /// <returns>True while the task is running.</returns>
     public static bool IsRunning(string label)
@@ -195,7 +183,7 @@ public static class NoireButtons
         return running != null && !running.IsCompleted;
     }
 
-    // Keyed by the full ImGui id. Two buttons sharing a label under different PushId scopes keep their own state.
+    // Keyed by the full ImGui id: equal labels under different PushId scopes keep their own state.
     private static string StateKey(string label) => ImGui.GetID(label).ToString(CultureInfo.InvariantCulture);
 
     #endregion
@@ -231,7 +219,7 @@ public static class NoireButtons
         // ImGui keys the popup on the id's bytes.
         var popupId = UiIds.For(label, "Menu");
 
-        // The caret is drawn before the menu body runs. A nested split button cannot see it half written.
+        // Drawn before the menu body runs: a nested split button never sees it half written.
         var caretStyle = CaretScratch;
         caretStyle.CopyFrom(style);
         caretStyle.Icon = FontAwesomeIcon.CaretDown;
@@ -239,7 +227,6 @@ public static class NoireButtons
         if (Button(UiIds.Join("##", label, "Menu"), caretStyle, new Vector2(caretWidth, mainHeight)))
             ImGui.OpenPopup(popupId);
 
-        // Inside the popup the current window is the popup.
         var ownerInFront = UiWindowOrder.InTopLayer;
 
         if (ImGui.BeginPopup(popupId))
@@ -318,7 +305,7 @@ public static class NoireButtons
         using var draw = UiDraw.Begin();
         var drawList = draw.List;
 
-        // The label is still laid out with no draw list. A null list would fault in the custom hook.
+        // Laid out with no draw list: the custom hook would fault on a null one.
         if (!drawList.IsNull)
         {
             if (style.CustomDraw != null)
@@ -352,14 +339,14 @@ public static class NoireButtons
 
     #region Segmented
 
-    /// <summary>Draws a row of joined options where exactly one is selected.</summary>
-    /// <param name="id">A unique id for the control.</param>
-    /// <param name="selected">The index of the selected option.</param>
+    /// <summary>Draws a row of joined options, exactly one selected.</summary>
+    /// <param name="id">A unique id.</param>
+    /// <param name="selected">The selected index.</param>
     /// <param name="options">The option labels.</param>
-    /// <param name="style">The segments' style. A themed control when <see langword="null"/>.</param>
-    /// <param name="width">The total width in pixels. Zero measures from the labels, a negative value fills the available space.</param>
+    /// <param name="style">The style. Themed when null.</param>
+    /// <param name="width">The total width in pixels. Zero measures the labels, negative fills the space.</param>
     /// <returns>True on the frame the selection changed.</returns>
-    /// <exception cref="ArgumentNullException"><paramref name="options"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentNullException">When <paramref name="options"/> is null.</exception>
     public static bool Segmented(string id, ref int selected, IReadOnlyList<string> options, ButtonStyle? style = null, float width = 0f)
     {
         ArgumentNullException.ThrowIfNull(id);
@@ -404,7 +391,6 @@ public static class NoireButtons
 
             var isSelected = index == selected;
 
-            // Paint reads everything off the style before returning.
             var segment = SegmentScratch;
             segment.CopyFrom(style);
             segment.Color = isSelected ? accent : theme.Resolve(ThemeColor.SurfaceSunken);
@@ -611,8 +597,12 @@ public static class NoireButtons
         var textSize = NoireText.CalcSizeInCurrentFont(text);
         var contentWidth = iconSize.X + (hasIcon && text.Length > 0 ? gap : 0f) + textSize.X;
 
+        // A label wider than the button, such as a long translation, ends in an ellipsis.
+        var textRight = max.X - padding.X;
+        var overflows = contentWidth > textRight - (min.X + padding.X);
+
         var centerY = (min.Y + max.Y) * 0.5f;
-        var x = style.CenterLabel
+        var x = style.CenterLabel && !overflows
             ? (min.X + max.X) * 0.5f - contentWidth * 0.5f
             : min.X + padding.X;
 
@@ -635,8 +625,19 @@ public static class NoireButtons
             x += iconSize.X + (text.Length > 0 ? gap : 0f);
         }
 
-        if (text.Length > 0)
-            drawList.AddText(new Vector2(x, centerY - textSize.Y * 0.5f), color, text);
+        if (text.Length == 0)
+            return;
+
+        var textMin = new Vector2(x, centerY - textSize.Y * 0.5f);
+
+        if (!overflows)
+        {
+            drawList.AddText(textMin, color, text);
+            return;
+        }
+
+        using (UiPush.Color(ImGuiCol.Text, textColor))
+            ImGuiP.RenderTextEllipsis(drawList, textMin, new Vector2(textRight, textMin.Y + textSize.Y), textRight, textRight, text, textSize);
     }
 
     private static void DrawSpinner(ImDrawListPtr drawList, Vector2 center, float radius, Vector4 color)
@@ -710,7 +711,6 @@ public static class NoireButtons
         public static HoldState Ready => new() { Armed = true };
     }
 
-    // Handed out by reference. Drawing code clones when it needs a variant.
     private static class ToneStyles
     {
         private static readonly ButtonStyle Neutral = new() { Tone = ButtonTone.Neutral };

@@ -16,6 +16,9 @@ public sealed record Material
     /// <summary>Whether pixels are occluded by the game's world geometry, ignored by <see cref="MaterialDomain.GroundDecal"/>.</summary>
     public DepthMode Depth { get; init; } = DepthMode.TestOnly;
 
+    /// <summary>Whether water and other surfaces drawn after the game's opaque pass hide this material, null following <see cref="NoireDraw3D.TranslucentOcclusion"/>.</summary>
+    public TranslucentOcclusion? TranslucentOcclusion { get; init; }
+
     /// <summary>What this material does on frames where the game's depth buffer cannot be read.</summary>
     public DepthUnavailableBehavior WhenDepthUnavailable { get; init; } = DepthUnavailableBehavior.Ignore;
 

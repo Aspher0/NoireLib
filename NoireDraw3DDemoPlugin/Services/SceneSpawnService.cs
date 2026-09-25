@@ -51,7 +51,6 @@ internal sealed class SceneSpawnService : IDisposable
     public float WorldRadius { get; set; } = 20f;
     public bool WorldAnalytic { get; set; } = true;
 
-    /// <summary>The status line the Scenes tab shows under the world/model actions.</summary>
     public string Status { get; set; } = string.Empty;
 
     public void EnsureMainScene()
@@ -165,7 +164,7 @@ internal sealed class SceneSpawnService : IDisposable
             }, TaskScheduler.Default);
     }
 
-    /// <summary>Spawns the game's real collision around the player as a translucent mesh. Framework thread only.</summary>
+    // Framework thread only.
     public void SpawnWorldGeometry(DemoScene demo)
     {
         if (demo.Scene.IsDisposed)
@@ -183,7 +182,7 @@ internal sealed class SceneSpawnService : IDisposable
         Status = "Spawned the real collision around you, translucent blue.";
     }
 
-    /// <summary>Projects a decal footprint onto the real collision surface under the player. Framework thread only.</summary>
+    // Framework thread only.
     public void SpawnWorldDecal(DemoScene demo)
     {
         if (demo.Scene.IsDisposed)

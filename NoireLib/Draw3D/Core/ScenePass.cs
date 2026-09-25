@@ -109,6 +109,26 @@ internal sealed unsafe class ScenePass : IDisposable
 
     public bool HasOutlinedItems => hasOutlined;
 
+    // Whether an item of the last main pass resolved to see-through, snapshot or not.
+    public bool LastWantedOpaqueDepth { get; private set; }
+
+    // Whether an item of the last main pass occluded against the snapshot.
+    public bool LastUsedOpaqueDepth { get; private set; }
+
+    // The snapshot when the item sees through surfaces drawn after the opaque pass and a snapshot exists, else the full depth.
+    internal static nint OcclusionSrv(in MaterialData mat, TranslucentOcclusion fallback, nint sceneDepthSrv, nint opaqueDepthSrv, ref bool wanted, ref bool used)
+    {
+        if ((mat.Translucent ?? fallback) != TranslucentOcclusion.SeeThrough)
+            return sceneDepthSrv;
+
+        wanted = true;
+        if (opaqueDepthSrv == 0 || sceneDepthSrv == 0)
+            return sceneDepthSrv;
+
+        used = true;
+        return opaqueDepthSrv;
+    }
+
     public int CountTopSurfaceDecals()
     {
         var n = 0;
@@ -410,6 +430,8 @@ internal sealed unsafe class ScenePass : IDisposable
         RenderTarget sceneRt,
         DepthTarget privateDepth,
         ID3D11ShaderResourceView* sceneDepthSrv,
+        ID3D11ShaderResourceView* opaqueDepthSrv,
+        TranslucentOcclusion translucentOcclusion,
         ID3D11ShaderResourceView* worldHeightSrv,
         ID3D11ShaderResourceView* sceneStencilSrv,
         uint characterStencil,
@@ -535,6 +557,8 @@ internal sealed unsafe class ScenePass : IDisposable
             tex.AcquireSync();
 
         objectCbCacheValid = false;
+        var wantedOpaqueDepth = false;
+        var usedOpaqueDepth = false;
 
         var i0 = 0;
         while (i0 < itemCount)
@@ -622,7 +646,9 @@ internal sealed unsafe class ScenePass : IDisposable
             }
 
             // Sampling a null SRV returns 0: fully visible.
-            var wantDepthSrv = item.Mat.Depth == DepthMode.Ignore && item.Mat.Domain != MaterialDomain.GroundDecal ? null : sceneDepthSrv;
+            var wantDepthSrv = item.Mat.Depth == DepthMode.Ignore && item.Mat.Domain != MaterialDomain.GroundDecal
+                ? null
+                : (ID3D11ShaderResourceView*)OcclusionSrv(in item.Mat, translucentOcclusion, (nint)sceneDepthSrv, (nint)opaqueDepthSrv, ref wantedOpaqueDepth, ref usedOpaqueDepth);
             if ((nint)wantDepthSrv != curDepthSrv)
             {
                 ctx->PSSetShaderResources(0, 1, &wantDepthSrv);
@@ -783,11 +809,15 @@ internal sealed unsafe class ScenePass : IDisposable
 
         foreach (var tex in KeyedTextures)
             tex.ReleaseSync();
+
+        if (collectingForMainPass)
+        {
+            LastWantedOpaqueDepth = wantedOpaqueDepth;
+            LastUsedOpaqueDepth = usedOpaqueDepth;
+        }
     }
 
-    // The nearest surface of the whole layer, translucent items included, for the temporal resolve to reproject
-    // through. Decals are left out: they lie on the game's surface and reproject through its depth. The caller holds
-    // the StateGuard.
+    // The whole layer's nearest surface for the temporal resolve, decals left out. The caller holds the StateGuard.
     public bool RenderLayerDepth(RenderDevice device, ID3D11DeviceContext* ctx, DepthTarget target, uint width, uint height, in Matrix4x4 viewProj, ShaderLibrary shaders, StateCache cache)
     {
         if (!collectingForMainPass || frameCb == null || objectCb == null || !target.EnsureSize(device, width, height) || target.Dsv == null)
@@ -1075,6 +1105,8 @@ internal sealed unsafe class ScenePass : IDisposable
         DepthTarget privateDepth,
         bool privateDepthValid,
         ID3D11ShaderResourceView* sceneDepthSrv,
+        ID3D11ShaderResourceView* opaqueDepthSrv,
+        TranslucentOcclusion translucentOcclusion,
         Vector4 depthCal,
         ShaderLibrary shaders,
         StateCache cache,
@@ -1132,6 +1164,8 @@ internal sealed unsafe class ScenePass : IDisposable
         ID3D11DepthStencilState* curDepthState = null;
         Mesh? curMesh = null;
         nint curDepthSrv = -1;
+        var wantedOpaqueDepth = false;
+        var usedOpaqueDepth = false;
 
         var pipeline = shaders.GetOutlineMaskMesh(device);
         if (pipeline != null)
@@ -1155,7 +1189,9 @@ internal sealed unsafe class ScenePass : IDisposable
                 curDepthState = depthState;
             }
 
-            var wantDepthSrv = item.Mat.Depth == DepthMode.Ignore ? null : sceneDepthSrv;
+            var wantDepthSrv = item.Mat.Depth == DepthMode.Ignore
+                ? null
+                : (ID3D11ShaderResourceView*)OcclusionSrv(in item.Mat, translucentOcclusion, (nint)sceneDepthSrv, (nint)opaqueDepthSrv, ref wantedOpaqueDepth, ref usedOpaqueDepth);
             if ((nint)wantDepthSrv != curDepthSrv)
             {
                 ctx->PSSetShaderResources(0, 1, &wantDepthSrv);

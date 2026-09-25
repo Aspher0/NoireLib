@@ -13,24 +13,8 @@ using Xunit;
 namespace NoireLib.Tests;
 
 /// <summary>
-/// Game-free tests for the NoireUpdateTracker module.<br/>
-/// They lock three invariants. First, the
-/// <see cref="NoireUpdateTracker.ShouldStopNotifyingAfterFirstNotification"/> gate closes only when a detected update
-/// actually reached a notification channel, so a tracker with every channel switched off keeps checking rather than
-/// silencing itself over a detection nobody was told about. Second, the gate reopens when the thing it closed over stops
-/// applying: what was shown was an update from one repository, so a different <see cref="NoireUpdateTracker.RepoUrl"/>
-/// cannot be silenced by it. Third, the check timer is stopped exactly while there is nothing to fetch, and every start
-/// of it restarts the countdown to the first check.<br/><br/>
-/// A disposed module is the fourth: every path that would start a check or a timer recognizes disposal for itself rather
-/// than resurrect a module whose HTTP client and disposal token source are already torn down. The module keeps its own
-/// latch rather than reading its active state, so a start path cannot be reached through a window where the two disagree.
-/// Teardown itself is one of those paths, and
-/// it runs more than once whenever a consumer disposes the module it owns and the library also tears its modules down,
-/// so it has to run once and leave the latch closed however often it is called.<br/><br/>
-/// The module is constructible without the game: neither initializing nor activating it needs an initialized NoireLib,
-/// and a check declines and says so while there is not one. The delivery path is therefore driven directly through
-/// <see cref="NoireUpdateTracker.ApplyUpdateDetected(Version, Version)"/>, with the event bus as the channel, since the
-/// other two are Dalamud services and the event bus is the one a game-free test can observe.
+/// Locks the notification gate, the check timer and disposal: the gate closes only on a delivery and reopens for a
+/// new repository, the timer runs only with something to fetch, and teardown runs once and stays latched.
 /// </summary>
 [SupportedOSPlatform("windows")]
 public class NoireUpdateTrackerTests : IDisposable
@@ -49,14 +33,11 @@ public class NoireUpdateTrackerTests : IDisposable
             }
             catch
             {
-                // Best effort cleanup.
             }
         }
     }
 
-    /// <summary>
-    /// Builds a silent tracker and registers it for disposal, so that no check timer outlives its test.
-    /// </summary>
+    // Registered for disposal: no check timer outlives its test.
     private NoireUpdateTracker MakeTracker(bool active = false, string? repoUrl = null)
     {
         var tracker = new NoireUpdateTracker(
@@ -89,18 +70,13 @@ public class NoireUpdateTrackerTests : IDisposable
     private static readonly Version CurrentVersion = new(1, 0, 0, 0);
     private static readonly Version RemoteVersion = new(2, 0, 0, 0);
 
-    /// <summary>
-    /// The timer instance the module is currently scheduling checks on, or null while it is stopped.
-    /// </summary>
+    /// <summary>The timer instance the module is currently scheduling checks on, or null while it is stopped.</summary>
     private static Timer? CheckTimerOf(NoireUpdateTracker tracker)
         => (Timer?)typeof(NoireUpdateTracker)
             .GetField("updateCheckTimer", BindingFlags.Instance | BindingFlags.NonPublic)!
             .GetValue(tracker);
 
-    /// <summary>
-    /// Reads the module source with line endings normalized, so that assertions spanning a line break do not depend on
-    /// how the repository happens to be checked out.
-    /// </summary>
+    // Line endings normalized: assertions spanning a line break do not depend on the checkout.
     private static string ReadUpdateTrackerSource()
         => File.ReadAllText(FindUpdateTrackerSourceFile()).Replace("\r\n", "\n");
 
@@ -123,10 +99,7 @@ public class NoireUpdateTrackerTests : IDisposable
 
     #region Game-free construction
 
-    /// <summary>
-    /// The module records how it should behave and starts a timer; neither needs a Dalamud service. Requiring one in
-    /// order to exist would put every rule below out of reach of a test.
-    /// </summary>
+    /// <summary>Neither recording settings nor starting a timer needs a Dalamud service.</summary>
     [Fact]
     public void Constructor_WithoutAnInitializedNoireLib_Succeeds()
     {
@@ -138,10 +111,7 @@ public class NoireUpdateTrackerTests : IDisposable
         tracker.RepoUrl.Should().Be("https://example.invalid/repo.json");
     }
 
-    /// <summary>
-    /// A check is the part that genuinely needs NoireLib, and it declines rather than throwing, which is what keeps an
-    /// uninitialized library from turning into an unobserved exception on the thread pool.
-    /// </summary>
+    /// <summary>A check declines without NoireLib instead of faulting on the thread pool.</summary>
     [Fact]
     public async Task CheckForUpdatesNowAsync_WithoutAnInitializedNoireLib_CompletesWithoutThrowing()
     {
@@ -176,10 +146,7 @@ public class NoireUpdateTrackerTests : IDisposable
         await act.Should().NotThrowAsync("there is nothing to fetch, which is not a failure");
     }
 
-    /// <summary>
-    /// The returned task is what a caller awaits to re-enable the control that started the check, so it must complete
-    /// rather than fault whatever the check ran into.
-    /// </summary>
+    /// <summary>A caller awaits this task to re-enable its control: it must complete, never fault.</summary>
     [Fact]
     public async Task CheckForUpdatesNowAsync_ReturnsATaskThatCompletes()
     {
@@ -224,12 +191,7 @@ public class NoireUpdateTrackerTests : IDisposable
             "a check on a disposed module declines rather than reaching the torn-down token source and faulting");
     }
 
-    /// <summary>
-    /// Disposal leaves <see cref="NoireUpdateTracker.IsActive"/> true, so the active state cannot stand in for a
-    /// disposed one. A timer started from here would outlive the module that owns it: teardown has already disposed the
-    /// timer it knew about, so nothing would ever dispose this one and it would go on waking every interval to run
-    /// checks against a disposed HTTP client.
-    /// </summary>
+    /// <summary>IsActive stays true after disposal. A timer started here would outlive the module.</summary>
     [Fact]
     public void RepoUrl_AssignedOnADisposedModule_StartsNoTimer()
     {
@@ -241,10 +203,6 @@ public class NoireUpdateTrackerTests : IDisposable
         CheckTimerOf(tracker).Should().BeNull("a timer started after teardown would have nothing left to dispose it");
     }
 
-    /// <summary>
-    /// The interval setter restarts the timer for the same reason the URL setter does, so it resurrects a disposed
-    /// module the same way.
-    /// </summary>
     [Fact]
     public void SetCheckIntervalMinutes_OnADisposedModule_StartsNoTimer()
     {
@@ -258,10 +216,6 @@ public class NoireUpdateTrackerTests : IDisposable
         CheckTimerOf(tracker).Should().BeNull("a new interval on a dead module has nothing to schedule");
     }
 
-    /// <summary>
-    /// Reopening the gate touches nothing that teardown disposes, so it stays a plain no-op rather than throwing at a
-    /// consumer that resets a module it has already torn down.
-    /// </summary>
     [Fact]
     public void ResetUpdateNotification_OnADisposedModule_DoesNotThrow()
     {
@@ -273,11 +227,7 @@ public class NoireUpdateTrackerTests : IDisposable
         act.Should().NotThrow();
     }
 
-    /// <summary>
-    /// A module is reachable for disposal twice over, from the consumer that owns it and from the library tearing
-    /// its modules down, and neither of the two can tell that the other already ran. A second pass therefore has to
-    /// find nothing left to do rather than cancel a token source it has already disposed, which throws.
-    /// </summary>
+    /// <summary>A module is disposed by its owner and by the library: the second pass must find nothing to do.</summary>
     [Fact]
     public void Dispose_CalledTwice_DoesNotThrow()
     {
@@ -292,10 +242,6 @@ public class NoireUpdateTrackerTests : IDisposable
         act.Should().NotThrow("teardown is reachable both from a consumer and from the library, and neither can tell that the other already ran");
     }
 
-    /// <summary>
-    /// The second pass returning early must not cost the first pass its effect: the latch is what every path that would
-    /// start a check or a timer reads, so a module disposed twice has to stay just as disposed as one disposed once.
-    /// </summary>
     [Fact]
     public void Dispose_CalledRepeatedly_LeavesTheModuleDisposed()
     {
@@ -314,10 +260,6 @@ public class NoireUpdateTrackerTests : IDisposable
         CheckTimerOf(tracker).Should().BeNull();
     }
 
-    /// <summary>
-    /// The disposed guard inside the check reads the same latch a repeated teardown returns on, so the check must still
-    /// decline rather than reach the token source that teardown disposed.
-    /// </summary>
     [Fact]
     public async Task CheckForUpdatesNowAsync_AfterARepeatedDispose_ReturnsATaskThatCompletes()
     {
@@ -333,12 +275,8 @@ public class NoireUpdateTrackerTests : IDisposable
     }
 
     /// <summary>
-    /// Teardown rests on an order, and the guard that makes it run once must not displace it: the latch is what closes
-    /// every path that would start a check or a timer, including one racing this teardown, and the cancellation is what
-    /// calls off a check already suspended on the HTTP call. Both have to land before the objects they protect are torn
-    /// down.<br/>
-    /// Pinned at the source because the order has no game-free effect to observe it by: each step's absence shows up as
-    /// a race, and the resources are private.
+    /// The latch and the cancellation land before the objects they protect are torn down. Pinned at the source: the
+    /// order only shows as a race.
     /// </summary>
     [Fact]
     public void DisposeInternal_ShouldGuardOnTheLatchWithoutReorderingTeardown()
@@ -398,10 +336,6 @@ public class NoireUpdateTrackerTests : IDisposable
             "a subscriber received the detection and decides what to present, which is a delivery like any other");
     }
 
-    /// <summary>
-    /// The latch is only ever set by a delivery. A later detection that reaches nobody must not reopen a gate an
-    /// earlier delivery closed.
-    /// </summary>
     [Fact]
     public void ApplyUpdateDetected_ThatReachesNobodyAfterOneThatDid_KeepsTheGateClosed()
     {
@@ -455,10 +389,6 @@ public class NoireUpdateTrackerTests : IDisposable
 
     #region Reopening the notification gate
 
-    /// <summary>
-    /// A closed gate stops every further check. Without a way back it would be a one-shot per session, which is wrong
-    /// the moment the tracker is pointed somewhere else.
-    /// </summary>
     [Fact]
     public void ResetUpdateNotification_ReopensTheGate()
     {
@@ -514,10 +444,6 @@ public class NoireUpdateTrackerTests : IDisposable
         tracker.HasShownUpdateNotification.Should().BeTrue("the repository did not change, so nothing was invalidated");
     }
 
-    /// <summary>
-    /// Reset-then-check is the documented way to report a still-pending update again on demand, so the two must
-    /// compose into one statement and the check must survive being started from a reopened gate.
-    /// </summary>
     [Fact]
     public async Task ResetUpdateNotification_ChainedIntoAManualCheck_Completes()
     {
@@ -540,9 +466,6 @@ public class NoireUpdateTrackerTests : IDisposable
 
     #region The check timer
 
-    /// <summary>
-    /// Every check would fetch nothing, so the timer must not wake on the interval to do nothing.
-    /// </summary>
     [Fact]
     public void CheckTimer_WithNoRepoUrl_StaysStopped()
     {
@@ -586,11 +509,6 @@ public class NoireUpdateTrackerTests : IDisposable
         CheckTimerOf(tracker).Should().BeNull();
     }
 
-    /// <summary>
-    /// Reconfiguring replaces the timer, which is what restarts the countdown to the first check. It is the whole
-    /// mechanism behind both halves of the timing rule: a new repository is checked promptly instead of at the end of
-    /// the interval that was already running, and a run of changes settles into one check instead of one request each.
-    /// </summary>
     [Fact]
     public void CheckTimer_OnEveryReconfiguration_IsRestarted()
     {
@@ -623,6 +541,62 @@ public class NoireUpdateTrackerTests : IDisposable
         CheckTimerOf(tracker).Should().BeSameAs(before);
     }
 
+    /// <summary>Start and stop swap the timer under one lock: a racing pair leaves at most one timer.</summary>
+    [Fact]
+    public void CheckTimer_StartedConcurrently_EndsWithOneTimerThatAStopRemoves()
+    {
+        var tracker = MakeTracker(active: true, repoUrl: "https://example.invalid/repo.json");
+
+        Parallel.For(0, 400, i => tracker.SetCheckIntervalMinutes(30 + (i % 5)));
+
+        CheckTimerOf(tracker).Should().NotBeNull();
+
+        tracker.Dispose();
+        CheckTimerOf(tracker).Should().BeNull("disposal must stop the timer the last start installed");
+    }
+
+    /// <summary>
+    /// Pinned at the source because a timer a racing start leaked is unreferenced and has no game-free effect to
+    /// observe: both paths swap the field under the same lock, and a replaced timer's running callback is waited out.
+    /// </summary>
+    [Fact]
+    public void StartAndStopUpdateCheckTimer_ShouldSwapTheTimerUnderOneLockAndWaitOutTheCallback()
+    {
+        var source = ReadUpdateTrackerSource();
+
+        var start = source[source.IndexOf("private void StartUpdateCheckTimer()", StringComparison.Ordinal)..];
+        start = start[..start.IndexOf("private void RunScheduledCheck()", StringComparison.Ordinal)];
+        var stop = source[source.IndexOf("private void StopUpdateCheckTimer()", StringComparison.Ordinal)..];
+        stop = stop[..stop.IndexOf("private static void DisposeTimerAndWait", StringComparison.Ordinal)];
+
+        start.Should().Contain("lock (timerLock)").And.Contain("DisposeTimerAndWait(replaced);");
+        stop.Should().Contain("lock (timerLock)").And.Contain("DisposeTimerAndWait(timer);");
+        source.Should().Contain("if (timer.Dispose(timerDrained))",
+            "Timer.Dispose() returns while a callback may still be running; only the wait-handle overload waits it out");
+        source.Should().NotContain("async _ =>", "an async timer callback is async void, and a fault in it terminates the process");
+    }
+
+    /// <summary>
+    /// The timer callback is synchronous and starts the check; its safety must not depend on the check happening to
+    /// catch everything.
+    /// </summary>
+    [Fact]
+    public async Task RunScheduledCheck_WithAFaultingCheck_NeverFaults()
+    {
+        var tracker = MakeTracker();
+
+        var faultedTask = tracker.RunScheduledCheck(() => Task.FromException(new InvalidOperationException("check fault")));
+        await faultedTask;
+        faultedTask.IsCompletedSuccessfully.Should().BeTrue();
+
+        Task? thrownTask = null;
+        Action act = () => thrownTask = tracker.RunScheduledCheck(() => throw new InvalidOperationException("synchronous fault"));
+
+        act.Should().NotThrow("an exception escaping a timer callback is unhandled on the thread pool and terminates the game");
+        await thrownTask!;
+        thrownTask!.IsCompletedSuccessfully.Should().BeTrue();
+    }
+
     #endregion
 
     #region The check start delay
@@ -636,7 +610,6 @@ public class NoireUpdateTrackerTests : IDisposable
     [Fact]
     public void CheckStartDelayMs_SetToZero_IsAccepted()
     {
-        // Zero is the documented way to opt out of the settle window and check the moment the timer starts.
         var tracker = MakeTracker();
 
         tracker.SetCheckStartDelayMs(0).CheckStartDelayMs.Should().Be(0);
@@ -653,10 +626,7 @@ public class NoireUpdateTrackerTests : IDisposable
     }
 
     /// <summary>
-    /// The due time is the delay rather than the check interval, which is what stops a reconfiguration from waiting up
-    /// to a full interval before it takes effect.<br/>
-    /// Pinned at the source because a <see cref="Timer"/> does not expose the due time it was given, and a check has no
-    /// game-free effect to observe it by: without an initialized NoireLib it declines and returns.
+    /// The first check waits the start delay, not the interval. Pinned at the source: a Timer does not expose its due time.
     /// </summary>
     [Fact]
     public void StartUpdateCheckTimer_ShouldScheduleTheFirstCheckAfterTheCheckStartDelay()
@@ -665,10 +635,10 @@ public class NoireUpdateTrackerTests : IDisposable
 
         source.Should().Contain(
             """
-            updateCheckTimer = new Timer(async _ => await CheckForUpdateAsync(),
-                        null,
-                        TimeSpan.FromMilliseconds(CheckStartDelayMs),
-                        TimeSpan.FromMinutes(CheckIntervalMinutes));
+            updateCheckTimer = new Timer(static state => ((NoireUpdateTracker)state!).RunScheduledCheck(),
+                            this,
+                            TimeSpan.FromMilliseconds(CheckStartDelayMs),
+                            TimeSpan.FromMinutes(CheckIntervalMinutes));
             """.Replace("\r\n", "\n"),
             "the first check must be due after the settle delay, and only the repeat must be due after the interval");
     }
@@ -677,11 +647,7 @@ public class NoireUpdateTrackerTests : IDisposable
 
     #region Framework thread marshalling
 
-    /// <summary>
-    /// The notification manager, the chat log and event bus handlers all expect the framework thread, while the HTTP
-    /// call deliberately runs off it so a check cannot stall a frame. The consequences must therefore be marshalled
-    /// back, as one hop rather than one per channel.
-    /// </summary>
+    /// <summary>Consequences reach the framework thread in one hop. The HTTP call stays off it.</summary>
     [Fact]
     public void CheckForUpdate_ShouldMarshalItsConsequencesOntoTheFrameworkThread()
     {
@@ -698,11 +664,7 @@ public class NoireUpdateTrackerTests : IDisposable
             "framework thread hops go through AsyncHelper rather than being hand-rolled");
     }
 
-    /// <summary>
-    /// The check is awaited from a TimerCallback, which makes the calling lambda async void: an exception escaping it
-    /// has no caller to observe it and terminates the process rather than failing one check. The public manual check
-    /// shares that body, so it inherits the same boundary and cannot fault the task it hands back.
-    /// </summary>
+    /// <summary>The check runs from a TimerCallback: an escaping exception would terminate the process.</summary>
     [Fact]
     public void CheckForUpdate_ShouldKeepItsWholeBodyInsideTheErrorBoundary()
     {
@@ -721,12 +683,7 @@ public class NoireUpdateTrackerTests : IDisposable
     }
 
     /// <summary>
-    /// Reading the token of a disposed <see cref="CancellationTokenSource"/> throws, so a check on a disposed module
-    /// has to decline before it gets there. The outer boundary would otherwise turn a call on a dead module into an
-    /// error line blaming the network or the repository.<br/>
-    /// Pinned at the source alongside the boundary above: the guard's effect is that a misleading error is not logged,
-    /// and a log line is not something this suite observes. The guard must also sit inside the try like every other
-    /// statement, since the check is awaited from a TimerCallback.
+    /// A disposed module declines before reading its disposed token source, inside the try like every statement.
     /// </summary>
     [Fact]
     public void CheckForUpdate_ShouldDeclineOnADisposedModuleBeforeReadingTheDisposalToken()
@@ -780,7 +737,6 @@ public class NoireUpdateTrackerTests : IDisposable
     [Fact]
     public void ParseRepositoryResponse_WithTrailingContent_Throws()
     {
-        // A repository response is exactly one document. Trailing content means the body is not what it claims to be.
         var act = () => NoireUpdateTracker.ParseRepositoryResponse("[] {}");
 
         act.Should().Throw<Exception>();

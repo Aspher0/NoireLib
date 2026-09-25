@@ -93,7 +93,6 @@ internal sealed class CharacterSource : GameWatcherSource
         unionScopes = interests.Select(i => i.Scope).Distinct().ToArray();
     }
 
-    /// <inheritdoc/>
     protected override void OnActivate()
     {
         // Baseline seeding: subjects already present seed the baseline without firing spawn events -
@@ -102,7 +101,6 @@ internal sealed class CharacterSource : GameWatcherSource
         SeedBaseline();
     }
 
-    /// <inheritdoc/>
     protected override void OnDeactivate()
     {
         baseline.Clear();
@@ -145,7 +143,6 @@ internal sealed class CharacterSource : GameWatcherSource
         return false;
     }
 
-    /// <inheritdoc/>
     protected override void OnTick(DateTimeOffset now)
     {
         if (!NoireService.ClientState.IsLoggedIn)

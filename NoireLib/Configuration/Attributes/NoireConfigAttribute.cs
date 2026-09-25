@@ -15,6 +15,12 @@ public sealed class NoireConfigAttribute : Attribute
     public string? StaticClassName { get; }
 
     /// <summary>
+    /// The name of a generated static class holding one <see cref="NoireSetting{TValue}"/> per simple property, plus
+    /// <c>All</c>; <see langword="null"/> generates none.
+    /// </summary>
+    public string? SettingsClassName { get; set; }
+
+    /// <summary>
     /// Marks the class for source generation with the default accessor name
     /// (your configuration class name with the "Static" suffix, example: Configuration -> ConfigurationStatic).
     /// </summary>
@@ -23,9 +29,7 @@ public sealed class NoireConfigAttribute : Attribute
         StaticClassName = null;
     }
 
-    /// <summary>
-    /// Marks the class for source generation with a custom static accessor name.
-    /// </summary>
+    /// <summary>Marks the class for source generation with a custom static accessor name.</summary>
     /// <param name="staticClassName">The name for the generated static accessor class.</param>
     public NoireConfigAttribute(string staticClassName)
     {

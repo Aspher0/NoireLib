@@ -19,6 +19,13 @@ internal sealed class RendererPage
                 "Applied to the whole finished layer at composite time, over whatever each material already does.");
         }
 
+        Ui.Section("World occlusion");
+        using (Ui.Form("renderer.occlusion"))
+        {
+            Ui.Enum("Translucent surfaces", static () => NoireDraw3D.TranslucentOcclusion, static v => NoireDraw3D.TranslucentOcclusion = v,
+                "SeeThrough: only opaque geometry occludes, so content under water shows from above. Occlude: water and later surfaces hide content like walls. Materials can override it.");
+        }
+
         Ui.Section("UI hidden");
         using (Ui.Form("renderer.uihidden"))
         {

@@ -52,6 +52,12 @@ public sealed class RibbonFieldOptions
     /// <summary>How many segments each ribbon is sampled into across the sampled span.</summary>
     public int Samples { get; set; } = 60;
 
+    /// <summary>
+    /// How far, in real pixels, a ribbon edge may lag before the ribbons are laid out again. The last layout replays until
+    /// then. 0 lays them out every frame.
+    /// </summary>
+    public float MaxDriftPixels { get; set; }
+
     /// <summary>How far the sampled span reaches past each side of the field.</summary>
     public float Overscan { get; set; } = 80f;
 

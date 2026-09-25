@@ -7,6 +7,7 @@ You are reading the documentation for the `ContextMenuHelper` static helper.
 - [One entry](#one-entry)
 - [The entry record](#the-entry-record)
 - [Items](#items)
+- [Characters](#characters)
 - [Glyphs](#glyphs)
 - [Filtering](#filtering)
 - [Submenus](#submenus)
@@ -24,8 +25,9 @@ You are reading the documentation for the `ContextMenuHelper` static helper.
 right-click menus.
 
 - **One call per entry**, returning a token that removes it again.
-- **Every menu**: the one opened on a player or an NPC, the one opened on an inventory item, both, or any menu
-  opened on an item wherever it sits: the inventory, a chat link, a shop, a recipe, an item list.
+- **Every menu**: the one opened on a player or an NPC, the one opened on an inventory item, both, any menu
+  opened on an item wherever it sits (the inventory, a chat link, a shop, a recipe, an item list), any menu opened
+  on a character, or players only.
 - **Filtered per opening** by the target, by the addon the menu sits over, or by any predicate.
 - **Several glyphs** ahead of the label, where Dalamud's prefix slot holds one.
 - **Submenus** built when the entry is clicked, from whatever the plugin knows at that moment.
@@ -50,7 +52,7 @@ The third argument picks the menu:
 ContextMenuHelper.Register("Price check", click => Check(click.Context.ItemId), ContextMenuScope.Item);
 ```
 
-`ContextMenuScope` is `Default`, `Inventory`, `Everywhere` or `Item`.
+`ContextMenuScope` is `Default`, `Inventory`, `Everywhere`, `Item`, `Character` or `Player`.
 
 ---
 
@@ -85,8 +87,8 @@ using var registration = ContextMenuHelper.Register(entry);
 ```
 
 `ContextMenuContext` is what the opening carried: `Menu`, `AddonName`, `Item`, `ItemId`, `IsHqItem`, `ItemSource`,
-`TargetName`, `TargetObjectId`, `TargetContentId`, `TargetHomeWorldId`, `TargetObject`, and `Args` for Dalamud's own
-arguments. `Menu` is `Default` or `Inventory`, never `Everywhere` or `Item`.
+`TargetKind`, `TargetName`, `TargetObjectId`, `TargetContentId`, `TargetHomeWorldId`, `TargetObject`, and `Args` for Dalamud's own
+arguments. `Menu` is `Default` or `Inventory`, never one of the other scopes.
 
 ---
 
@@ -119,6 +121,27 @@ none either.
 
 ---
 
+## Characters
+
+`ContextMenuScope.Character` keeps an entry on every menu opened on a player or an NPC. `ContextMenuScope.Player` keeps
+it on players only.
+
+```csharp
+ContextMenuHelper.Register("Inspect gear", click => Inspect(click.Context.TargetContentId), ContextMenuScope.Player);
+```
+
+`TargetKind` is `None`, `Npc` or `Player`, for a predicate that needs the same answer:
+
+```csharp
+ShowWhen = context => context.TargetKind == ContextMenuTargetKind.Player && Friends.Contains(context.TargetContentId),
+```
+
+A target with a content id is a player, with or without an object: a chat sender, a party list row and a social
+list row all count. A character object that is not a player is an `Npc`: a battle NPC, an event NPC, a companion, a
+retainer.
+
+---
+
 ## Glyphs
 
 `Glyphs` is a list, and the entries appear in order ahead of the label.
@@ -140,7 +163,7 @@ prefix. The game applies it to any top-level entry that has none.
 Three filters run in order, and the first that fails ends the opening for that entry.
 
 ```csharp
-Scope = ContextMenuScope.Inventory,                       // which menu, or Item for any menu on an item
+Scope = ContextMenuScope.Inventory,                       // which menu, Item, Character or Player
 Addons = ["Inventory", "InventoryLarge"],                 // exact addon names, null for any
 ShowWhen = context => Market.Sells(context.ItemId),       // anything else
 ```
@@ -150,6 +173,7 @@ It never removes it.
 
 ```csharp
 ContextMenuHelper.Matches(entry, context);   // the same answer, for a test
+ContextMenuHelper.InScope(scope, context);   // the scope alone
 ```
 
 ---
@@ -220,6 +244,7 @@ OnConfigure = item => item.Name = MyOwnSeString(),
 ### The entry never appears
 
 - Check `Scope` against the menu you are opening. An `Inventory` entry never shows on a player.
+- Check `TargetKind` for a `Character` or `Player` entry. A name with no content id and no object is `None`.
 - Check `ItemId` for an `Item` entry. An addon whose item is not listed under [Items](#items) is read from the hovered
   item. It is zero when the cursor left the item before the menu opened.
 - Check `Addons` against the real addon name. It is case sensitive and empty for some openings.

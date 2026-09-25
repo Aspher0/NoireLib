@@ -19,6 +19,10 @@ public partial class NoireTaskQueue : NoireModuleBase<NoireTaskQueue>
     private TaskBatch? currentBatch;
     private QueueItemWrapper? currentItem;
 
+    // Working lists reused by the processing passes, which run on the framework thread only.
+    private readonly Stack<List<QueuedTask>> taskListPool = new();
+    private List<TaskBatch>? spareBatchList;
+
     private int totalTasksQueued;
     private int tasksCompleted;
     private int tasksCancelled;
@@ -36,9 +40,7 @@ public partial class NoireTaskQueue : NoireModuleBase<NoireTaskQueue>
     public NoireEventBus? EventBus { get; set; } = null;
 
     private QueueState queueState = QueueState.Idle;
-    /// <summary>
-    /// The current state of the queue.
-    /// </summary>
+    /// <summary>The current state of the queue.</summary>
     public QueueState QueueState
     {
         get => queueState;
@@ -46,9 +48,7 @@ public partial class NoireTaskQueue : NoireModuleBase<NoireTaskQueue>
     }
 
     private bool shouldProcessQueueAutomatically = false;
-    /// <summary>
-    /// If true, the queue will automatically start processing when a task or batch is added.
-    /// </summary>
+    /// <summary>If true, the queue will automatically start processing when a task or batch is added.</summary>
     public bool ShouldProcessQueueAutomatically
     {
         get => shouldProcessQueueAutomatically;
@@ -56,23 +56,17 @@ public partial class NoireTaskQueue : NoireModuleBase<NoireTaskQueue>
     }
 
     private bool shouldStopQueueOnComplete = true;
-    /// <summary>
-    /// If true, the queue will automatically stop when all items are completed.
-    /// </summary>
+    /// <summary>If true, the queue will automatically stop when all items are completed.</summary>
     public bool ShouldStopQueueOnComplete
     {
         get => shouldStopQueueOnComplete;
         set => shouldStopQueueOnComplete = value;
     }
 
-    /// <summary>
-    /// The default constructor needed for internal purposes.
-    /// </summary>
+    /// <summary>The default constructor needed for internal purposes.</summary>
     public NoireTaskQueue() : base() { }
 
-    /// <summary>
-    /// Creates a new instance of the <see cref="NoireTaskQueue"/> module.
-    /// </summary>
+    /// <summary>Creates a new instance of the <see cref="NoireTaskQueue"/> module.</summary>
     /// <param name="moduleId">The optional module identifier.</param>
     /// <param name="active">Whether the module should be active upon creation.</param>
     /// <param name="enableLogging">Whether to enable logging for this module.</param>
@@ -92,9 +86,7 @@ public partial class NoireTaskQueue : NoireModuleBase<NoireTaskQueue>
     internal NoireTaskQueue(ModuleId? moduleId, bool active = true, bool enableLogging = true)
     : base(moduleId, active, enableLogging) { }
 
-    /// <summary>
-    /// Initializes the module with optional initialization parameters.
-    /// </summary>
+    /// <summary>Initializes the module with optional initialization parameters.</summary>
     /// <param name="args">The initialization parameters</param>
     protected override void InitializeModule(params object?[] args)
     {
@@ -144,18 +136,14 @@ public partial class NoireTaskQueue : NoireModuleBase<NoireTaskQueue>
             NoireLogger.LogInfo(this, "Task Queue deactivated.");
     }
 
-    /// <summary>
-    /// Sets whether to automatically process the queue when tasks are added.
-    /// </summary>
+    /// <summary>Sets whether to automatically process the queue when tasks are added.</summary>
     public NoireTaskQueue SetAutoProcessing(bool autoProcess)
     {
         ShouldProcessQueueAutomatically = autoProcess;
         return this;
     }
 
-    /// <summary>
-    /// Sets whether to automatically stop the queue when all tasks are completed.
-    /// </summary>
+    /// <summary>Sets whether to automatically stop the queue when all tasks are completed.</summary>
     public NoireTaskQueue SetAutoStopQueueOnComplete(bool autoClear)
     {
         ShouldStopQueueOnComplete = autoClear;
@@ -186,8 +174,7 @@ public partial class NoireTaskQueue : NoireModuleBase<NoireTaskQueue>
                 NoireLogger.LogError(this, ex, "Error in queue processing.");
         }
 
-        // In its own try, separate from the one above, so a pass that threw still reconciles what it changed,
-        // and a callback throwing here cannot mask a processing error.
+        // A separate try: a pass that threw still reconciles, and a throwing callback here cannot mask a processing error.
         try
         {
             ReconcileConsumerWrittenStatuses();
@@ -199,9 +186,7 @@ public partial class NoireTaskQueue : NoireModuleBase<NoireTaskQueue>
         }
     }
 
-    /// <summary>
-    /// Internal dispose method called when the module is disposed.
-    /// </summary>
+    /// <summary>Internal dispose method called when the module is disposed.</summary>
     protected override void DisposeInternal()
     {
         if (NoireService.IsInitialized())

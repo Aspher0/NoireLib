@@ -60,6 +60,8 @@ internal static class UiFontCache
     // NaN before the first build. Claimed when a build starts.
     private static float builtScale = float.NaN;
 
+    private static int builtScripts;
+
     // An unbuilt handle pushes as a no-op. Check IFontHandle.Available first.
     internal static IFontHandle? Get(float logicalSizePx)
     {
@@ -67,8 +69,10 @@ internal static class UiFontCache
             return null;
 
         var size = Normalize(logicalSizePx);
+        var scripts = NoireScriptFonts.Generation;
 
-        if (IsHostDefault(size))
+        // The host font lacks a merged script's glyphs.
+        if (IsHostDefault(size) && NoireScriptFonts.Ranges == null)
             return null;
 
         using var draw = UiDraw.Begin();
@@ -78,9 +82,15 @@ internal static class UiFontCache
 
         lock (SyncRoot)
         {
+            if (scripts != builtScripts)
+            {
+                builtScripts = scripts;
+                dirty |= Handles.Count > 0;
+            }
+
             var stale = ScaleMovedLocked();
 
-            if (!stale && Handles.TryGetValue(size, out var existing))
+            if (!stale && !dirty && Handles.TryGetValue(size, out var existing))
             {
                 existing.LastUsedTicks = Stopwatch.GetTimestamp();
                 return existing.Handle;
@@ -301,12 +311,13 @@ internal static class UiFontCache
     private static void RegisterScaleLocked()
     {
         var theme = NoireTheme.Current;
+        var scripts = NoireScriptFonts.Ranges != null;
 
         foreach (var step in Enum.GetValues<TextSize>())
         {
             var size = Normalize(theme.ResolveTextSize(step));
 
-            if (IsHostDefault(size) || Handles.ContainsKey(size))
+            if ((IsHostDefault(size) && !scripts) || Handles.ContainsKey(size))
                 continue;
 
             CreateLocked(size);
@@ -347,7 +358,7 @@ internal static class UiFontCache
 
         if (NoireService.PluginInterface.UiBuilder.DefaultFontSpec is not SingleFontSpec spec)
         {
-            toolkit.AddDalamudDefaultFont(size);
+            NoireScriptFonts.Merge(toolkit, toolkit.AddDalamudDefaultFont(size), size);
             return;
         }
 
@@ -356,6 +367,7 @@ internal static class UiFontCache
 
         var extra = new SafeFontConfig { SizePx = size, MergeFont = font };
         toolkit.AttachExtraGlyphsForDalamudLanguage(ref extra);
+        NoireScriptFonts.Merge(toolkit, font, size);
     }
 
     private static float Normalize(float logicalSizePx)

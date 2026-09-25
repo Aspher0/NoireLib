@@ -27,7 +27,9 @@ public partial class NoireGameWatcher
     private readonly ConcurrentDictionary<Type, long> eventCounters = new();
     private readonly ConcurrentDictionary<Type, long> customPublishCounters = new();
     private readonly Queue<(DateTimeOffset At, string Description)> recentEvents = new();
-    private readonly Dictionary<Type, List<EventBusMirror>> eventBusMirrors = new();
+
+    // Replaced, never mutated: a dispatch reads the current array without copying it.
+    private readonly Dictionary<Type, EventBusMirror[]> eventBusMirrors = new();
 
     private sealed class EventBusMirror
     {
@@ -40,15 +42,10 @@ public partial class NoireGameWatcher
 
     #region Subscribe / Unsubscribe
 
-    /// <summary>
-    /// Subscribes to any watcher event type - the facade-bypassing power path, also used for custom events
-    /// injected through <see cref="Publish{TEvent}"/>.<br/>
-    /// Keyed replacement, priority, filtering, one-shot and owner tagging all come from
-    /// <see cref="NoireSubscriptionOptions{TContext}"/>. Handlers run inline on the framework thread.
-    /// </summary>
-    /// <typeparam name="TEvent">The event type to subscribe to.</typeparam>
-    /// <param name="handler">The handler invoked for each dispatched event.</param>
-    /// <param name="options">Optional subscription settings.</param>
+    /// <summary>Subscribes to any watcher event type, custom ones included. Handlers run on the framework thread.</summary>
+    /// <typeparam name="TEvent">The event type.</typeparam>
+    /// <param name="handler">Called for each event.</param>
+    /// <param name="options">The subscription settings: key, priority, filter, one-shot and owner.</param>
     /// <returns>A token that unsubscribes when disposed.</returns>
     public NoireSubscriptionToken Subscribe<TEvent>(Action<TEvent> handler, NoireSubscriptionOptions<TEvent>? options = null)
         where TEvent : notnull
@@ -57,13 +54,10 @@ public partial class NoireGameWatcher
         return SubscribeCore(handler, null, options, LookupSource(typeof(TEvent)), null, null, typeof(TEvent).Name);
     }
 
-    /// <summary>
-    /// Subscribes an asynchronous handler to any watcher event type. The returned task is fire-and-forget;
-    /// faults are logged.
-    /// </summary>
-    /// <typeparam name="TEvent">The event type to subscribe to.</typeparam>
-    /// <param name="handler">The async handler invoked for each dispatched event.</param>
-    /// <param name="options">Optional subscription settings.</param>
+    /// <summary>Subscribes an async handler to any watcher event type. Faults are logged.</summary>
+    /// <typeparam name="TEvent">The event type.</typeparam>
+    /// <param name="handler">Started for each event.</param>
+    /// <param name="options">The subscription settings.</param>
     /// <returns>A token that unsubscribes when disposed.</returns>
     public NoireSubscriptionToken SubscribeAsync<TEvent>(Func<TEvent, Task> handler, NoireSubscriptionOptions<TEvent>? options = null)
         where TEvent : notnull
@@ -72,8 +66,7 @@ public partial class NoireGameWatcher
         return SubscribeCore(null, handler, options, LookupSource(typeof(TEvent)), null, null, typeof(TEvent).Name);
     }
 
-    // The single subscription path behind every facade helper and the public Subscribe{TEvent}. Handles keyed
-    // replacement, owner tagging, demand-driven interest and once-cleanup in one place.
+    // Behind every facade helper: keyed replacement, owners, demand-driven interest and one-shot cleanup.
     internal NoireSubscriptionToken SubscribeCore<TEvent>(
         Action<TEvent>? handler,
         Func<TEvent, Task>? asyncHandler,
@@ -106,8 +99,7 @@ public partial class NoireGameWatcher
         var typedFilter = userOptions.Filter;
         var once = userOptions.Once;
 
-        // Once is handled here, not by the registry: a one-shot must atomically release interest, run
-        // ExtraDispose and invalidate the outer token, which the registry's own once cannot do.
+        // A one-shot must release interest, run ExtraDispose and invalidate the outer token: the registry cannot.
         var innerOptions = new NoireSubscriptionOptions<object>
         {
             Priority = userOptions.Priority,
@@ -119,36 +111,44 @@ public partial class NoireGameWatcher
         bool TryClaimOnce()
             => !once || System.Threading.Interlocked.Exchange(ref onceFired, 1) == 0;
 
-        void InvokeAndMaybeComplete(Action invoke)
-        {
-            if (!TryClaimOnce())
-                return;
-
-            try
-            {
-                invoke();
-            }
-            finally
-            {
-                if (once)
-                    RemoveLedgerEntry(entry, disposeInner: true);
-            }
-        }
-
+        // Per-subscription captures only: a dispatch allocates nothing.
         NoireSubscriptionToken innerToken;
 
         if (handler != null)
         {
-            innerToken = registry.Subscribe(typeof(TEvent), context => InvokeAndMaybeComplete(() => handler((TEvent)context)), innerOptions);
+            innerToken = registry.Subscribe(typeof(TEvent), context =>
+            {
+                if (!TryClaimOnce())
+                    return;
+
+                try
+                {
+                    handler((TEvent)context);
+                }
+                finally
+                {
+                    if (once)
+                        RemoveLedgerEntry(entry, disposeInner: true);
+                }
+            }, innerOptions);
         }
         else
         {
             var asyncTyped = asyncHandler!;
             innerToken = registry.SubscribeAsync(typeof(TEvent), context =>
             {
-                Task task = Task.CompletedTask;
-                InvokeAndMaybeComplete(() => task = asyncTyped((TEvent)context));
-                return task;
+                if (!TryClaimOnce())
+                    return Task.CompletedTask;
+
+                try
+                {
+                    return asyncTyped((TEvent)context);
+                }
+                finally
+                {
+                    if (once)
+                        RemoveLedgerEntry(entry, disposeInner: true);
+                }
             }, innerOptions);
         }
 
@@ -167,7 +167,6 @@ public partial class NoireGameWatcher
                 keyedEntries[entry.Key] = entry;
         }
 
-        // Keyed replacement: disposing the previous outer token releases its interest and inner subscription.
         replaced?.OuterToken?.Dispose();
 
         if (interest is { } primary)
@@ -179,8 +178,7 @@ public partial class NoireGameWatcher
         return outerToken;
     }
 
-    // Registers a non-registry watch (distance/region watchers, node watchers, threshold watchers) in the ledger so
-    // it gets keyed replacement, owner teardown and demand-driven interest like every subscription.
+    // Non-registry watches get keyed replacement, owner teardown and demand-driven interest too.
     internal NoireSubscriptionToken RegisterExternalWatch(
         string description,
         SourceKind? interest,
@@ -259,9 +257,7 @@ public partial class NoireGameWatcher
             ReleaseInterest(secondary);
     }
 
-    /// <summary>
-    /// Unsubscribes the subscription registered with the given key.
-    /// </summary>
+    /// <summary>Unsubscribes the subscription registered with the given key.</summary>
     /// <param name="key">The key the subscription was registered under.</param>
     /// <returns>True when a subscription was removed.</returns>
     public bool Unsubscribe(string key)
@@ -318,28 +314,27 @@ public partial class NoireGameWatcher
     #region Dispatch & custom events
 
     /// <summary>
-    /// Injects an external event into the watcher.<br/>
-    /// Detect a fact however you like (your own hook, a network callback, anything), publish it here, and from
-    /// then on it is indistinguishable from a library event: same subscriptions and options, same
-    /// <see cref="WaitFor{TEvent}"/>, same <see cref="GameConditions.FromEvent{TEvent}"/>, same TaskQueue pairing.<br/>
-    /// Dispatches inline when called on the framework thread and marshals to it otherwise. Library internals
-    /// never consume the public stream, so a simulated event reaches only your handlers - this is also the
-    /// test seam for exercising handler logic without the game.
+    /// Injects your own event, indistinguishable from a library event from then on. Marshaled to the framework thread.
+    /// Library internals never consume it: a simulated event reaches only your handlers.
     /// </summary>
-    /// <typeparam name="TEvent">Any user-defined event type.</typeparam>
-    /// <param name="evt">The event to publish.</param>
+    /// <typeparam name="TEvent">Any event type.</typeparam>
+    /// <param name="evt">The event.</param>
     public void Publish<TEvent>(TEvent evt) where TEvent : notnull
     {
         ArgumentNullException.ThrowIfNull(evt);
 
         if (NoireService.IsInitialized() && !NoireService.Framework.IsInFrameworkUpdateThread)
         {
-            NoireService.Framework.RunOnFrameworkThread(() => PublishInline(evt));
+            MarshalPublish(evt);
             return;
         }
 
         PublishInline(evt);
     }
+
+    // Apart: its closure is only allocated on this path.
+    private void MarshalPublish<TEvent>(TEvent evt) where TEvent : notnull
+        => _ = NoireService.Framework.RunOnFrameworkThread(() => PublishInline(evt));
 
     private void PublishInline<TEvent>(TEvent evt) where TEvent : notnull
     {
@@ -347,12 +342,10 @@ public partial class NoireGameWatcher
         DispatchUntyped(evt);
     }
 
-    // The single dispatch path: counts the event, feeds the diagnostics log, dispatches through the registry and
-    // mirrors to the EventBus for opted-in types.
     internal void DispatchEvent<TEvent>(TEvent evt) where TEvent : notnull
         => DispatchUntyped(evt);
 
-    // Dispatches an event by its runtime type - used by table-driven sources that create events from factories.
+    // For table-driven sources building events from factories.
     internal void DispatchUntyped(object evt)
     {
         var type = evt.GetType();
@@ -382,9 +375,9 @@ public partial class NoireGameWatcher
 
     #endregion
 
-    #region Event → source map
+    #region Event to source map
 
-    // Looks up the producing source for an event type. Custom (user-defined) events have none.
+    // Custom events have no source.
     internal static SourceKind? LookupSource(Type eventType)
         => EventSourceMap.Value.TryGetValue(eventType, out var kind) ? kind : null;
 
@@ -477,14 +470,12 @@ public partial class NoireGameWatcher
 
     internal IReadOnlyDictionary<Type, long> CustomPublishCounters => customPublishCounters;
 
-    // A snapshot of the recent event log, newest last, for diagnostics.
     internal (DateTimeOffset At, string Description)[] RecentEventsSnapshot()
     {
         lock (recentEvents)
             return recentEvents.ToArray();
     }
 
-    // A snapshot of live subscriptions (description, event type, key, interest), for diagnostics.
     internal (string Description, string EventType, string? Key, SourceKind? Interest)[] LedgerSnapshot()
     {
         lock (gate)

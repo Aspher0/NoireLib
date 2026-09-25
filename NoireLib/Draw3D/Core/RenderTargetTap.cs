@@ -158,6 +158,44 @@ internal sealed unsafe class RenderTargetTap : IDisposable
 
     public Func<nint, bool>? Injector { get; set; }
 
+    // Copies the scene depth before the water and translucent passes write into it. Returns false when it could not.
+    public Func<nint, bool>? OpaqueDepthSnapshotter { get; set; }
+
+    public bool OpaqueDepthEnabled
+    {
+        get => opaqueDepthEnabled;
+        set
+        {
+            if (opaqueDepthEnabled == value)
+                return;
+
+            opaqueDepthEnabled = value;
+            RefreshOmHookState();
+        }
+    }
+
+    private bool opaqueDepthEnabled;
+
+    // Set when the snapshot threw. It stays off until the renderer is rebuilt.
+    public bool OpaqueDepthFaulted { get; private set; }
+
+    // 0 takes the snapshot as each G-buffer bind ends, the last one of the frame winning. A positive value takes it as
+    // that bind index ends instead, counted like the rtlog.
+    public int OpaqueDepthBind { get; set; }
+
+    private bool opaqueDepthThisFrame;
+    private bool opaqueDepthLastFrame;
+    private int opaqueDepthAtBind = -1;
+    private int opaqueDepthAtBindLastFrame = -1;
+
+    // Game binds this frame, the index of the bind currently applied.
+    private int frameBindIndex = -1;
+    private bool boundMainDepth;
+    private uint boundTargets;
+
+    private DepthWriteCensus? census;
+    private bool censusPending;
+
     // Still readable at present time, with the game's native UI drawn into it.
     public nint PresentBuffer => presentBuffer;
 
@@ -178,6 +216,15 @@ internal sealed unsafe class RenderTargetTap : IDisposable
 
     // 0 places the layer automatically. The pass count changes with the upscaler, glare, dynamic resolution and group pose.
     public int InjectOrdinal { get; set; }
+
+    // At present time the frame has just ended: the flag latched at the boundary answers for it.
+    public bool HasOpaqueDepth(bool afterFrameBoundary) => afterFrameBoundary ? opaqueDepthLastFrame : opaqueDepthThisFrame;
+
+    public string OpaqueDepthDescription => !opaqueDepthEnabled
+        ? "off"
+        : opaqueDepthLastFrame
+            ? $"taken as bind {opaqueDepthAtBindLastFrame} ended ({(OpaqueDepthBind > 0 ? "forced bind" : "last G-buffer bind")})"
+            : "not taken last frame";
 
     public bool TryGetWorldCamera(out GameRenderSources.CameraData camera)
     {
@@ -253,6 +300,17 @@ internal sealed unsafe class RenderTargetTap : IDisposable
         dumpFrom = -1;
         dumpCount = 0;
         RefreshOmHookState();
+    }
+
+    // Runs with a bind capture so the census and the rtlog share bind indices.
+    public void ArmDepthCensus()
+    {
+        if (omHook == null)
+            return;
+
+        ArmCapture();
+        census ??= new DepthWriteCensus();
+        censusPending = true;
     }
 
     public void ArmFrameDump(int from, int count, string folder)
@@ -350,6 +408,14 @@ internal sealed unsafe class RenderTargetTap : IDisposable
         shadowBindSawDraw = false;
         frameSceneDepthTex = GameRenderSources.TryGetDepthTexture(out var sceneDepth) ? sceneDepth.Texture : 0;
 
+        opaqueDepthLastFrame = opaqueDepthThisFrame;
+        opaqueDepthAtBindLastFrame = opaqueDepthAtBind;
+        opaqueDepthThisFrame = false;
+        opaqueDepthAtBind = -1;
+        frameBindIndex = -1;
+        boundMainDepth = false;
+        boundTargets = 0;
+
         switch (state)
         {
             case 1:
@@ -359,12 +425,20 @@ internal sealed unsafe class RenderTargetTap : IDisposable
                     multiBindCount = 0;
                     drawCounter = 0;
                     state = 2;
+                    if (censusPending)
+                    {
+                        censusPending = false;
+                        census?.Begin();
+                    }
+
                     RefreshOmHookState();
                 }
 
                 break;
             case 2:
                 Flush();
+                if (census is { Active: true } finished)
+                    NoireLogger.LogInfo(finished.Finish(), "Draw3D");
                 state = 0;
                 RefreshOmHookState();
                 break;
@@ -373,7 +447,7 @@ internal sealed unsafe class RenderTargetTap : IDisposable
 
     private void RefreshOmHookState()
     {
-        var wanted = InjectionEnabled || state == 2 || shadowInjectionEnabled;
+        var wanted = InjectionEnabled || state == 2 || shadowInjectionEnabled || opaqueDepthEnabled;
         if (omHook != null && omHook.IsEnabled != wanted)
             omHook.SetEnabled(wanted);
 
@@ -430,6 +504,10 @@ internal sealed unsafe class RenderTargetTap : IDisposable
         // The shadow group's state stays bound until Original applies the new targets.
         TryInjectShadowAtGroupEnd(context);
 
+        // The bound bind's draws are final until Original applies the new targets.
+        if (!injecting && !SuppressSelf && context == gameContext && boundMainDepth)
+            OnMainDepthBindEnding();
+
         if (!injecting && context == gameContext)
         {
             shadowBindActive = false;
@@ -442,6 +520,10 @@ internal sealed unsafe class RenderTargetTap : IDisposable
             return;
 
         var rtv0 = ResolveRtv0Resource(numViews, ppRtvs);
+
+        frameBindIndex++;
+        boundMainDepth = (opaqueDepthEnabled || state == 2) && pDsv != 0 && IsMainSceneDepth(pDsv);
+        boundTargets = numViews;
 
         if (shadowProbe is { Armed: true } && rtv0 == 0 && pDsv != 0)
             shadowProbe.OnDepthOnlyBind(pDsv, IsMainSceneDepth(pDsv));
@@ -533,6 +615,35 @@ internal sealed unsafe class RenderTargetTap : IDisposable
                     injecting = false;
                 }
             }
+        }
+    }
+
+    private void OnMainDepthBindEnding()
+    {
+        if (opaqueDepthEnabled && OpaqueDepthSnapshotter is { } snapshotter
+            && (OpaqueDepthBind > 0 ? frameBindIndex == OpaqueDepthBind : boundTargets >= GBufferMinTargets))
+        {
+            try
+            {
+                if (snapshotter(frameSceneDepthTex))
+                {
+                    opaqueDepthThisFrame = true;
+                    opaqueDepthAtBind = frameBindIndex;
+                    census?.MarkSnapshot(frameBindIndex);
+                }
+            }
+            catch (Exception ex)
+            {
+                NoireLogger.LogError(ex, "Draw3D: the opaque-depth snapshot threw - translucent surfaces occlude again.", "Draw3D");
+                OpaqueDepthFaulted = true;
+                OpaqueDepthEnabled = false;
+            }
+        }
+
+        if (state == 2 && census is { Active: true } active && device != null && bindCount > 0 && bindCount - 1 == frameBindIndex)
+        {
+            var b = binds[bindCount - 1];
+            active.OnBindFinished(device, frameSceneDepthTex, frameBindIndex, b.NumViews, b.Format, b.Width, b.Height, drawCounter - b.DrawCount);
         }
     }
 
@@ -882,6 +993,10 @@ internal sealed unsafe class RenderTargetTap : IDisposable
         ShadowInjector = null;
         ShadowFrameBoundary = null;
         Capture = null;
+        OpaqueDepthSnapshotter = null;
+        opaqueDepthEnabled = false;
+        census?.Dispose();
+        census = null;
         shadowProbe?.Dispose();
         shadowProbe = null;
 
