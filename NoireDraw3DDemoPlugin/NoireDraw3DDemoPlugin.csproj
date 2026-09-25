@@ -11,10 +11,13 @@
         <ImplicitUsings>disable</ImplicitUsings>
         <Use_DalamudPackager>true</Use_DalamudPackager>
         <IsPackable>false</IsPackable>
+        <OutputPath>bin\$(Configuration)\</OutputPath>
     </PropertyGroup>
+    
     <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
       <DebugType>none</DebugType>
     </PropertyGroup>
+    
     <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
       <DebugType>none</DebugType>
     </PropertyGroup>

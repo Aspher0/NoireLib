@@ -23,6 +23,7 @@
         <Configurations>Debug;Release;PublicRelease</Configurations>
         <AssemblyName>NoireLib.Client</AssemblyName>
         <RootNamespace>NoireLib.Remote</RootNamespace>
+        <OutputPath>bin\$(Configuration)\</OutputPath>
     </PropertyGroup>
 
     <PropertyGroup Condition="'$(Configuration)'=='Release' or '$(Configuration)'=='PublicRelease'">

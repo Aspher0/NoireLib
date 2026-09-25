@@ -20,6 +20,7 @@
         <PublishDocumentationFile>true</PublishDocumentationFile>
         <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
         <Configurations>Debug;Release;PublicRelease</Configurations>
+        <OutputPath>bin\$(Configuration)\</OutputPath>
     </PropertyGroup>
     
     <PropertyGroup Condition="'$(Configuration)'=='Debug'">

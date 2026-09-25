@@ -14,6 +14,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <IsPackable>false</IsPackable>
+    <OutputPath>bin\$(Configuration)\</OutputPath>
   </PropertyGroup>
 
 </Project>
