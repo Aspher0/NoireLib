@@ -1,7 +1,8 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Project Sdk="Dalamud.NET.Sdk/15.0.0">
+    <Import Project="..\NoireLib.Version.props" />
+
     <PropertyGroup>
-        <Version>2.0.1.0</Version>
         <Use_DalamudPackager>false</Use_DalamudPackager>
         <Title>NoireLib - A library for Dalamud Plugins</Title>
         <Authors>Aspher0</Authors>
@@ -147,6 +148,10 @@
       <Compile Remove="Automation\Movement\Navmesh\Build\Internal\NavSolidVolumes.cs" />
     </ItemGroup>
 
+    <PropertyGroup Condition="'$(NoireExcludeAutomation)'=='true'">
+        <DefineConstants>$(DefineConstants);NOIRE_EXCLUDE_AUTOMATION</DefineConstants>
+    </PropertyGroup>
+
     <ItemGroup Condition="'$(NoireExcludeAutomation)'=='true'">
         <Compile Remove="Automation\**" />
         <None Remove="Automation\**" />
@@ -171,5 +176,15 @@
         <ItemGroup>
             <TfmSpecificPackageFile Include="$(MSBuildThisFileDirectory)..\NoireLib.LanguageTemplate\bin\Release\net10.0-windows\noirelangtemplate.dll;$(MSBuildThisFileDirectory)..\NoireLib.LanguageTemplate\bin\Release\net10.0-windows\noirelangtemplate.runtimeconfig.json" PackagePath="tools\noirelangtemplate" />
         </ItemGroup>
+    </Target>
+
+    <!-- Any other configuration ships the Automation folder or debug code. -->
+    <Target Name="NoireGuardPackConfiguration" BeforeTargets="GenerateNuspec" Condition="'$(Configuration)' != 'PublicRelease'">
+        <Error Code="NOIREPACK001" Text="NoireLib is packed in PublicRelease only, not $(Configuration)." />
+    </Target>
+
+    <!-- The NoireLib package depends on the NoireLib.Client package of the same version. -->
+    <Target Name="NoirePackClient" AfterTargets="Pack">
+        <MSBuild Projects="..\NoireLib.Client\NoireLib.Client.csproj" Targets="Pack" Properties="Configuration=$(Configuration);PackageOutputPath=$([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)', '$(PackageOutputPath)'))" />
     </Target>
 </Project>

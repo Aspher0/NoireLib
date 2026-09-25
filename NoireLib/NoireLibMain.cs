@@ -1,11 +1,11 @@
-﻿using Dalamud.Plugin;
+using Dalamud.Plugin;
 using Dalamud.Utility;
 using NoireLib.Configuration;
 using NoireLib.Core.Modules;
 using NoireLib.Database.Migrations;
 using NoireLib.Helpers.ObjectExtensions;
-using NoireLib.Remote;
 using NoireLib.IPC;
+using NoireLib.Remote;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -47,8 +47,9 @@ public class NoireLibMain
 
             NoireConfigManager.PreloadMarked(plugin.GetType().Assembly);
 
-            // Background. The first route request does not pay for it.
+#if !NOIRE_EXCLUDE_AUTOMATION
             Navigation.NoireNavigation.Prime();
+#endif
 
             NoireLogger.LogInfo<NoireLibMain>($"NoireLib {typeof(NoireLibMain).Assembly.GetName().Version} has been successfully initialized for {dalamudPluginInterface.InternalName} {plugin.GetType().Assembly.GetName().Version}.");
         }
