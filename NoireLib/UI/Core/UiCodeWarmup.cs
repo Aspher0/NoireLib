@@ -77,9 +77,7 @@ internal static class UiCodeWarmup
 
             NoireLogger.LogInformation(
                 $"Compiled {prepared} drawing method(s) in {Stopwatch.GetElapsedTime(started).TotalMilliseconds:0} ms "
-                + $"over {workers} thread(s). "
-                + "This is time a window's first frame would otherwise have spent jitting its own draw path.",
-                "[NoireUI] ");
+                + $"over {workers} thread(s).", "[NoireUI] ");
         }
         catch (Exception ex)
         {

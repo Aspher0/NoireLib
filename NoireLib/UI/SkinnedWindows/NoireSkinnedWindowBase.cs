@@ -1,6 +1,7 @@
 ﻿using Dalamud.Bindings.ImGui;
 using Dalamud.Interface;
 using Dalamud.Interface.Windowing;
+using Dalamud.Plugin.Services;
 using NoireLib.Localizer;
 using System;
 using System.Collections.Generic;
@@ -15,6 +16,10 @@ namespace NoireLib.UI;
 public abstract class NoireSkinnedWindowBase : NoireWindow, IDisposable
 {
     private static readonly List<NoireSkinnedWindowBase> AllWindows = [];
+
+    private const string OptionSyncDisposeKey = "NoireLib.UI.NoireSkinnedWindowBase.OptionSync";
+
+    private static bool optionSyncHooked;
     private static readonly WindowMenuStyle DefaultMenuStyle = new();
 
     private readonly List<TitleButton> titleButtons = [];
@@ -66,6 +71,7 @@ public abstract class NoireSkinnedWindowBase : NoireWindow, IDisposable
         SizeCondition = ImGuiCond.FirstUseEver;
         DisableFadeInFadeOut = true;
         AllWindows.Add(this);
+        HookOptionSync();
     }
 
     /// <summary>Every skinned window of the plugin that is not disposed.</summary>
@@ -283,6 +289,9 @@ public abstract class NoireSkinnedWindowBase : NoireWindow, IDisposable
     /// <returns>True when it draws.</returns>
     public override bool DrawConditions()
     {
+        HookOptionSync();
+        SyncOptions();
+
         if (Presentation == Presentation.Hidden)
             return false;
 
@@ -300,14 +309,7 @@ public abstract class NoireSkinnedWindowBase : NoireWindow, IDisposable
 
         RefreshTitle();
 
-        if (Options.Visibility != appliedVisibility)
-            Visibility = appliedVisibility = Options.Visibility;
-
-        if (Options.StayAutoHide != appliedAutoHide)
-        {
-            appliedAutoHide = Options.StayAutoHide;
-            ApplyAutoHide();
-        }
+        SyncOptions();
 
         RespectCloseHotkey = !menuOpen && !Ask.Open;
         CollectButtons();
@@ -895,6 +897,47 @@ public abstract class NoireSkinnedWindowBase : NoireWindow, IDisposable
     }
 
     // Dalamud's automatic hiding is one switch per plugin: off while any window asks to stay.
+    private void SyncOptions()
+    {
+        if (Options.Visibility != appliedVisibility)
+            Visibility = appliedVisibility = Options.Visibility;
+
+        if (Options.StayAutoHide != appliedAutoHide)
+        {
+            appliedAutoHide = Options.StayAutoHide;
+            ApplyAutoHide();
+        }
+    }
+
+    private static void HookOptionSync()
+    {
+        if (optionSyncHooked || !NoireService.IsInitialized())
+            return;
+
+        optionSyncHooked = true;
+        NoireService.Framework.Update += SyncAllOptions;
+
+        if (!NoireLibMain.IsRegisteredOnDispose(OptionSyncDisposeKey))
+            NoireLibMain.RegisterOnDispose(OptionSyncDisposeKey, UnhookOptionSync);
+    }
+
+    private static void UnhookOptionSync()
+    {
+        if (!optionSyncHooked)
+            return;
+
+        optionSyncHooked = false;
+
+        if (NoireService.IsInitialized())
+            NoireService.Framework.Update -= SyncAllOptions;
+    }
+
+    private static void SyncAllOptions(IFramework framework)
+    {
+        for (var index = AllWindows.Count - 1; index >= 0; index--)
+            AllWindows[index].SyncOptions();
+    }
+
     private static void ApplyAutoHide()
     {
         if (!NoireService.IsInitialized())

@@ -38,6 +38,7 @@ public sealed class NoireFont : IDisposable
         public GlyphQuad[] Quads = [];
         public int QuadCount;
         public int TextureIndex = -1;
+        public int[] Textures = [];
         public float LineHeight;
         public float Left;
         public float Right;
@@ -49,6 +50,7 @@ public sealed class NoireFont : IDisposable
     private struct GlyphQuad
     {
         public int Run;
+        public int Texture;
         public float X0;
         public float Y0;
         public float X1;
@@ -845,8 +847,14 @@ public sealed class NoireFont : IDisposable
         var native = drawList.Handle;
         var atlas = font.Handle->ContainerAtlas;
 
-        if (atlas == null || (uint)plan.TextureIndex >= (uint)atlas->Textures.Size)
+        if (atlas == null)
             return false;
+
+        foreach (var used in plan.Textures)
+        {
+            if ((uint)used >= (uint)atlas->Textures.Size)
+                return false;
+        }
 
         if (plan.Kerned && (ImGui.GetIO().ConfigFlags & ImGuiConfigFlags.NoKerning) != 0)
             return false;
@@ -857,86 +865,90 @@ public sealed class NoireFont : IDisposable
         if (y > clip.W || y + plan.LineHeight < clip.Y)
             return true;
 
-        var quads = plan.Quads;
-        var pens = plan.Pen;
-
         // A run lands at most a pixel left of its place: with that pixel spare, every glyph is inside.
         var inside = position.X + plan.Left - 1f >= clip.X && position.X + plan.Right <= clip.Z;
-        var shown = inside ? plan.QuadCount : 0;
+        var quads = plan.Quads;
+        var pens = plan.Pen;
+        var untinted = color | 0x00FFFFFFu;
 
-        if (!inside)
+        foreach (var used in plan.Textures)
         {
+            var shown = 0;
+
             for (var i = 0; i < plan.QuadCount; i++)
             {
                 ref var quad = ref quads[i];
+
+                if (quad.Texture != used)
+                    continue;
+
+                if (inside)
+                {
+                    shown++;
+                    continue;
+                }
+
                 var origin = (float)(int)(position.X + pens[quad.Run]);
 
                 if (origin + quad.X0 <= clip.Z && origin + quad.X1 >= clip.X)
                     shown++;
             }
-        }
 
-        if (shown == 0)
-            return true;
-
-        // Pushed once around the line rather than around every glyph: the draw commands merge the same.
-        var texture = atlas->Textures.Data[plan.TextureIndex].TexID;
-        var pushed = texture.Handle != native->CmdHeader.TextureId.Handle;
-
-        if (pushed)
-            drawList.PushTextureID(texture);
-
-        drawList.PrimReserve(shown * 6, shown * 4);
-
-        // Read after the reservation, never before: reserving can roll the index offset over.
-        var vertex = native->VtxWritePtr;
-        var index = native->IdxWritePtr;
-        var current = native->VtxCurrentIdx;
-        var untinted = color | 0x00FFFFFFu;
-        var run = -1;
-        var x = 0f;
-
-        for (var i = 0; i < plan.QuadCount; i++)
-        {
-            ref var quad = ref quads[i];
-
-            if (quad.Run != run)
-            {
-                run = quad.Run;
-                x = (float)(int)(position.X + pens[run]);
-            }
-
-            var x0 = x + quad.X0;
-            var x1 = x + quad.X1;
-
-            if (!inside && (x0 > clip.Z || x1 < clip.X))
+            if (shown == 0)
                 continue;
 
-            var y0 = y + quad.Y0;
-            var y1 = y + quad.Y1;
-            var col = quad.Colored ? untinted : color;
+            var texture = atlas->Textures.Data[used].TexID;
+            var pushed = texture.Handle != native->CmdHeader.TextureId.Handle;
 
-            vertex[0] = new ImDrawVert { Pos = new Vector2(x0, y0), Uv = quad.Uv0, Col = col };
-            vertex[1] = new ImDrawVert { Pos = new Vector2(x1, y0), Uv = new Vector2(quad.Uv1.X, quad.Uv0.Y), Col = col };
-            vertex[2] = new ImDrawVert { Pos = new Vector2(x1, y1), Uv = quad.Uv1, Col = col };
-            vertex[3] = new ImDrawVert { Pos = new Vector2(x0, y1), Uv = new Vector2(quad.Uv0.X, quad.Uv1.Y), Col = col };
+            if (pushed)
+                drawList.PushTextureID(texture);
 
-            index[0] = (ushort)current;
-            index[1] = (ushort)(current + 1);
-            index[2] = (ushort)(current + 2);
-            index[3] = (ushort)current;
-            index[4] = (ushort)(current + 2);
-            index[5] = (ushort)(current + 3);
+            drawList.PrimReserve(shown * 6, shown * 4);
 
-            vertex += 4;
-            index += 6;
-            current += 4;
+            var vertex = native->VtxWritePtr;
+            var index = native->IdxWritePtr;
+            var current = native->VtxCurrentIdx;
+
+            for (var i = 0; i < plan.QuadCount; i++)
+            {
+                ref var quad = ref quads[i];
+
+                if (quad.Texture != used)
+                    continue;
+
+                var x = (float)(int)(position.X + pens[quad.Run]);
+                var x0 = x + quad.X0;
+                var x1 = x + quad.X1;
+
+                if (!inside && (x0 > clip.Z || x1 < clip.X))
+                    continue;
+
+                var y0 = y + quad.Y0;
+                var y1 = y + quad.Y1;
+                var col = quad.Colored ? untinted : color;
+
+                vertex[0] = new ImDrawVert { Pos = new Vector2(x0, y0), Uv = quad.Uv0, Col = col };
+                vertex[1] = new ImDrawVert { Pos = new Vector2(x1, y0), Uv = new Vector2(quad.Uv1.X, quad.Uv0.Y), Col = col };
+                vertex[2] = new ImDrawVert { Pos = new Vector2(x1, y1), Uv = quad.Uv1, Col = col };
+                vertex[3] = new ImDrawVert { Pos = new Vector2(x0, y1), Uv = new Vector2(quad.Uv0.X, quad.Uv1.Y), Col = col };
+
+                index[0] = (ushort)current;
+                index[1] = (ushort)(current + 1);
+                index[2] = (ushort)(current + 2);
+                index[3] = (ushort)current;
+                index[4] = (ushort)(current + 2);
+                index[5] = (ushort)(current + 3);
+
+                vertex += 4;
+                index += 6;
+                current += 4;
+            }
+
+            NoireShapes.AdvancePrimWrite(drawList, shown * 4, shown * 6);
+
+            if (pushed)
+                drawList.PopTextureID();
         }
-
-        NoireShapes.AdvancePrimWrite(drawList, shown * 4, shown * 6);
-
-        if (pushed)
-            drawList.PopTextureID();
 
         return true;
     }
@@ -1029,7 +1041,7 @@ public sealed class NoireFont : IDisposable
         var kerning = native->KerningPairs.Size > 0;
         var quads = new GlyphQuad[text.Length];
         var quadCount = 0;
-        var texture = -1;
+        var textures = new List<int>(2);
         var kerned = false;
 
         for (var run = 0; run < plan.Count; run++)
@@ -1067,14 +1079,13 @@ public sealed class NoireFont : IDisposable
                 {
                     var index = (int)glyph->TextureIndex;
 
-                    if (texture == -1)
-                        texture = index;
-                    else if (texture != index)
-                        return;
+                    if (!textures.Contains(index))
+                        textures.Add(index);
 
                     quads[quadCount++] = new GlyphQuad
                     {
                         Run = run,
+                        Texture = index,
                         X0 = x + (glyph->X0 * scale),
                         Y0 = glyph->Y0 * scale,
                         X1 = x + (glyph->X1 * scale),
@@ -1103,10 +1114,11 @@ public sealed class NoireFont : IDisposable
         plan.QuadCount = quadCount;
         plan.Left = left;
         plan.Right = right;
-        plan.TextureIndex = texture;
+        plan.TextureIndex = textures.Count > 0 ? textures[0] : -1;
+        plan.Textures = textures.ToArray();
         plan.LineHeight = native->FontSize * scale;
         plan.Kerned = kerned;
-        plan.Direct = texture >= 0;
+        plan.Direct = textures.Count > 0;
     }
 
     private void Grow(int length)
