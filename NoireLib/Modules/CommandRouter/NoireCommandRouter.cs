@@ -3,6 +3,7 @@ using Dalamud.Game.Text;
 using NoireLib.Core.Modules;
 using NoireLib.EventBus;
 using NoireLib.Helpers;
+using NoireLib.Localizer;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -104,6 +105,9 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
                 RegisterWithDalamud(registration);
         }
 
+        NoireLanguages.OnChanged -= RefreshAllRegistrations;
+        NoireLanguages.OnChanged += RefreshAllRegistrations;
+
         if (EnableLogging)
             NoireLogger.LogInfo(this, "CommandRouter module activated.");
     }
@@ -111,6 +115,8 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
     /// <inheritdoc/>
     protected override void OnDeactivated()
     {
+        NoireLanguages.OnChanged -= RefreshAllRegistrations;
+
         lock (registrationLock)
         {
             foreach (var registration in registrations.Values)
@@ -355,6 +361,8 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
     /// <inheritdoc/>
     protected override void DisposeInternal()
     {
+        NoireLanguages.OnChanged -= RefreshAllRegistrations;
+
         lock (registrationLock)
         {
             foreach (var registration in registrations.Values)

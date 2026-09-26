@@ -268,9 +268,8 @@ public static class TerritoryHelper
 
             foreach (var territory in sheet)
             {
-                var compFlgSet = territory.AetherCurrentCompFlgSet.RowId;
-                if (territory.RowId != 0 && compFlgSet != 0 && territory.Mount)
-                    found.Add((territory.RowId, compFlgSet));
+                if (HasAetherCurrents(territory))
+                    found.Add((territory.RowId, territory.AetherCurrentCompFlgSet.RowId));
             }
 
             return found;
@@ -278,6 +277,10 @@ public static class TerritoryHelper
 
         return aetherCurrentZones = list;
     }
+
+    // What ReadAetherCurrentZones keeps of a row, which the navmesh's headless tests read straight from the archive.
+    internal static bool HasAetherCurrents(in TerritoryType territory)
+        => territory.RowId != 0 && territory.AetherCurrentCompFlgSet.RowId != 0 && territory.Mount;
 
     /// <summary>Reads the quest conditions <c>ZoneSharedGroup</c> puts on zone crossings. Every requirement row is a condition.</summary>
     /// <returns>The gates keyed by the gated level object's instance id.</returns>

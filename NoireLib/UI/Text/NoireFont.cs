@@ -15,7 +15,7 @@ namespace NoireLib.UI;
 /// </summary>
 public sealed class NoireFont : IDisposable
 {
-    private readonly Dictionary<float, UiFaceEntry> entries = new();
+    private readonly Dictionary<float, List<UiFaceEntry>> entries = new();
 
     // The sizes Request asked for, at 100%. They stay built while the face lives, drawn or not.
     private readonly HashSet<float> keptSizes = new();
@@ -24,10 +24,6 @@ public sealed class NoireFont : IDisposable
     private int[] planStarts = new int[64];
     private int[] planLengths = new int[64];
     private float[] planPens = new float[64];
-
-    private readonly HotPathCache<CalibrationKey, float> ems = new(64);
-
-    private readonly record struct CalibrationKey(nint Font, int Generation);
 
     private readonly record struct FitKey(string Text, nint Font, float DrawSize, float Tracking, float MaxWidth, bool Kerned, int Generation);
 
@@ -67,6 +63,10 @@ public sealed class NoireFont : IDisposable
     internal static Func<NoireFont, float, ImFontPtr>? BuiltFontOverride { get; set; }
 
     private bool disposed;
+
+    private string? dataHash;
+
+    internal string DataHash => dataHash ??= Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Data));
 
     private readonly int cmapOffset;
     private readonly int hmtxOffset;
@@ -180,6 +180,35 @@ public sealed class NoireFont : IDisposable
     public Action<IFontAtlasBuildToolkitPreBuild, ImFontPtr, float>? OnBuild { get; set; }
 
     /// <summary>How many face sizes may be built across every <see cref="NoireFont"/> before further ones fall back.</summary>
+    public static bool GlyphsApplied => UiFaceAtlas.HotPagesCurrent();
+
+    public static float? RasterizerGamma
+    {
+        get => UiFaceAtlas.Gamma;
+        set
+        {
+            if (UiFaceAtlas.Gamma == value)
+                return;
+
+            UiFaceAtlas.Gamma = value;
+            UiFaceCache.ForgetUsed();
+            UiFaceAtlas.RebuildAll();
+        }
+    }
+
+    public static bool FullAlpha
+    {
+        get => UiFaceCache.FullAlpha;
+        set
+        {
+            if (UiFaceCache.FullAlpha == value)
+                return;
+
+            UiFaceCache.FullAlpha = value;
+            UiFaceAtlas.RebuildAll();
+        }
+    }
+
     public static int MaxBuiltSizes
     {
         get => UiFaceAtlas.MaxEntries;
@@ -197,7 +226,8 @@ public sealed class NoireFont : IDisposable
         lock (entries)
             keptSizes.Add(sizePx);
 
-        GetEntry(sizePx, buildNow: true);
+        if (!HasEntry(EmPixels(sizePx)))
+            GetEntry(sizePx, buildNow: true);
     }
 
     /// <summary>Builds several sizes without drawing. See <see cref="Request(float)"/>.</summary>
@@ -225,7 +255,24 @@ public sealed class NoireFont : IDisposable
     /// <summary>Whether a size is built.</summary>
     /// <param name="sizePx">The em size at 100%.</param>
     /// <returns>True once the size is rasterized.</returns>
-    public bool IsReady(float sizePx) => !Font(sizePx).IsNull;
+    public bool IsReady(float sizePx)
+    {
+        var em = EmPixels(sizePx);
+
+        lock (entries)
+        {
+            if (!entries.TryGetValue(em, out var list))
+                return false;
+
+            foreach (var entry in list)
+            {
+                if (UiFaceAtlas.IsBuilt(entry))
+                    return true;
+            }
+        }
+
+        return false;
+    }
 
     /// <summary>The built ImGui font for a size, or a null pointer until it is built.</summary>
     /// <param name="sizePx">The em size at 100%.</param>
@@ -236,7 +283,12 @@ public sealed class NoireFont : IDisposable
             return seam(this, sizePx);
 
         var entry = GetEntry(sizePx, buildNow: false);
-        return entry == null ? default : UiFaceAtlas.Resolve(entry);
+        var font = entry == null ? default : UiFaceAtlas.Resolve(entry);
+
+        if (!font.IsNull)
+            return font;
+
+        return NearestBuilt(EmPixels(sizePx)) is { } nearest ? UiFaceAtlas.Resolve(nearest) : default;
     }
 
     /// <summary>
@@ -289,29 +341,106 @@ public sealed class NoireFont : IDisposable
 
         lock (entries)
         {
-            if (entries.TryGetValue(em, out var existing))
-            {
-                existing.LastUsedTicks = System.Diagnostics.Stopwatch.GetTimestamp();
+            if (Best(em) is { } existing)
                 return existing;
-            }
         }
 
-        var created = UiFaceAtlas.Register(this, em, buildNow);
+        var created = Add(em, UiFaceAtlas.LoosePage(this), buildNow);
+
+        if (created != null && !buildNow && !Keeps(em))
+            NoireLogger.LogDebug($"Size drawn before it was requested: {Name} {em:0.##} px", nameof(NoireFont));
+
+        return created;
+    }
+
+    internal UiFaceEntry? Add(float emPx, UiFacePage page, bool buildNow)
+    {
+        if (disposed)
+            return null;
+
+        var created = UiFaceAtlas.Register(this, emPx, page, buildNow);
 
         if (created == null)
             return null;
 
         lock (entries)
-            entries[em] = created;
+        {
+            if (!entries.TryGetValue(emPx, out var list))
+                entries[emPx] = list = new List<UiFaceEntry>(2);
+
+            list.Add(created);
+        }
 
         return created;
+    }
+
+    private bool HasEntry(float emPx)
+    {
+        lock (entries)
+            return entries.TryGetValue(emPx, out var list) && list.Count > 0;
+    }
+
+    private UiFaceEntry? Best(float emPx)
+    {
+        if (!entries.TryGetValue(emPx, out var list) || list.Count == 0)
+            return null;
+
+        var scripts = NoireScriptFonts.Generation;
+        UiFaceEntry? built = null;
+
+        foreach (var entry in list)
+        {
+            if (!UiFaceAtlas.IsBuilt(entry))
+                continue;
+
+            if (entry.Page.BuiltScripts == scripts)
+                return entry;
+
+            built ??= entry;
+        }
+
+        return built ?? list[0];
+    }
+
+    private UiFaceEntry? NearestBuilt(float emPx)
+    {
+        UiFaceEntry? nearest = null;
+        var distance = float.MaxValue;
+
+        lock (entries)
+        {
+            foreach (var (size, list) in entries)
+            {
+                var gap = MathF.Abs(size - emPx);
+
+                if (gap >= distance)
+                    continue;
+
+                foreach (var entry in list)
+                {
+                    if (!UiFaceAtlas.IsBuilt(entry))
+                        continue;
+
+                    nearest = entry;
+                    distance = gap;
+                    break;
+                }
+            }
+        }
+
+        return nearest;
     }
 
     internal void Forget(UiFaceEntry entry)
     {
         lock (entries)
         {
-            if (entries.TryGetValue(entry.EmPx, out var held) && ReferenceEquals(held, entry))
+            if (!entries.TryGetValue(entry.EmPx, out var list))
+                return;
+
+            list.Remove(entry);
+
+            if (list.Count == 0)
                 entries.Remove(entry.EmPx);
         }
     }
@@ -569,45 +698,10 @@ public sealed class NoireFont : IDisposable
         return !font.IsNull;
     }
 
-    // The host rounds the build size and the rasterizer maps it its own way. The em is read back off the built glyphs.
     private float DrawSizeFor(ImFontPtr font, float emPx)
     {
-        var actual = ActualEm(font);
-        return actual > 0f ? emPx * font.FontSize / actual : emPx * LineRatio;
-    }
-
-    // Built advances are whole pixels. Ninety letters average the rounding away.
-    private unsafe float ActualEm(ImFontPtr font)
-    {
-        var key = new CalibrationKey(FontKey(font), UiFaceAtlas.Generation);
-
-        if (ems.TryGet(key, out var cached))
-            return cached;
-
-        var built = 0f;
-        var design = 0;
-
-        for (var character = '!'; character <= '~'; character++)
-        {
-            var units = AdvanceUnits(character);
-
-            if (units <= 0)
-                continue;
-
-            var glyph = font.FindGlyphNoFallback(character);
-
-            if (glyph == null || glyph->AdvanceX <= 0f)
-                continue;
-
-            built += glyph->AdvanceX;
-            design += units;
-        }
-
-        var em = design > 0 ? built * UnitsPerEm / design : font.FontSize / LineRatio;
-
-        ems.Set(key, em);
-
-        return em;
+        var target = emPx * LineRatio;
+        return MathF.Abs(target - font.FontSize) < 0.01f ? font.FontSize : target;
     }
 
     private TextFit Fit(string text, ImFontPtr font, float drawSize, float emPx, float tracking, float maxWidth, float height)
@@ -1278,12 +1372,12 @@ public sealed class NoireFont : IDisposable
 
         disposed = true;
 
-        UiFaceEntry[] held;
+        List<UiFaceEntry> held = new();
 
         lock (entries)
         {
-            held = new UiFaceEntry[entries.Count];
-            entries.Values.CopyTo(held, 0);
+            foreach (var list in entries.Values)
+                held.AddRange(list);
         }
 
         foreach (var entry in held)

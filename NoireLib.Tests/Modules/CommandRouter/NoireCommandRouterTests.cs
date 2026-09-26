@@ -764,7 +764,7 @@ public class NoireCommandRouterTests
         var registration = new RootCommandRegistration("/test")
         {
             HelpText = "Main help.",
-            FallbackDefinition = new FallbackCommandDefinition("emote", "Plays the emote if found.", fallbackDisplayOrder, showInHelp: true),
+            FallbackDefinition = new FallbackCommandDefinition("emote", "Plays the emote if found.", null, fallbackDisplayOrder, showInHelp: true),
         };
 
         var stop = new SubCommandBuilder("stop");

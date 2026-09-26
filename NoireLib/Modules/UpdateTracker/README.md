@@ -406,7 +406,7 @@ eventBus?.Subscribe<NewPluginVersionDetectedEvent>(evt =>
     if (evt.NewVersion.Major > evt.CurrentVersion.Major)
     {
         NoireLogger.PrintToChat(
-            XivChatType.Echo,
+            XivChatType.Debug,
             "MAJOR UPDATE AVAILABLE! Please update as soon as possible.",
             foregroundColor: ColorHelper.HexToVector3("#FF0000")
         );
@@ -416,7 +416,7 @@ eventBus?.Subscribe<NewPluginVersionDetectedEvent>(evt =>
     else if (Configuration.NotifyForMinorUpdates)
     {
         NoireLogger.PrintToChat(
-            XivChatType.Echo,
+            XivChatType.Debug,
             "A minor update is available.",
             foregroundColor: ColorHelper.HexToVector3("#FCC203")
         );

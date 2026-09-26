@@ -350,6 +350,8 @@ internal static class UiFontCache
 
     private static void BuildFont(IFontAtlasBuildToolkitPreBuild toolkit, float size)
     {
+        toolkit.NewImAtlas.TexDesiredWidth = UiFaceAtlas.TextureWidth;
+
         if (NoireText.FontBuilder is { } custom)
         {
             custom(toolkit, size);

@@ -11,15 +11,18 @@ namespace NoireLib.UI;
 // Draw thread only, except Stale.
 internal sealed class UiFaceEntry
 {
-    public UiFaceEntry(NoireFont face, float emPx)
+    public UiFaceEntry(NoireFont face, float emPx, UiFacePage page)
     {
         Face = face;
         EmPx = emPx;
+        Page = page;
     }
 
     public NoireFont Face { get; }
 
     public float EmPx { get; }
+
+    public UiFacePage Page { get; }
 
     public IFontHandle? Handle { get; set; }
 
@@ -32,44 +35,132 @@ internal sealed class UiFaceEntry
     public bool Removed { get; set; }
 }
 
-// Sizes asked for during one frame are rasterized together. A frame never waits on one.
+internal sealed class UiFacePage
+{
+    public UiFacePage(string name, bool loose)
+    {
+        Name = name;
+        Loose = loose;
+    }
+
+    public string Name { get; }
+
+    public bool Loose { get; }
+
+    public List<UiFaceEntry> Entries { get; } = new();
+
+    public IFontAtlas? Atlas { get; set; }
+
+    public bool Dirty { get; set; }
+
+    public bool Building { get; set; }
+
+    public int DirtyFrame { get; set; } = int.MinValue;
+
+    public int BuiltScripts { get; set; } = -1;
+
+    public int BuildingScripts { get; set; }
+
+    public long LastUsedTicks { get; set; } = Stopwatch.GetTimestamp();
+
+    public bool Removed { get; set; }
+
+    public UiFaceBuild? Build { get; set; }
+
+    public (string Key, UiFaceCacheData Data)? HandOff { get; set; }
+
+    public bool SkipCacheNext { get; set; }
+}
+
 internal static class UiFaceAtlas
 {
     private const string DisposeCallbackKey = "NoireLib.UI.UiFaceAtlas";
 
+    internal const int TextureWidth = 2048;
+
+    internal const int RestoredTextureWidth = 1024;
+
+    private static readonly ushort[] SpaceOnly = [0x20, 0x20, 0];
+
     private static readonly TimeSpan ColdLifetime = TimeSpan.FromSeconds(30);
 
-    internal static int MaxEntries { get; set; } = 256;
+    private static readonly TimeSpan HotLifetime = TimeSpan.FromSeconds(1);
+
+    internal static int MaxEntries { get; set; } = 1024;
+
+    internal static float? Gamma { get; set; }
+
+    internal static int MaxConcurrentBuilds { get; set; } = Math.Clamp(Environment.ProcessorCount / 4, 2, 4);
 
     private static readonly object SyncRoot = new();
-    private static readonly List<UiFaceEntry> Entries = new();
+    private static readonly List<UiFacePage> Pages = new();
+    private static readonly Dictionary<NoireFont, UiFacePage> LoosePages = new();
 
     // Released one frame later, once the frame that last drew with them has rendered.
     private static readonly List<(ILockedImFont Locked, int Frame)> Retired = new();
+    private static readonly List<(IFontAtlas Atlas, int Frame)> RetiredAtlases = new();
 
-    private static IFontAtlas? atlas;
-    private static bool dirty;
-    private static bool building;
-    private static int dirtyFrame = int.MinValue;
+    private static int entryCount;
+    private static int buildingCount;
     private static int tickedFrame = int.MinValue;
     private static bool warnedFull;
     private static int buildScheduled;
     private static int generation;
-
-    private static int builtScripts;
+    private static bool disposeRegistered;
 
     internal static int Generation => Volatile.Read(ref generation);
+
+    internal static bool Busy
+    {
+        get
+        {
+            lock (SyncRoot)
+            {
+                foreach (var page in Pages)
+                {
+                    if (page.Building || (page.Dirty && page.Entries.Count > 0))
+                        return true;
+                }
+            }
+
+            return false;
+        }
+    }
 
     internal static int EntryCount
     {
         get
         {
             lock (SyncRoot)
-                return Entries.Count;
+                return entryCount;
         }
     }
 
-    internal static UiFaceEntry? Register(NoireFont face, float emPx, bool buildNow)
+    internal static UiFacePage LoosePage(NoireFont face)
+    {
+        lock (SyncRoot)
+        {
+            if (LoosePages.TryGetValue(face, out var page))
+                return page;
+
+            page = new UiFacePage(face.Name, loose: true);
+            LoosePages[face] = page;
+            Pages.Add(page);
+            return page;
+        }
+    }
+
+    internal static UiFacePage NewPage(string name)
+    {
+        var page = new UiFacePage(name, loose: false);
+
+        lock (SyncRoot)
+            Pages.Add(page);
+
+        return page;
+    }
+
+    internal static UiFaceEntry? Register(NoireFont face, float emPx, UiFacePage page, bool buildNow)
     {
         if (!NoireService.IsInitialized())
             return null;
@@ -78,17 +169,20 @@ internal static class UiFaceAtlas
 
         lock (SyncRoot)
         {
-            if (Entries.Count >= MaxEntries)
+            if (page.Removed)
+                return null;
+
+            if (entryCount >= MaxEntries)
             {
                 WarnFull();
                 return null;
             }
 
-            entry = new UiFaceEntry(face, emPx);
+            entry = new UiFaceEntry(face, emPx, page);
 
             try
             {
-                entry.Handle = CreateHandle(EnsureAtlas(), entry);
+                entry.Handle = CreateHandle(EnsureAtlas(page), entry);
             }
             catch (Exception ex)
             {
@@ -96,9 +190,10 @@ internal static class UiFaceAtlas
                 return null;
             }
 
-            Entries.Add(entry);
-            dirty = true;
-            dirtyFrame = NoireUI.FrameCount;
+            page.Entries.Add(entry);
+            page.Dirty = true;
+            page.DirtyFrame = NoireUI.FrameCount;
+            entryCount++;
         }
 
         if (buildNow)
@@ -110,7 +205,9 @@ internal static class UiFaceAtlas
     // A lambda capturing the entry would allocate on every Register call.
     private static IFontHandle CreateHandle(IFontAtlas target, UiFaceEntry entry)
     {
-        var handle = target.NewDelegateFontHandle(e => e.OnPreBuild(toolkit => BuildEntry(toolkit, entry)));
+        var handle = target.NewDelegateFontHandle(e => e
+            .OnPreBuild(toolkit => BuildEntry(toolkit, entry))
+            .OnPostBuild(toolkit => entry.Page.Build?.AfterBuild(toolkit, entry)));
         handle.ImFontChanged += (_, _) => entry.Stale = true;
         return handle;
     }
@@ -119,12 +216,147 @@ internal static class UiFaceAtlas
     {
         Tick();
 
-        entry.LastUsedTicks = Stopwatch.GetTimestamp();
+        var now = Stopwatch.GetTimestamp();
+        entry.LastUsedTicks = now;
+        entry.Page.LastUsedTicks = now;
 
         if (entry.Locked is { } locked && !entry.Stale)
             return locked.ImFont;
 
         return Relock(entry);
+    }
+
+    internal static bool IsBuilt(UiFaceEntry entry)
+        => !entry.Removed && (entry.Locked != null || entry.Handle is { Available: true });
+
+    internal static bool IsCurrent(UiFacePage page, int scripts)
+        => !page.Removed && !page.Dirty && !page.Building && page.BuiltScripts == scripts;
+
+    internal static bool IsReady(IReadOnlyList<UiFacePage> pages, IReadOnlyList<UiFaceEntry> entries)
+    {
+        var scripts = NoireScriptFonts.Generation;
+        var ready = true;
+        var stale = false;
+
+        lock (SyncRoot)
+        {
+            foreach (var page in pages)
+            {
+                if (page.Entries.Count == 0 || IsCurrent(page, scripts))
+                    continue;
+
+                ready = false;
+                stale |= MarkStaleLocked(page, scripts);
+            }
+        }
+
+        if (stale)
+            ScheduleBuild();
+
+        if (!ready)
+            return false;
+
+        lock (SyncRoot)
+        {
+            foreach (var entry in entries)
+            {
+                if (!IsBuilt(entry))
+                    return false;
+            }
+        }
+
+        return true;
+    }
+
+    internal static bool AllBuilt(IReadOnlyList<UiFaceEntry> entries)
+    {
+        lock (SyncRoot)
+        {
+            foreach (var entry in entries)
+            {
+                if (!IsBuilt(entry))
+                    return false;
+            }
+        }
+
+        return entries.Count > 0;
+    }
+
+    internal static bool HotPagesCurrent()
+    {
+        var scripts = NoireScriptFonts.Generation;
+        var now = Stopwatch.GetTimestamp();
+        var current = true;
+        var stale = false;
+
+        lock (SyncRoot)
+        {
+            foreach (var page in Pages)
+            {
+                if (page.Entries.Count == 0 || Stopwatch.GetElapsedTime(page.LastUsedTicks, now) > HotLifetime)
+                    continue;
+
+                if (IsCurrent(page, scripts))
+                    continue;
+
+                current = false;
+                stale |= MarkStaleLocked(page, scripts);
+            }
+        }
+
+        if (stale)
+            ScheduleBuild();
+
+        return current;
+    }
+
+    internal static void RebuildAll()
+    {
+        var any = false;
+
+        lock (SyncRoot)
+        {
+            foreach (var page in Pages)
+            {
+                if (page.Entries.Count == 0 || page.Removed)
+                    continue;
+
+                page.Dirty = true;
+                page.DirtyFrame = int.MinValue;
+                any = true;
+            }
+        }
+
+        if (any)
+            ScheduleBuild();
+    }
+
+    internal static void MarkAllStale()
+    {
+        var scripts = NoireScriptFonts.Generation;
+        var stale = false;
+
+        lock (SyncRoot)
+        {
+            foreach (var page in Pages)
+            {
+                if (page.Entries.Count > 0)
+                    stale |= MarkStaleLocked(page, scripts);
+            }
+        }
+
+        if (stale)
+            ScheduleBuild();
+    }
+
+    private static bool MarkStaleLocked(UiFacePage page, int scripts)
+    {
+        if (page.Removed || page.Building || page.Dirty || page.BuiltScripts < 0 || page.BuiltScripts == scripts)
+            return false;
+
+        page.Dirty = true;
+        page.DirtyFrame = int.MinValue;
+        return true;
     }
 
     private static ImFontPtr Relock(UiFaceEntry entry)
@@ -160,21 +392,14 @@ internal static class UiFaceAtlas
 
         tickedFrame = frame;
 
-        var kick = false;
         var scripts = NoireScriptFonts.Generation;
 
         lock (SyncRoot)
         {
-            // A script change rebuilds every size already built.
-            if (scripts != builtScripts)
+            foreach (var page in Pages)
             {
-                builtScripts = scripts;
-
-                if (Entries.Count > 0)
-                {
-                    dirty = true;
-                    dirtyFrame = frame - 1;
-                }
+                if (page.Entries.Count > 0)
+                    MarkStaleLocked(page, scripts);
             }
 
             for (var index = Retired.Count - 1; index >= 0; index--)
@@ -186,20 +411,27 @@ internal static class UiFaceAtlas
                 Retired.RemoveAt(index);
             }
 
-            // A size nobody draws must not keep an old atlas alive.
-            for (var index = 0; index < Entries.Count; index++)
+            for (var index = RetiredAtlases.Count - 1; index >= 0; index--)
             {
-                var entry = Entries[index];
+                if (RetiredAtlases[index].Frame >= frame)
+                    continue;
 
-                if (entry.Stale && entry.Locked != null)
-                    Relock(entry);
+                DisposeAtlas(RetiredAtlases[index].Atlas);
+                RetiredAtlases.RemoveAt(index);
             }
 
-            kick = dirty && !building && frame != dirtyFrame;
+            // A size nobody draws must not keep an old atlas alive.
+            foreach (var page in Pages)
+            {
+                foreach (var entry in page.Entries)
+                {
+                    if (entry.Stale && entry.Locked != null)
+                        Relock(entry);
+                }
+            }
         }
 
-        if (kick)
-            KickBuild();
+        Pump(frame);
     }
 
     internal static void ScheduleBuild()
@@ -212,7 +444,7 @@ internal static class UiFaceAtlas
             NoireService.Framework.RunOnTick(static () =>
             {
                 Volatile.Write(ref buildScheduled, 0);
-                KickBuild();
+                Pump(null);
             });
         }
         catch (Exception ex)
@@ -222,62 +454,163 @@ internal static class UiFaceAtlas
         }
     }
 
-    internal static void KickBuild()
+    private static void Pump(int? frame)
     {
-        IFontAtlas? target;
+        List<(UiFacePage Page, IFontAtlas Atlas)>? kicks = null;
+        var now = Stopwatch.GetTimestamp();
 
         lock (SyncRoot)
         {
-            if (building || !dirty || atlas == null)
-                return;
+            while (buildingCount < MaxConcurrentBuilds)
+            {
+                UiFacePage? next = null;
+                var nextHot = false;
 
-            PruneLocked();
+                foreach (var page in Pages)
+                {
+                    if (!page.Dirty || page.Building || page.Removed || page.Atlas == null || page.Entries.Count == 0)
+                        continue;
 
-            dirty = false;
-            building = true;
-            target = atlas;
+                    if (frame is { } current && page.DirtyFrame == current)
+                        continue;
+
+                    var hot = Stopwatch.GetElapsedTime(page.LastUsedTicks, now) <= HotLifetime;
+
+                    if (next == null || (hot && !nextHot))
+                    {
+                        next = page;
+                        nextHot = hot;
+                    }
+                }
+
+                if (next == null)
+                    break;
+
+                PruneLocked(next);
+
+                next.Dirty = false;
+
+                if (next.Entries.Count == 0)
+                    continue;
+
+                next.Build = UiFaceCache.Prepare(next, next.SkipCacheNext);
+                next.SkipCacheNext = false;
+                next.Building = true;
+                next.BuildingScripts = next.Build.Scripts;
+                buildingCount++;
+
+                (kicks ??= new()).Add((next, next.Atlas!));
+            }
         }
 
+        if (kicks == null)
+            return;
+
+        foreach (var (page, atlas) in kicks)
+            Kick(page, atlas);
+    }
+
+    private static void Kick(UiFacePage page, IFontAtlas target)
+    {
         var started = Stopwatch.GetTimestamp();
 
         try
         {
-            target.BuildFontsAsync().ContinueWith(task => Built(task, started), TaskScheduler.Default);
+            target.BuildFontsAsync().ContinueWith(task => Built(page, task, started), TaskScheduler.Default);
         }
         catch (Exception ex)
         {
             lock (SyncRoot)
-                building = false;
+            {
+                page.Building = false;
+                buildingCount--;
+            }
 
-            NoireUI.Diagnostics.ReportFault(nameof(NoireFont), "Failed to start building the fonts.", ex);
+            NoireUI.Diagnostics.ReportFault(nameof(NoireFont), $"Failed to start building the {page.Name} fonts.", ex);
         }
     }
 
-    private static void Built(Task task, long started)
+    private static void Built(UiFacePage page, Task task, long started)
     {
+        int sizes;
+        var build = page.Build;
+
         lock (SyncRoot)
-            building = false;
+        {
+            page.Building = false;
+            page.Build = null;
+            buildingCount--;
+            sizes = page.Entries.Count;
+
+            if (task.Exception == null)
+                page.BuiltScripts = page.BuildingScripts;
+
+            if (build is { Failed: true } && !page.Removed)
+            {
+                page.Dirty = true;
+                page.DirtyFrame = int.MinValue;
+                page.SkipCacheNext = true;
+            }
+            else if (task.Exception == null && !page.Removed && UiFaceCache.FullAlpha
+                && build is { Restore: null, Key: { } handedKey } && build.Captured is { } handed)
+            {
+                page.HandOff = (handedKey, handed);
+                page.Dirty = true;
+                page.DirtyFrame = int.MinValue;
+            }
+
+            if (page.Removed)
+                RetireAtlasLocked(page);
+        }
+
+        if (build is { Failed: true, Key: { } broken })
+            UiFaceCache.Delete(broken);
+
+        ScheduleBuild();
 
         if (task.Exception is { } failure)
         {
-            NoireUI.Diagnostics.ReportFault(nameof(NoireFont), "Failed to build the fonts.", failure.GetBaseException());
+            NoireUI.Diagnostics.ReportFault(nameof(NoireFont), $"Failed to build the {page.Name} fonts.", failure.GetBaseException());
             return;
         }
 
+        var source = "rasterized";
+
+        if (build is { Failed: false })
+        {
+            if (build.Restore != null)
+                source = "from cache";
+            else if (build.Key is { } key && build.Captured is { } captured)
+                UiFaceCache.Save(key, captured);
+        }
+
         Interlocked.Increment(ref generation);
-        NoireLogger.LogDebug($"Built {EntryCount} font size(s) in {Stopwatch.GetElapsedTime(started).TotalMilliseconds:0} ms.", nameof(NoireFont));
+        NoireLogger.LogDebug($"Built {page.Name}: {sizes} font size(s) {source} in {Stopwatch.GetElapsedTime(started).TotalMilliseconds:0} ms.", nameof(NoireFont));
     }
 
     private static void BuildEntry(IFontAtlasBuildToolkitPreBuild toolkit, UiFaceEntry entry)
     {
         var face = entry.Face;
         var linePx = entry.EmPx * face.LineRatio;
+        var build = entry.Page.Build;
+
+        if (build != null && build.Knows(entry) && build.Restoring)
+        {
+            toolkit.NewImAtlas.TexDesiredWidth = RestoredTextureWidth;
+            toolkit.AddFontFromMemory(face.Data, new SafeFontConfig { SizePx = linePx, GlyphRanges = SpaceOnly }, face.Name);
+            return;
+        }
+
+        toolkit.NewImAtlas.TexDesiredWidth = TextureWidth;
 
         var config = new SafeFontConfig
         {
             SizePx = linePx,
             GlyphRanges = face.GlyphRanges ?? UiFontCache.DefaultGlyphRanges,
         };
+
+        if (Gamma is { } gamma)
+            config.RasterizerGamma = gamma;
 
         if (face.Oversample is { } oversample)
         {
@@ -290,26 +623,33 @@ internal static class UiFaceAtlas
         if (face.MergeLanguageGlyphs)
         {
             var extra = new SafeFontConfig { SizePx = linePx, MergeFont = font };
+
+            if (Gamma is { } extraGamma)
+                extra.RasterizerGamma = extraGamma;
+
             toolkit.AttachExtraGlyphsForDalamudLanguage(ref extra);
-            NoireScriptFonts.Merge(toolkit, font, linePx);
+            NoireScriptFonts.Merge(toolkit, font, linePx, build != null ? build.Ranges : NoireScriptFonts.Ranges, Gamma);
         }
 
         face.OnBuild?.Invoke(toolkit, font, linePx);
     }
 
-    private static void PruneLocked()
+    private static void PruneLocked(UiFacePage page)
     {
+        if (!page.Loose)
+            return;
+
         var now = Stopwatch.GetTimestamp();
 
-        for (var index = Entries.Count - 1; index >= 0; index--)
+        for (var index = page.Entries.Count - 1; index >= 0; index--)
         {
-            var entry = Entries[index];
+            var entry = page.Entries[index];
 
             if (Stopwatch.GetElapsedTime(entry.LastUsedTicks, now) < ColdLifetime || entry.Face.Keeps(entry.EmPx))
                 continue;
 
             RemoveLocked(entry);
-            Entries.RemoveAt(index);
+            page.Entries.RemoveAt(index);
         }
     }
 
@@ -321,14 +661,49 @@ internal static class UiFaceAtlas
                 return;
 
             RemoveLocked(entry);
-            Entries.Remove(entry);
+            entry.Page.Entries.Remove(entry);
         }
+    }
+
+    internal static void RemovePages(IReadOnlyList<UiFacePage> pages)
+    {
+        lock (SyncRoot)
+        {
+            foreach (var page in pages)
+            {
+                if (page.Removed)
+                    continue;
+
+                page.Removed = true;
+
+                foreach (var entry in page.Entries)
+                {
+                    if (!entry.Removed)
+                        RemoveLocked(entry);
+                }
+
+                page.Entries.Clear();
+                Pages.Remove(page);
+
+                if (!page.Building)
+                    RetireAtlasLocked(page);
+            }
+        }
+    }
+
+    private static void RetireAtlasLocked(UiFacePage page)
+    {
+        if (page.Atlas is { } atlas)
+            RetiredAtlases.Add((atlas, NoireUI.FrameCount));
+
+        page.Atlas = null;
     }
 
     private static void RemoveLocked(UiFaceEntry entry)
     {
         entry.Removed = true;
         entry.Face.Forget(entry);
+        entryCount--;
 
         if (entry.Locked is { } locked)
             Retired.Add((locked, NoireUI.FrameCount));
@@ -347,21 +722,24 @@ internal static class UiFaceAtlas
         entry.Handle = null;
     }
 
-    private static IFontAtlas EnsureAtlas()
+    private static IFontAtlas EnsureAtlas(UiFacePage page)
     {
-        if (atlas != null)
-            return atlas;
+        if (page.Atlas != null)
+            return page.Atlas;
 
         // Not global scaled. A scale change is new sizes.
-        atlas = NoireService.PluginInterface.UiBuilder.CreateFontAtlas(
+        page.Atlas = NoireService.PluginInterface.UiBuilder.CreateFontAtlas(
             FontAtlasAutoRebuildMode.Disable,
             isGlobalScaled: false,
-            debugName: "NoireFont");
+            debugName: "NoireFont " + page.Name);
 
-        if (!NoireLibMain.IsRegisteredOnDispose(DisposeCallbackKey))
+        if (!disposeRegistered && !NoireLibMain.IsRegisteredOnDispose(DisposeCallbackKey))
+        {
             NoireLibMain.RegisterOnDispose(DisposeCallbackKey, Cleanup);
+            disposeRegistered = true;
+        }
 
-        return atlas;
+        return page.Atlas;
     }
 
     private static void Release(ILockedImFont locked)
@@ -373,6 +751,18 @@ internal static class UiFaceAtlas
         catch (Exception ex)
         {
             NoireLogger.LogError(ex, "Failed to release a locked font.", nameof(NoireFont));
+        }
+    }
+
+    private static void DisposeAtlas(IFontAtlas atlas)
+    {
+        try
+        {
+            atlas.Dispose();
+        }
+        catch (Exception ex)
+        {
+            NoireLogger.LogError(ex, "Failed to dispose a NoireFont atlas.", nameof(NoireFont));
         }
     }
 
@@ -392,45 +782,54 @@ internal static class UiFaceAtlas
     {
         lock (SyncRoot)
         {
-            foreach (var entry in Entries)
+            foreach (var page in Pages)
             {
-                entry.Face.Forget(entry);
-                entry.Removed = true;
-
-                if (entry.Locked is { } locked)
-                    Release(locked);
-
-                try
+                foreach (var entry in page.Entries)
                 {
-                    entry.Handle?.Dispose();
+                    entry.Face.Forget(entry);
+                    entry.Removed = true;
+
+                    if (entry.Locked is { } locked)
+                        Release(locked);
+
+                    try
+                    {
+                        entry.Handle?.Dispose();
+                    }
+                    catch (Exception ex)
+                    {
+                        NoireLogger.LogError(ex, "Failed to dispose a NoireFont handle.", nameof(NoireFont));
+                    }
                 }
-                catch (Exception ex)
-                {
-                    NoireLogger.LogError(ex, "Failed to dispose a NoireFont handle.", nameof(NoireFont));
-                }
+
+                page.Entries.Clear();
+                page.Removed = true;
+
+                if (page.Atlas is { } atlas)
+                    DisposeAtlas(atlas);
+
+                page.Atlas = null;
             }
 
-            Entries.Clear();
+            Pages.Clear();
+            LoosePages.Clear();
 
             foreach (var (locked, _) in Retired)
                 Release(locked);
 
             Retired.Clear();
 
-            try
-            {
-                atlas?.Dispose();
-            }
-            catch (Exception ex)
-            {
-                NoireLogger.LogError(ex, "Failed to dispose the NoireFont atlas.", nameof(NoireFont));
-            }
+            foreach (var (atlas, _) in RetiredAtlases)
+                DisposeAtlas(atlas);
 
-            atlas = null;
-            dirty = false;
-            building = false;
+            RetiredAtlases.Clear();
+
+            UiFaceCache.Shutdown();
+
+            entryCount = 0;
+            buildingCount = 0;
             warnedFull = false;
-            dirtyFrame = int.MinValue;
+            disposeRegistered = false;
             tickedFrame = int.MinValue;
             Interlocked.Increment(ref generation);
         }

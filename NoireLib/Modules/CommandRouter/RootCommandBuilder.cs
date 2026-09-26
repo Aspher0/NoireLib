@@ -1,3 +1,4 @@
+using NoireLib.Localizer;
 using System;
 
 namespace NoireLib.CommandRouter;
@@ -23,6 +24,14 @@ public sealed class RootCommandBuilder
     public RootCommandBuilder WithHelp(string helpText)
     {
         registration.HelpText = helpText;
+        router.RefreshRegistration(registration);
+
+        return this;
+    }
+
+    public RootCommandBuilder WithHelp(NoireString helpText)
+    {
+        registration.HelpString = helpText;
         router.RefreshRegistration(registration);
 
         return this;

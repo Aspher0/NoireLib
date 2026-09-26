@@ -1,3 +1,4 @@
+using NoireLib.Localizer;
 using System;
 using System.Collections.Generic;
 
@@ -16,7 +17,11 @@ public sealed class SubCommandDefinition
     /// <summary>
     /// Optional help text describing what this subcommand does.
     /// </summary>
-    public string? HelpText { get; }
+    public string? HelpText => helpString?.Text ?? helpText;
+
+    private readonly string? helpText;
+
+    private readonly NoireString? helpString;
 
     /// <summary>
     /// Alternative names that can be used to invoke this subcommand.
@@ -76,6 +81,7 @@ public sealed class SubCommandDefinition
     internal SubCommandDefinition(
         string name,
         string? helpText,
+        NoireString? helpString,
         List<string> aliases,
         List<CommandArgumentDefinition> arguments,
         List<SubCommandDefinition> subCommands,
@@ -89,7 +95,8 @@ public sealed class SubCommandDefinition
         bool failOnExtraArguments)
     {
         Name = name;
-        HelpText = helpText;
+        this.helpText = helpText;
+        this.helpString = helpString;
         Aliases = aliases.AsReadOnly();
         Arguments = arguments.AsReadOnly();
         SubCommands = subCommands.AsReadOnly();

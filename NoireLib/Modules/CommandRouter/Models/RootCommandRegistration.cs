@@ -1,4 +1,5 @@
 using Dalamud.Game.Command;
+using NoireLib.Localizer;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -16,7 +17,19 @@ public sealed class RootCommandRegistration
     public string Command { get; }
 
     /// <summary>Optional help text describing the root command.</summary>
-    public string? HelpText { get; internal set; }
+    public string? HelpText
+    {
+        get => HelpString?.Text ?? helpText;
+        internal set
+        {
+            helpText = value;
+            HelpString = null;
+        }
+    }
+
+    private string? helpText;
+
+    internal NoireString? HelpString { get; set; }
 
     /// <summary>Whether this command should appear in Dalamud's help listing.</summary>
     public bool ShowInHelp { get; internal set; } = true;

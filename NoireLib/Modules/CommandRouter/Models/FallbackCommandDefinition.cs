@@ -1,3 +1,5 @@
+using NoireLib.Localizer;
+
 namespace NoireLib.CommandRouter;
 
 /// <summary>How a root command's fallback is presented in help listings.</summary>
@@ -7,7 +9,11 @@ public sealed class FallbackCommandDefinition
     public string Name { get; }
 
     /// <summary>Help text describing what the fallback does with its argument.</summary>
-    public string? HelpText { get; }
+    public string? HelpText => helpString?.Text ?? helpText;
+
+    private readonly string? helpText;
+
+    private readonly NoireString? helpString;
 
     /// <summary>
     /// The display order among the subcommand lines in help listings, where a tie lists the fallback first and
@@ -18,10 +24,11 @@ public sealed class FallbackCommandDefinition
     /// <summary>Whether the fallback appears in help listings, which does not affect dispatch.</summary>
     public bool ShowInHelp { get; }
 
-    internal FallbackCommandDefinition(string name, string? helpText, int displayOrder, bool showInHelp)
+    internal FallbackCommandDefinition(string name, string? helpText, NoireString? helpString, int displayOrder, bool showInHelp)
     {
         Name = name;
-        HelpText = helpText;
+        this.helpText = helpText;
+        this.helpString = helpString;
         DisplayOrder = displayOrder;
         ShowInHelp = showInHelp;
     }

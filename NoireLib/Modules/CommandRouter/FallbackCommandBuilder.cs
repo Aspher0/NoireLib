@@ -1,3 +1,4 @@
+using NoireLib.Localizer;
 using System;
 
 namespace NoireLib.CommandRouter;
@@ -11,6 +12,7 @@ public sealed class FallbackCommandBuilder
 {
     private readonly string name;
     private string? helpText;
+    private NoireString? helpString;
     private int displayOrder = int.MaxValue;
     private bool showInHelp = true;
     private Action<ParsedCommandArguments>? handler;
@@ -29,6 +31,13 @@ public sealed class FallbackCommandBuilder
     public FallbackCommandBuilder WithHelp(string helpText)
     {
         this.helpText = helpText;
+        helpString = null;
+        return this;
+    }
+
+    public FallbackCommandBuilder WithHelp(NoireString helpText)
+    {
+        helpString = helpText;
         return this;
     }
 
@@ -66,7 +75,7 @@ public sealed class FallbackCommandBuilder
         return this;
     }
 
-    internal FallbackCommandDefinition BuildDefinition() => new(name, helpText, displayOrder, showInHelp);
+    internal FallbackCommandDefinition BuildDefinition() => new(name, helpText, helpString, displayOrder, showInHelp);
 
     internal Action<ParsedCommandArguments>? BuildHandler() => handler;
 }

@@ -570,7 +570,7 @@ public class NoireUpdateTracker : NoireModuleBase<NoireUpdateTracker>
             var message = Message ?? $"[{UpdateTrackerTextTags.PluginInternalName}] A new update is available. Please update the plugin in /xlplugins. Current version: {UpdateTrackerTextTags.CurrentVersion} - New version: {UpdateTrackerTextTags.NewVersion}.";
 
             NoireLogger.PrintToChat(
-                XivChatType.Echo,
+                XivChatType.Debug,
                 ParseMessageTemplate(message, currentVersion.ToString(), remoteVersion.ToString()),
                 ColorHelper.HexToVector3("#FCC203"));
         }

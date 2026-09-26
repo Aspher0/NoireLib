@@ -4,6 +4,7 @@ using Dalamud.Interface.ManagedFontAtlas;
 using NoireLib.Localizer;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 
 namespace NoireLib.UI;
@@ -18,7 +19,13 @@ public static class NoireScriptFonts
 
     private static int seenRevision = -1;
     private static int seenRegistry = -1;
+    private static int seenExtras = -1;
+    private static int extrasVersion;
+    private static readonly Dictionary<string, string[]> Extras = new();
+    private static readonly HashSet<string> Prepared = new(StringComparer.OrdinalIgnoreCase);
+    private static bool currentLanguageOnly;
     private static ushort[]? ranges;
+    private static int glyphCount;
     private static int generation;
 
     /// <summary>The glyph ranges merged into every face, or <see langword="null"/> when no loaded text needs one.</summary>
@@ -41,19 +48,123 @@ public static class NoireScriptFonts
         }
     }
 
+    internal static (ushort[]? Ranges, int Generation) Snapshot
+    {
+        get
+        {
+            Refresh();
+
+            lock (SyncRoot)
+                return (ranges, generation);
+        }
+    }
+
+    internal static int GlyphCount
+    {
+        get
+        {
+            Refresh();
+            return Volatile.Read(ref glyphCount);
+        }
+    }
+
+    public static bool CurrentLanguageOnly
+    {
+        get => Volatile.Read(ref currentLanguageOnly);
+        set
+        {
+            lock (SyncRoot)
+            {
+                if (currentLanguageOnly == value)
+                    return;
+
+                currentLanguageOnly = value;
+                Interlocked.Increment(ref extrasVersion);
+            }
+
+            UiFaceAtlas.MarkAllStale();
+        }
+    }
+
+    public static void Prepare(string locale)
+    {
+        lock (SyncRoot)
+        {
+            if (!Prepared.Add(locale))
+                return;
+
+            Interlocked.Increment(ref extrasVersion);
+        }
+
+        UiFaceAtlas.MarkAllStale();
+    }
+
+    public static void Unprepare(string locale)
+    {
+        lock (SyncRoot)
+        {
+            if (!Prepared.Remove(locale))
+                return;
+
+            Interlocked.Increment(ref extrasVersion);
+        }
+
+        UiFaceAtlas.MarkAllStale();
+    }
+
+    public static void Include(string key, IEnumerable<string?> texts)
+    {
+        var kept = new List<string>();
+
+        foreach (var text in texts)
+        {
+            if (!string.IsNullOrEmpty(text))
+                kept.Add(text);
+        }
+
+        lock (SyncRoot)
+        {
+            Extras[key] = kept.ToArray();
+            Interlocked.Increment(ref extrasVersion);
+        }
+
+        UiFaceAtlas.MarkAllStale();
+    }
+
+    public static void Exclude(string key)
+    {
+        lock (SyncRoot)
+        {
+            if (!Extras.Remove(key))
+                return;
+
+            Interlocked.Increment(ref extrasVersion);
+        }
+
+        UiFaceAtlas.MarkAllStale();
+    }
+
     // Called from a font's pre-build step, after its own glyphs.
     internal static void Merge(IFontAtlasBuildToolkitPreBuild toolkit, ImFontPtr font, float sizePx)
+        => Merge(toolkit, font, sizePx, Ranges);
+
+    internal static void Merge(IFontAtlasBuildToolkitPreBuild toolkit, ImFontPtr font, float sizePx, ushort[]? needed, float? gamma = null)
     {
-        if (font.IsNull || Ranges is not { } needed)
+        if (font.IsNull || needed == null)
             return;
 
-        toolkit.AddDalamudAssetFont(DalamudAsset.NotoSansCjkMedium, new SafeFontConfig
+        var config = new SafeFontConfig
         {
             SizePx = sizePx,
             MergeFont = font,
             GlyphRanges = needed,
             PixelSnapH = true,
-        });
+        };
+
+        if (gamma is { } value)
+            config.RasterizerGamma = value;
+
+        toolkit.AddDalamudAssetFont(DalamudAsset.NotoSansCjkMedium, config);
     }
 
     // Kana, Hangul, CJK ideographs, symbols and punctuation, and the full width forms: what Noto Sans CJK draws and
@@ -118,19 +229,32 @@ public static class NoireScriptFonts
     {
         var revision = NoireLanguages.Revision;
         var registry = NoireLanguages.RegistryVersion;
+        var extras = Volatile.Read(ref extrasVersion);
 
-        if (revision == Volatile.Read(ref seenRevision) && registry == Volatile.Read(ref seenRegistry))
+        if (revision == Volatile.Read(ref seenRevision) && registry == Volatile.Read(ref seenRegistry) && extras == Volatile.Read(ref seenExtras))
             return;
 
         lock (SyncRoot)
         {
-            if (revision == seenRevision && registry == seenRegistry)
+            extras = extrasVersion;
+
+            if (revision == seenRevision && registry == seenRegistry && extras == seenExtras)
                 return;
 
-            var next = RangesOf(LoadedTexts(NoireLanguages.Localizer));
+            var next = RangesOf(LoadedTexts(NoireLanguages.Localizer).Concat(Extras.Values.SelectMany(static texts => texts)));
+            var count = 0;
+
+            if (next != null)
+            {
+                for (var index = 0; index + 1 < next.Length; index += 2)
+                    count += next[index + 1] - next[index] + 1;
+            }
+
+            Volatile.Write(ref glyphCount, count);
 
             Volatile.Write(ref seenRevision, revision);
             Volatile.Write(ref seenRegistry, registry);
+            Volatile.Write(ref seenExtras, extras);
 
             if (next == null ? ranges == null : ranges != null && next.AsSpan().SequenceEqual(ranges))
                 return;
@@ -148,10 +272,51 @@ public static class NoireScriptFonts
         foreach (var language in localizer.Languages)
             yield return language.NativeName;
 
-        foreach (var locale in localizer.GetLocales())
+        if (!currentLanguageOnly)
+        {
+            foreach (var locale in localizer.GetLocales())
+            {
+                foreach (var text in localizer.GetLocaleTranslations(locale).Values)
+                    yield return text;
+            }
+
+            yield break;
+        }
+
+        foreach (var locale in LocalesToLoad(localizer))
         {
             foreach (var text in localizer.GetLocaleTranslations(locale).Values)
                 yield return text;
         }
+    }
+
+    private static List<string> LocalesToLoad(NoireLocalizer localizer)
+    {
+        var wanted = new List<string>(Prepared.Count + 1) { localizer.CurrentLocale };
+
+        foreach (var locale in Prepared)
+        {
+            if (!wanted.Contains(locale, StringComparer.OrdinalIgnoreCase))
+                wanted.Add(locale);
+        }
+
+        var loaded = localizer.GetLocales();
+        var result = new List<string>(wanted.Count);
+
+        foreach (var locale in loaded)
+        {
+            foreach (var want in wanted)
+            {
+                if (locale.Equals(want, StringComparison.OrdinalIgnoreCase)
+                    || locale.StartsWith(want + "-", StringComparison.OrdinalIgnoreCase)
+                    || want.StartsWith(locale + "-", StringComparison.OrdinalIgnoreCase))
+                {
+                    result.Add(locale);
+                    break;
+                }
+            }
+        }
+
+        return result;
     }
 }

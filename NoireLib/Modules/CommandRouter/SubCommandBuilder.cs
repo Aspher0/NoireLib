@@ -1,3 +1,4 @@
+using NoireLib.Localizer;
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
@@ -11,6 +12,7 @@ public sealed class SubCommandBuilder
 {
     private readonly string name;
     private string? helpText;
+    private NoireString? helpString;
     private readonly List<string> aliases = [];
     private readonly List<CommandArgumentDefinition> arguments = [];
     private readonly List<SubCommandDefinition> subCommands = [];
@@ -36,6 +38,13 @@ public sealed class SubCommandBuilder
     public SubCommandBuilder WithHelp(string helpText)
     {
         this.helpText = helpText;
+        helpString = null;
+        return this;
+    }
+
+    public SubCommandBuilder WithHelp(NoireString helpText)
+    {
+        helpString = helpText;
         return this;
     }
 
@@ -203,5 +212,5 @@ public sealed class SubCommandBuilder
 
     // Builds the final SubCommandDefinition from the current builder state.
     internal SubCommandDefinition Build() =>
-        new(name, helpText, aliases, arguments, subCommands, handler, isAsync, hasArguments, condition, showInHelp, displayOrder, allowUnorderedOptionalArguments, failOnExtraArguments);
+        new(name, helpText, helpString, aliases, arguments, subCommands, handler, isAsync, hasArguments, condition, showInHelp, displayOrder, allowUnorderedOptionalArguments, failOnExtraArguments);
 }
