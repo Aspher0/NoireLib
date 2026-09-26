@@ -213,7 +213,7 @@ public sealed partial class NoireReorderableList<T>
         }
         catch (Exception ex)
         {
-            NoireLogger.LogError(ex, $"The renderer of list '{Id}' threw an exception.", nameof(NoireReorderableList<T>));
+            NoireLogger.LogError(ex, $"The renderer of list '{Id}' threw an exception.", "[NoireReorderableList] ");
         }
     }
 

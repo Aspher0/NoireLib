@@ -176,7 +176,7 @@ public static class ShareCodeHelper
         }
         catch (JsonException ex)
         {
-            NoireLogger.LogDebug($"A share code of kind '{kind}' did not deserialize: {ex.Message}", nameof(ShareCodeHelper));
+            NoireLogger.LogDebug($"A share code of kind '{kind}' did not deserialize: {ex.Message}", "[ShareCodeHelper] ");
             return ShareCodeResult<T>.Fail(ShareCodeError.Unreadable, "This code is not the shape this import expects. It may have been made by a different plugin or an older version.", kind);
         }
     }

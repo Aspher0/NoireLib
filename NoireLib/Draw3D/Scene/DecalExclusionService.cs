@@ -69,7 +69,7 @@ internal static class DecalExclusionService
             }
             catch (Exception ex)
             {
-                NoireLogger.LogError(ex, "A decal exclusion collector threw; the decal reads over actors this frame.", "Draw3D");
+                NoireLogger.LogError(ex, "A decal exclusion collector threw; the decal reads over actors this frame.", "[Draw3D] ");
             }
         }
     }

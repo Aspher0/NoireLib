@@ -16,7 +16,7 @@ public sealed partial class SceneNode
         var renderer = Renderer;
         if (renderer == null)
         {
-            NoireLogger.LogWarning($"Draw3D: SceneNode '{Name ?? "(unnamed)"}'.ShowOutline with no renderer - ignored. Attach a mesh first.", "Draw3D");
+            NoireLogger.LogWarning($"Draw3D: SceneNode '{Name ?? "(unnamed)"}'.ShowOutline with no renderer - ignored. Attach a mesh first.", "[Draw3D] ");
             return this;
         }
 

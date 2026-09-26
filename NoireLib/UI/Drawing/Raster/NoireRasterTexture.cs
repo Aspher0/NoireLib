@@ -123,7 +123,7 @@ public sealed class NoireRasterTexture : IDisposable
         }
         catch (Exception ex)
         {
-            NoireLogger.LogDebug($"Rendering {debugName} failed: {ex.Message}", nameof(NoireRasterTexture));
+            NoireLogger.LogDebug($"Rendering {debugName} failed: {ex.Message}", "[NoireRasterTexture] ");
 
             // Held as built so a failing scale is not retried every frame.
             lock (gate)

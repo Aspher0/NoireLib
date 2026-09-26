@@ -270,7 +270,7 @@ internal sealed unsafe class UiDiffMaskHealth : IDisposable
                     disabledLogged = true;
                     NoireLogger.LogError(
                         "Draw3D: the pre-UI and post-UI snapshots of the present buffer differ everywhere. The present buffer is " +
-                        "transformed after the injection point. Keeping the UI on top is disabled. Run '/noire3d uimask' and report the log.", "Draw3D");
+                        "transformed after the injection point. Keeping the UI on top is disabled. Run '/noire3d uimask' and report the log.", "[Draw3D] ");
                 }
             }
 
@@ -281,7 +281,7 @@ internal sealed unsafe class UiDiffMaskHealth : IDisposable
             if (!DiffUsable)
             {
                 DiffUsable = true;
-                NoireLogger.LogInfo("Draw3D: present-buffer snapshots look comparable again - UI-on-top masking re-enabled.", "Draw3D");
+                NoireLogger.LogInfo("Draw3D: present-buffer snapshots look comparable again - UI-on-top masking re-enabled.", "[Draw3D] ");
             }
 
             Description = changed == 0

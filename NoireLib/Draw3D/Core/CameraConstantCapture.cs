@@ -318,12 +318,12 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
         }
         catch (Exception ex)
         {
-            NoireLogger.LogError(ex, "Draw3D: failed to install the camera-constant capture hooks (the layer projects with the fallback camera instead).", "Draw3D");
+            NoireLogger.LogError(ex, "Draw3D: failed to install the camera-constant capture hooks (the layer projects with the fallback camera instead).", "[Draw3D] ");
             Dispose();
             return false;
         }
 
-        NoireLogger.LogInfo("Draw3D: camera-constant capture installed (disabled until the injection point is armed).", "Draw3D");
+        NoireLogger.LogInfo("Draw3D: camera-constant capture installed (disabled until the injection point is armed).", "[Draw3D] ");
         return true;
     }
 
@@ -649,7 +649,7 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
         if (!faultLogged)
         {
             faultLogged = true;
-            NoireLogger.LogError(ex, "Draw3D: camera-constant capture faulted; after 3 faults it self-disables (fallback camera meanwhile).", "Draw3D");
+            NoireLogger.LogError(ex, "Draw3D: camera-constant capture faulted; after 3 faults it self-disables (fallback camera meanwhile).", "[Draw3D] ");
         }
 
         if (detourFaults >= 3)
@@ -1328,7 +1328,7 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
         NoireLogger.LogInfo(
             $"Draw3D: camera constants locked - {lockedByteWidth} B ring, offset {lockedOffset}, {FormName(lockedForm)}, "
             + $"via {MechanismName(lockedMechanisms)}, best err {winner.MinErr:E2}. "
-            + "The layer now projects with the exact GPU camera constants.", "Draw3D");
+            + "The layer now projects with the exact GPU camera constants.", "[Draw3D] ");
     }
 
     private void Unlock(string reason)
@@ -1342,7 +1342,7 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
         if (!unlockLogged)
         {
             unlockLogged = true;
-            NoireLogger.LogInfo($"Draw3D: camera-constant lock released ({reason}) - rediscovering; fallback camera meanwhile.", "Draw3D");
+            NoireLogger.LogInfo($"Draw3D: camera-constant lock released ({reason}) - rediscovering; fallback camera meanwhile.", "[Draw3D] ");
         }
     }
 
@@ -1745,7 +1745,7 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
         }
 
         NoireLogger.PrintToChat($"Draw3D cbprobe: {(lockedOn ? "LOCKED - " + Describe() : $"{familyCount} families, not locked")} (details in log).");
-        NoireLogger.LogInfo(sb.ToString(), "Draw3D");
+        NoireLogger.LogInfo(sb.ToString(), "[Draw3D] ");
     }
 
     public void Dispose()

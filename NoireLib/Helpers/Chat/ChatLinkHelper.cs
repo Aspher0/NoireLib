@@ -61,7 +61,7 @@ public static class ChatLinkHelper
         catch (Exception ex)
         {
             NoireLogger.LogError(ex, $"Could not register the chat link '{key}'; the text is printed without it.",
-                nameof(ChatLinkHelper));
+                "[ChatLinkHelper] ");
             return null;
         }
 
@@ -116,7 +116,7 @@ public static class ChatLinkHelper
         }
         catch (Exception ex)
         {
-            NoireLogger.LogError(ex, "A chat link handler threw.", nameof(ChatLinkHelper));
+            NoireLogger.LogError(ex, "A chat link handler threw.", "[ChatLinkHelper] ");
         }
     }
 
@@ -128,7 +128,7 @@ public static class ChatLinkHelper
         }
         catch (Exception ex)
         {
-            NoireLogger.LogError(ex, $"Could not remove the chat link handler {commandId}.", nameof(ChatLinkHelper));
+            NoireLogger.LogError(ex, $"Could not remove the chat link handler {commandId}.", "[ChatLinkHelper] ");
         }
     }
 }

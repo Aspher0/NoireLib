@@ -1,6 +1,7 @@
 using Dalamud;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.ManagedFontAtlas;
+using NoireLib.Helpers;
 using NoireLib.Localizer;
 using System;
 using System.Collections.Generic;
@@ -58,6 +59,13 @@ public static class NoireScriptFonts
                 return (ranges, generation);
         }
     }
+
+    internal static int FontNumber => GameClientHelper.Current() switch
+    {
+        GameClient.Korean => 1,
+        GameClient.Chinese => 2,
+        _ => 0,
+    };
 
     internal static int GlyphCount
     {
@@ -146,9 +154,9 @@ public static class NoireScriptFonts
 
     // Called from a font's pre-build step, after its own glyphs.
     internal static void Merge(IFontAtlasBuildToolkitPreBuild toolkit, ImFontPtr font, float sizePx)
-        => Merge(toolkit, font, sizePx, Ranges);
+        => Merge(toolkit, font, sizePx, Ranges, FontNumber);
 
-    internal static void Merge(IFontAtlasBuildToolkitPreBuild toolkit, ImFontPtr font, float sizePx, ushort[]? needed, float? gamma = null)
+    internal static void Merge(IFontAtlasBuildToolkitPreBuild toolkit, ImFontPtr font, float sizePx, ushort[]? needed, int fontNumber, float? gamma = null)
     {
         if (font.IsNull || needed == null)
             return;
@@ -159,6 +167,7 @@ public static class NoireScriptFonts
             MergeFont = font,
             GlyphRanges = needed,
             PixelSnapH = true,
+            FontNo = fontNumber,
         };
 
         if (gamma is { } value)

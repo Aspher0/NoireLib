@@ -159,7 +159,7 @@ public sealed class InteractSelection
         }
         catch (Exception ex)
         {
-            NoireLogger.LogError(ex, "A NoireInteract selection Changed handler threw.", "Draw3D");
+            NoireLogger.LogError(ex, "A NoireInteract selection Changed handler threw.", "[Draw3D] ");
         }
     }
 }

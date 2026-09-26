@@ -48,7 +48,7 @@ public sealed partial class NoireGizmo
     {
         imguizmoDrewOnce = false;
         imguizmoNativeFallbackLogged = false;
-        NoireLogger.LogInfo($"[Gizmo] diagnostics re-armed. imguizmoApiState={imguizmoApiState} (0=untried, 1=ready, 2=unavailable).", "Draw3D");
+        NoireLogger.LogInfo($"[Gizmo] diagnostics re-armed. imguizmoApiState={imguizmoApiState} (0=untried, 1=ready, 2=unavailable).", "[Draw3D] ");
     }
 
     // Dalamud only initialises the ImGui binding. A failed ImGuizmo binding disables the backend.
@@ -65,13 +65,13 @@ public sealed partial class NoireGizmo
             ImGuizmo.SetImGuiContext(ImGui.GetCurrentContext());
             imguizmoContext = context;
             Volatile.Write(ref imguizmoApiState, 1);
-            NoireLogger.LogInfo("ImGuizmo backend initialised.", "Draw3D");
+            NoireLogger.LogInfo("ImGuizmo backend initialised.", "[Draw3D] ");
             return true;
         }
         catch (Exception ex)
         {
             Volatile.Write(ref imguizmoApiState, 2);
-            NoireLogger.LogError(ex, "ImGuizmo backend unavailable (InitApi failed); the ImGuizmo gizmo backend is disabled. Use GizmoBackend.Native.", "Draw3D");
+            NoireLogger.LogError(ex, "ImGuizmo backend unavailable (InitApi failed); the ImGuizmo gizmo backend is disabled. Use GizmoBackend.Native.", "[Draw3D] ");
             return false;
         }
     }
@@ -219,7 +219,7 @@ public sealed partial class NoireGizmo
                     $"[Gizmo] ImGuizmo drawing: over={isOver} using={isUsing} changed={changed} space={Options.Space} " +
                     $"objWorld=({world.Translation.X:F1},{world.Translation.Y:F1},{world.Translation.Z:F1}) " +
                     $"screen={(onScreen ? $"({scr.X:F0},{scr.Y:F0})" : "OFF-SCREEN")}.",
-                    "Draw3D");
+                    "[Draw3D] ");
             }
 
             var applied = changed && physicalDown && !dropUnsnappedFirstFrame && IsUsableTransform(in realMatrix);
@@ -443,7 +443,7 @@ public sealed partial class NoireGizmo
         catch (Exception ex)
         {
             imguizmoStylePtr = 0;
-            NoireLogger.LogError(ex, "Could not resolve ImGuizmo_GetStyle; the ImGuizmo backend keeps its own world-space drag text.", "Draw3D");
+            NoireLogger.LogError(ex, "Could not resolve ImGuizmo_GetStyle; the ImGuizmo backend keeps its own world-space drag text.", "[Draw3D] ");
         }
 
         return imguizmoStylePtr;

@@ -33,7 +33,7 @@ public sealed partial class SceneNode
     {
         if (Renderer?.Material is not { Domain: MaterialDomain.GroundDecal } decalMat)
         {
-            NoireLogger.LogWarning($"Draw3D: SceneNode '{Name ?? "(unnamed)"}'.ShowDecalShape on a node with no decal material - ignored. Give it a Material.Decal(...) first.", "Draw3D");
+            NoireLogger.LogWarning($"Draw3D: SceneNode '{Name ?? "(unnamed)"}'.ShowDecalShape on a node with no decal material - ignored. Give it a Material.Decal(...) first.", "[Draw3D] ");
             return this;
         }
 

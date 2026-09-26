@@ -573,7 +573,7 @@ public static unsafe partial class NoireDraw3D
         var values = DepthReadback.TryReadStencilAtPoints(device, in info, pts, display, out var desc);
         if (values == null)
         {
-            NoireLogger.LogInfo($"[StencilDebug] no readable stencil plane ({desc}).", "Draw3D");
+            NoireLogger.LogInfo($"[StencilDebug] no readable stencil plane ({desc}).", "[Draw3D] ");
             return;
         }
 
@@ -590,7 +590,7 @@ public static unsafe partial class NoireDraw3D
             summary.Append($"0x{kv.Key:X2}={kv.Value}");
         }
 
-        NoireLogger.LogInfo($"[StencilDebug] {desc} - stencil in view (value=grid-hits): {summary}", "Draw3D");
+        NoireLogger.LogInfo($"[StencilDebug] {desc} - stencil in view (value=grid-hits): {summary}", "[Draw3D] ");
     }
 
     internal static void EnsureInitialized()
@@ -630,7 +630,7 @@ public static unsafe partial class NoireDraw3D
             initialized = true;
             UpdateFrameworkHook();
             RefreshUiHideOverrides();
-            NoireLogger.LogInfo("NoireDraw3D initialized (device objects deferred to first Present).", "Draw3D");
+            NoireLogger.LogInfo("NoireDraw3D initialized (device objects deferred to first Present).", "[Draw3D] ");
         }
     }
 
@@ -658,7 +658,7 @@ public static unsafe partial class NoireDraw3D
         if (disposed)
         {
             try { release(); }
-            catch (Exception ex) { NoireLogger.LogError(ex, "Draw3D deferred release failed.", "Draw3D"); }
+            catch (Exception ex) { NoireLogger.LogError(ex, "Draw3D deferred release failed.", "[Draw3D] "); }
             return;
         }
 
@@ -679,7 +679,7 @@ public static unsafe partial class NoireDraw3D
         }
         catch (Exception handlerEx)
         {
-            NoireLogger.LogError(handlerEx, "A Draw3D OnFault handler threw.", "Draw3D");
+            NoireLogger.LogError(handlerEx, "A Draw3D OnFault handler threw.", "[Draw3D] ");
         }
     }
 
@@ -796,7 +796,7 @@ public static unsafe partial class NoireDraw3D
             renderDevice?.Dispose();
             renderDevice = null;
 
-            NoireLogger.LogInfo("NoireDraw3D disposed.", "Draw3D");
+            NoireLogger.LogInfo("NoireDraw3D disposed.", "[Draw3D] ");
         }
     }
 
@@ -810,7 +810,7 @@ public static unsafe partial class NoireDraw3D
             }
             catch (Exception ex)
             {
-                NoireLogger.LogError(ex, "Draw3D deferred release failed.", "Draw3D");
+                NoireLogger.LogError(ex, "Draw3D deferred release failed.", "[Draw3D] ");
             }
         }
     }
@@ -851,14 +851,14 @@ public static unsafe partial class NoireDraw3D
         if (!passFaultLogged)
         {
             passFaultLogged = true;
-            NoireLogger.LogError(ex, "Draw3D frame failed (self-disable ladder rung 4: layer skipped).", "Draw3D");
+            NoireLogger.LogError(ex, "Draw3D frame failed (self-disable ladder rung 4: layer skipped).", "[Draw3D] ");
             RaiseFault(Draw3DFaultKind.Pass, ex, "Scene pass failed; layer skipped this frame.");
         }
 
         if (passFailStreak >= 3)
         {
             enabled = false;
-            NoireLogger.LogError("Draw3D disabled after 3 consecutive frame failures (rung 5). Set NoireDraw3D.Enabled = true to re-arm.", "Draw3D");
+            NoireLogger.LogError("Draw3D disabled after 3 consecutive frame failures (rung 5). Set NoireDraw3D.Enabled = true to re-arm.", "[Draw3D] ");
             RaiseFault(Draw3DFaultKind.Renderer, ex, "Renderer disabled after repeated failures.");
         }
     }
@@ -1099,7 +1099,7 @@ public static unsafe partial class NoireDraw3D
             }
             catch (Exception ex)
             {
-                NoireLogger.LogError(ex, "A NoireDraw3D render-overlay handler threw; overlay skipped this frame.", "Draw3D");
+                NoireLogger.LogError(ex, "A NoireDraw3D render-overlay handler threw; overlay skipped this frame.", "[Draw3D] ");
             }
         }
 
@@ -1447,7 +1447,7 @@ public static unsafe partial class NoireDraw3D
             if (!passFaultLogged)
             {
                 passFaultLogged = true;
-                NoireLogger.LogError(ex, "Draw3D: inject render failed; falling back to the present-time composite.", "Draw3D");
+                NoireLogger.LogError(ex, "Draw3D: inject render failed; falling back to the present-time composite.", "[Draw3D] ");
             }
 
             return false;
@@ -1743,7 +1743,7 @@ public static unsafe partial class NoireDraw3D
         }
         catch (Exception ex)
         {
-            NoireLogger.LogError(ex, "Draw3D: world-collision rebuild failed; decals fall back to the cylinder exclusion.", "Draw3D");
+            NoireLogger.LogError(ex, "Draw3D: world-collision rebuild failed; decals fall back to the cylinder exclusion.", "[Draw3D] ");
         }
     }
 
@@ -1886,7 +1886,7 @@ public static unsafe partial class NoireDraw3D
             sb.AppendLine("If nearly every buffer still changed, the camera moved between the mark and the diff - repeat it standing still. Only the light differs.");
 
             Print($"Draw3D lights: compared {compared} buffer(s) against the mark - details in the log.");
-            NoireLogger.LogInfo(sb.ToString(), "Draw3D");
+            NoireLogger.LogInfo(sb.ToString(), "[Draw3D] ");
             return;
         }
 
@@ -1937,7 +1937,7 @@ public static unsafe partial class NoireDraw3D
                 }
 
                 Print($"Draw3D lights: compared {payloads.Count} payload(s) against the baseline - details in the log.");
-                NoireLogger.LogInfo(Core.ConstantWriteLog.DescribeDiff(writeLogBaseline, payloads), "Draw3D");
+                NoireLogger.LogInfo(Core.ConstantWriteLog.DescribeDiff(writeLogBaseline, payloads), "[Draw3D] ");
                 capture.ArmWriteLog(0);
                 return;
             }
@@ -1955,7 +1955,7 @@ public static unsafe partial class NoireDraw3D
                 var lights = Core.GameLightHarvest.FromPayloads(payloads);
 
                 Print($"Draw3D lights: {lights.Count} light record(s) from {payloads.Count} payload(s) - details in the log.");
-                NoireLogger.LogInfo(Core.GameLightHarvest.Describe(lights, payloads.Count), "Draw3D");
+                NoireLogger.LogInfo(Core.GameLightHarvest.Describe(lights, payloads.Count), "[Draw3D] ");
                 capture.ArmWriteLog(0);
                 return;
             }
@@ -1976,7 +1976,7 @@ public static unsafe partial class NoireDraw3D
                 ? $"Draw3D lights: {capture.WriteLogCount} write(s) recorded but the cap was hit. The END of the frame is missing - and that is where lighting runs. Re-run restricted to one size, e.g. /noire3d lights writes 512."
                 : $"Draw3D lights: {capture.WriteLogCount} recorded write(s) - details in the log. A buffer rewritten many times with different contents is a per-item list.");
 
-            NoireLogger.LogInfo(capture.DescribeWriteLog(), "Draw3D");
+            NoireLogger.LogInfo(capture.DescribeWriteLog(), "[Draw3D] ");
             capture.ArmWriteLog(0);
             return;
         }
@@ -1989,7 +1989,7 @@ public static unsafe partial class NoireDraw3D
                     ? $"Draw3D lights: ranked {current.Count} buffer(s) against the mark, with NO control - rows that change every frame are still in the list. Run baseline next time."
                     : $"Draw3D lights: ranked {current.Count} buffer(s) against the mark, ignoring {volatileConstantRows.Count} self-changing row(s) - details in the log.");
 
-            NoireLogger.LogInfo(Core.LightConstantProbe.DescribeCandidates(current, markedConstants, volatileConstantRows), "Draw3D");
+            NoireLogger.LogInfo(Core.LightConstantProbe.DescribeCandidates(current, markedConstants, volatileConstantRows), "[Draw3D] ");
             return;
         }
 
@@ -2014,7 +2014,7 @@ public static unsafe partial class NoireDraw3D
             sb.AppendLine(Core.LightConstantProbe.Describe(snapshot));
 
         Print($"Draw3D lights: dumped {current.Count} constant buffer(s) to the log. Run /noire3d lights mark, change the lighting, then /noire3d lights diff to find which rows follow it.");
-        NoireLogger.LogInfo(sb.ToString(), "Draw3D");
+        NoireLogger.LogInfo(sb.ToString(), "[Draw3D] ");
     }
 
     private static void HandleFrameDumpCommand(string rest)
@@ -2059,7 +2059,7 @@ public static unsafe partial class NoireDraw3D
         });
 
         if (!commandRegistered)
-            NoireLogger.LogDebug($"'{CommandName}' already registered by another plugin - use NoireDraw3D.Diagnostics instead.", "Draw3D");
+            NoireLogger.LogDebug($"'{CommandName}' already registered by another plugin - use NoireDraw3D.Diagnostics instead.", "[Draw3D] ");
     }
 
     private static void HandleCommand(string command, string args)
@@ -2178,7 +2178,7 @@ public static unsafe partial class NoireDraw3D
 
                 var gbufFolder = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "NoireLib_GBuffer");
                 Print($"Draw3D: reading back {gbufTargets.Count} G-buffer target(s) - images in {gbufFolder}, details in the log.");
-                NoireLogger.LogInfo(Core.GBufferProbe.Describe(renderDevice, gbufTargets, gbufFolder), "Draw3D");
+                NoireLogger.LogInfo(Core.GBufferProbe.Describe(renderDevice, gbufTargets, gbufFolder), "[Draw3D] ");
                 break;
             case "rtlog":
                 if (EnsureRenderTargetTap() is { } tap)
@@ -2252,7 +2252,7 @@ public static unsafe partial class NoireDraw3D
     private static void Print(string message)
     {
         NoireService.ChatGui.Print(message);
-        NoireLogger.LogInfo(message, "Draw3D");
+        NoireLogger.LogInfo(message, "[Draw3D] ");
     }
 
     private static RenderTargetTap? EnsureRenderTargetTap()
@@ -2282,7 +2282,7 @@ public static unsafe partial class NoireDraw3D
         }
         catch (Exception ex)
         {
-            NoireLogger.LogError(ex, "Draw3D: could not initialize the render-target tap.", "Draw3D");
+            NoireLogger.LogError(ex, "Draw3D: could not initialize the render-target tap.", "[Draw3D] ");
         }
 
         return renderTargetTap;

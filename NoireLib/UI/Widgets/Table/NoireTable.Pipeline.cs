@@ -65,7 +65,7 @@ public sealed partial class NoireTable<T>
             }
             catch (Exception ex)
             {
-                NoireLogger.LogError(ex, $"The filter callback of table column '{column.Header}' threw an exception.", nameof(NoireTable<T>));
+                NoireLogger.LogError(ex, $"The filter callback of table column '{column.Header}' threw an exception.", "[NoireTable] ");
             }
         }
 
@@ -115,7 +115,7 @@ public sealed partial class NoireTable<T>
             }
             catch (Exception ex)
             {
-                NoireLogger.LogError(ex, $"The sort of table column '{column!.Header}' threw an exception.", nameof(NoireTable<T>));
+                NoireLogger.LogError(ex, $"The sort of table column '{column!.Header}' threw an exception.", "[NoireTable] ");
                 result = 0;
             }
 

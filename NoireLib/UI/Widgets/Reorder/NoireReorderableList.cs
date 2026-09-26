@@ -360,7 +360,7 @@ public sealed partial class NoireReorderableList<T>
             }
             catch (Exception ex)
             {
-                NoireLogger.LogError(ex, $"The duplicate callback of list '{Id}' threw an exception.", nameof(NoireReorderableList<T>));
+                NoireLogger.LogError(ex, $"The duplicate callback of list '{Id}' threw an exception.", "[NoireReorderableList] ");
                 return false;
             }
         }
@@ -383,7 +383,7 @@ public sealed partial class NoireReorderableList<T>
         }
         catch (Exception ex)
         {
-            NoireLogger.LogError(ex, $"The label callback of list '{Id}' threw an exception.", nameof(NoireReorderableList<T>));
+            NoireLogger.LogError(ex, $"The label callback of list '{Id}' threw an exception.", "[NoireReorderableList] ");
             return string.Empty;
         }
     }
@@ -398,7 +398,7 @@ public sealed partial class NoireReorderableList<T>
         }
         catch (Exception ex)
         {
-            NoireLogger.LogError(ex, $"The change callback of list '{Id}' threw an exception.", nameof(NoireReorderableList<T>));
+            NoireLogger.LogError(ex, $"The change callback of list '{Id}' threw an exception.", "[NoireReorderableList] ");
         }
     }
 }

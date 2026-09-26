@@ -79,12 +79,12 @@ internal static class UiCodeWarmup
                 $"Compiled {prepared} drawing method(s) in {Stopwatch.GetElapsedTime(started).TotalMilliseconds:0} ms "
                 + $"over {workers} thread(s). "
                 + "This is time a window's first frame would otherwise have spent jitting its own draw path.",
-                nameof(NoireUI));
+                "[NoireUI] ");
         }
         catch (Exception ex)
         {
             // Background thread. An escaping exception has nothing to catch it.
-            NoireLogger.LogError(ex, "Could not finish compiling the drawing methods.", nameof(NoireUI));
+            NoireLogger.LogError(ex, "Could not finish compiling the drawing methods.", "[NoireUI] ");
         }
     }
 

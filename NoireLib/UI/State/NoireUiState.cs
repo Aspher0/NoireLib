@@ -145,7 +145,7 @@ public static class NoireUiState
         }
         catch (Exception ex)
         {
-            NoireLogger.LogWarning($"The UI state entry '{key}' could not be read as {typeof(T).Name} and is being ignored: {ex.Message}", nameof(NoireUiState));
+            NoireLogger.LogWarning($"The UI state entry '{key}' could not be read as {typeof(T).Name} and is being ignored: {ex.Message}", "[NoireUiState] ");
             return false;
         }
     }

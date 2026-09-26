@@ -128,7 +128,7 @@ internal sealed class DepthCalibration
         calibratedStandardZ = cam.StandardZ;
         calibratedFiniteFar = cam.FiniteFarPlane;
         Description = $"z={a:E2}+{b:F5}/w ({(b > 0 ? "reversed" : "standard")}-Z, {inliers} pts, resid {medianResidual:E1})";
-        NoireLogger.LogInfo($"Draw3D depth calibrated: {Description} - camera NearPlane says {cam.NearPlane:F4}.", "Draw3D");
+        NoireLogger.LogInfo($"Draw3D depth calibrated: {Description} - camera NearPlane says {cam.NearPlane:F4}.", "[Draw3D] ");
         return true;
     }
 
@@ -159,7 +159,7 @@ internal sealed class DepthCalibration
         if (failStreak == FailuresBeforeBackoff && !troubleLogged)
         {
             troubleLogged = true;
-            NoireLogger.LogError($"Draw3D depth calibration keeps failing ({reason}) - depth-dependent features stay off. Run '/noire3d probe' and report the log.", "Draw3D");
+            NoireLogger.LogError($"Draw3D depth calibration keeps failing ({reason}) - depth-dependent features stay off. Run '/noire3d probe' and report the log.", "[Draw3D] ");
         }
 
         return false;

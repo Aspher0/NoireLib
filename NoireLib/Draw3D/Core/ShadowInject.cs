@@ -350,7 +350,7 @@ internal sealed unsafe class ShadowInject : IDisposable
             for (var i = 0; i < rows.Length; i++)
                 text.AppendLine($"  row{i}: {rows[i].X:F4} {rows[i].Y:F4} {rows[i].Z:F4} {rows[i].W:F4}");
             text.AppendLine($"  world {world.X:F2},{world.Y:F2},{world.Z:F2} -> view {view.X:F2},{view.Y:F2},{view.Z:F2} -> clip {clip.X:F2},{clip.Y:F2},{clip.Z:F2},{clip.W:F2} -> ndc {ndc.X:F3},{ndc.Y:F3},{ndc.Z:F3}");
-            NoireLogger.LogInfo(text.ToString(), "Draw3D");
+            NoireLogger.LogInfo(text.ToString(), "[Draw3D] ");
         }
         finally
         {

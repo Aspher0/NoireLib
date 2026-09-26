@@ -90,7 +90,7 @@ internal sealed unsafe class SceneDepth : IDisposable
             if (!loggedUnknownFormat)
             {
                 loggedUnknownFormat = true;
-                NoireLogger.LogError<SceneDepth>($"No depth-readable view possible for scene depth format {texDesc.Format} - running depth-off. Please report this so the format table can be extended.", "Draw3D");
+                NoireLogger.LogError<SceneDepth>($"No depth-readable view possible for scene depth format {texDesc.Format} - running depth-off. Please report this so the format table can be extended.", "[Draw3D] ");
             }
 
             Description = $"unusable ({texDesc.Format})";

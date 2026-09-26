@@ -400,7 +400,7 @@ public sealed partial class NoireGizmo : IPointerInteractor, IDisposable
         }
         catch (Exception ex)
         {
-            NoireLogger.LogError(ex, $"A NoireGizmo {what} handler threw.", "Draw3D");
+            NoireLogger.LogError(ex, $"A NoireGizmo {what} handler threw.", "[Draw3D] ");
         }
     }
 
@@ -763,7 +763,7 @@ public sealed partial class NoireGizmo : IPointerInteractor, IDisposable
             NoireLogger.LogInfo(
                 $"[Gizmo] ImGuizmo requested but drawing native: apiReady={EnsureImGuizmoApi()} " +
                 $"fallbackCamera={(NoireDraw3D.LastFrameValid && NoireDraw3D.LastFrame.UsedFallbackCamera)}.",
-                "Draw3D");
+                "[Draw3D] ");
         }
 
         // Drawn from a live basis. The solver reads the frozen press-time basis.
@@ -902,7 +902,7 @@ public sealed partial class NoireGizmo : IPointerInteractor, IDisposable
             }
             catch (Exception ex)
             {
-                NoireLogger.LogError(ex, "The gizmo OcclusionHeld predicate threw.", "Draw3D");
+                NoireLogger.LogError(ex, "The gizmo OcclusionHeld predicate threw.", "[Draw3D] ");
             }
         }
 

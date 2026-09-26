@@ -31,7 +31,7 @@ internal sealed unsafe class RenderDevice : IDisposable
 
         if (!ComPtrUtil.TryQi<ID3D11Device>(unknown, out var dev))
         {
-            NoireLogger.LogError<RenderDevice>("The game device pointer does not QueryInterface to ID3D11Device.", "Draw3D");
+            NoireLogger.LogError<RenderDevice>("The game device pointer does not QueryInterface to ID3D11Device.", "[Draw3D] ");
             return null;
         }
 
@@ -42,7 +42,7 @@ internal sealed unsafe class RenderDevice : IDisposable
         if (ComPtrUtil.TryQi<ID3D11Device1>((IUnknown*)dev.Get(), out var dev1))
             result.device1 = dev1;
 
-        NoireLogger.LogDebug<RenderDevice>($"Acquired D3D11 device (feature level 0x{(int)result.FeatureLevel:X}, ID3D11Device1: {(result.device1.Get() != null ? "yes" : "no")}).", "Draw3D");
+        NoireLogger.LogDebug<RenderDevice>($"Acquired D3D11 device (feature level 0x{(int)result.FeatureLevel:X}, ID3D11Device1: {(result.device1.Get() != null ? "yes" : "no")}).", "[Draw3D] ");
         return result;
     }
 

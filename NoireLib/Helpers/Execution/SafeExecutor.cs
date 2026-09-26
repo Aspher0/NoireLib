@@ -197,11 +197,11 @@ public static class SafeExecutor
         switch (behavior)
         {
             case ExceptionBehavior.LogAndContinue:
-                NoireLogger.LogError(ex, message, typeof(SafeExecutor).Name);
+                NoireLogger.LogError(ex, message, "[SafeExecutor] ");
                 break;
 
             case ExceptionBehavior.LogAndThrow:
-                NoireLogger.LogError(ex, message, typeof(SafeExecutor).Name);
+                NoireLogger.LogError(ex, message, "[SafeExecutor] ");
                 throw ex;
 
             case ExceptionBehavior.Suppress:
@@ -212,7 +212,7 @@ public static class SafeExecutor
                 throw ex;
 
             default:
-                NoireLogger.LogError(ex, message, typeof(SafeExecutor).Name);
+                NoireLogger.LogError(ex, message, "[SafeExecutor] ");
                 break;
         }
     }

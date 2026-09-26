@@ -585,7 +585,7 @@ internal static class UiFaceAtlas
         }
 
         Interlocked.Increment(ref generation);
-        NoireLogger.LogDebug($"Built {page.Name}: {sizes} font size(s) {source} in {Stopwatch.GetElapsedTime(started).TotalMilliseconds:0} ms.", nameof(NoireFont));
+        NoireLogger.LogDebug($"Built {page.Name}: {sizes} font size(s) {source} in {Stopwatch.GetElapsedTime(started).TotalMilliseconds:0} ms.", "[NoireFont] ");
     }
 
     private static void BuildEntry(IFontAtlasBuildToolkitPreBuild toolkit, UiFaceEntry entry)
@@ -622,13 +622,18 @@ internal static class UiFaceAtlas
 
         if (face.MergeLanguageGlyphs)
         {
-            var extra = new SafeFontConfig { SizePx = linePx, MergeFont = font };
+            if (face.MergeDalamudLanguageGlyphs)
+            {
+                var extra = new SafeFontConfig { SizePx = linePx, MergeFont = font };
 
-            if (Gamma is { } extraGamma)
-                extra.RasterizerGamma = extraGamma;
+                if (Gamma is { } extraGamma)
+                    extra.RasterizerGamma = extraGamma;
 
-            toolkit.AttachExtraGlyphsForDalamudLanguage(ref extra);
-            NoireScriptFonts.Merge(toolkit, font, linePx, build != null ? build.Ranges : NoireScriptFonts.Ranges, Gamma);
+                toolkit.AttachExtraGlyphsForDalamudLanguage(ref extra);
+            }
+
+            NoireScriptFonts.Merge(toolkit, font, linePx, build != null ? build.Ranges : NoireScriptFonts.Ranges,
+                build?.FontNumber ?? NoireScriptFonts.FontNumber, Gamma);
         }
 
         face.OnBuild?.Invoke(toolkit, font, linePx);
@@ -716,7 +721,7 @@ internal static class UiFaceAtlas
         }
         catch (Exception ex)
         {
-            NoireLogger.LogError(ex, $"Failed to dispose the {entry.EmPx:0.##} px handle of {entry.Face.Name}.", nameof(NoireFont));
+            NoireLogger.LogError(ex, $"Failed to dispose the {entry.EmPx:0.##} px handle of {entry.Face.Name}.", "[NoireFont] ");
         }
 
         entry.Handle = null;
@@ -750,7 +755,7 @@ internal static class UiFaceAtlas
         }
         catch (Exception ex)
         {
-            NoireLogger.LogError(ex, "Failed to release a locked font.", nameof(NoireFont));
+            NoireLogger.LogError(ex, "Failed to release a locked font.", "[NoireFont] ");
         }
     }
 
@@ -762,7 +767,7 @@ internal static class UiFaceAtlas
         }
         catch (Exception ex)
         {
-            NoireLogger.LogError(ex, "Failed to dispose a NoireFont atlas.", nameof(NoireFont));
+            NoireLogger.LogError(ex, "Failed to dispose a NoireFont atlas.", "[NoireFont] ");
         }
     }
 
@@ -775,7 +780,7 @@ internal static class UiFaceAtlas
 
         NoireLogger.LogWarning(
             $"{MaxEntries} NoireFont sizes are built and no more will be; further sizes draw with the current font. Raise {nameof(NoireFont)}.{nameof(NoireFont.MaxBuiltSizes)} if this is expected.",
-            nameof(NoireFont));
+            "[NoireFont] ");
     }
 
     internal static void Cleanup()
@@ -798,7 +803,7 @@ internal static class UiFaceAtlas
                     }
                     catch (Exception ex)
                     {
-                        NoireLogger.LogError(ex, "Failed to dispose a NoireFont handle.", nameof(NoireFont));
+                        NoireLogger.LogError(ex, "Failed to dispose a NoireFont handle.", "[NoireFont] ");
                     }
                 }
 

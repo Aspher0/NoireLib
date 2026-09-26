@@ -93,7 +93,7 @@ public static class GltfLoader
             summary += " COLOR_0 vertex colors present but ignored (treated as shader data; pass importVertexColors:true to apply).";
         if (dropped.Count > 0)
             summary += $" Dropped {string.Join(", ", dropped)} (unsupported by the Draw3D core).";
-        NoireLogger.LogInfo(summary, "Draw3D");
+        NoireLogger.LogInfo(summary, "[Draw3D] ");
 
         return new Model3D(modelRoot, meshes, textures);
     }
@@ -237,7 +237,7 @@ public static class GltfLoader
         }
         catch (Exception ex)
         {
-            NoireLogger.LogError(ex, "glTF: LOD generation failed for a primitive. It draws at full detail.", "Draw3D");
+            NoireLogger.LogError(ex, "glTF: LOD generation failed for a primitive. It draws at full detail.", "[Draw3D] ");
         }
     }
 
@@ -465,7 +465,7 @@ public static class GltfLoader
         }
         catch (Exception ex)
         {
-            NoireLogger.LogError(ex, "glTF: base color texture failed to decode. The material renders untextured.", "Draw3D");
+            NoireLogger.LogError(ex, "glTF: base color texture failed to decode. The material renders untextured.", "[Draw3D] ");
         }
 
         textureCache[gltfTexture] = result;

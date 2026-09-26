@@ -9,7 +9,7 @@ namespace NoireLib.Remote;
 // The sink is internal, reached through DalamudInternals. A handler left on it would call into an unloaded plugin.
 internal static class DalamudLogTap
 {
-    private const string LoggerPrefix = "DalamudLogTap";
+    private const string LoggerPrefix = "[DalamudLogTap] ";
 
     // Most specific first.
     private static readonly string[] SourceProperties = ["Dalamud.PluginName", "Dalamud.ModuleName", "SourceContext"];

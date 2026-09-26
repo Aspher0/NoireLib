@@ -45,7 +45,7 @@ internal sealed unsafe class GameDepthTarget : System.IDisposable
                 if (!loggedUnknownFormat)
                 {
                     loggedUnknownFormat = true;
-                    NoireLogger.LogError<GameDepthTarget>($"Scene depth format {texDesc.Format} cannot back a depth-stencil view - native-UI depth-write disabled. Report this to extend the table.", "Draw3D");
+                    NoireLogger.LogError<GameDepthTarget>($"Scene depth format {texDesc.Format} cannot back a depth-stencil view - native-UI depth-write disabled. Report this to extend the table.", "[Draw3D] ");
                 }
 
                 return null;

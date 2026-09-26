@@ -164,6 +164,8 @@ public sealed class NoireFont : IDisposable
     /// <summary>Whether the glyphs Dalamud's configured language and the plugin's active language need are merged in, the latter through <see cref="NoireScriptFonts"/>. Read at each build.</summary>
     public bool MergeLanguageGlyphs { get; set; } = true;
 
+    public bool MergeDalamudLanguageGlyphs { get; set; } = true;
+
     /// <summary>The horizontal oversampling, or <see langword="null"/> for Dalamud's default. Read at each build.</summary>
     public int? Oversample { get; set; }
 
@@ -191,10 +193,12 @@ public sealed class NoireFont : IDisposable
                 return;
 
             UiFaceAtlas.Gamma = value;
-            UiFaceCache.ForgetUsed();
+            UiFaceCache.DropUsed();
             UiFaceAtlas.RebuildAll();
         }
     }
+
+    public static void RebuildAll() => UiFaceAtlas.RebuildAll();
 
     public static bool FullAlpha
     {
@@ -348,7 +352,7 @@ public sealed class NoireFont : IDisposable
         var created = Add(em, UiFaceAtlas.LoosePage(this), buildNow);
 
         if (created != null && !buildNow && !Keeps(em))
-            NoireLogger.LogDebug($"Size drawn before it was requested: {Name} {em:0.##} px", nameof(NoireFont));
+            NoireLogger.LogDebug($"Size drawn before it was requested: {Name} {em:0.##} px", "[NoireFont] ");
 
         return created;
     }

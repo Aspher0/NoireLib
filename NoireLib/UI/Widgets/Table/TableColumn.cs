@@ -81,7 +81,7 @@ public sealed class TableColumn<T>
         }
         catch (Exception ex)
         {
-            NoireLogger.LogError(ex, $"The text callback of table column '{Header}' threw an exception.", nameof(NoireTable<T>));
+            NoireLogger.LogError(ex, $"The text callback of table column '{Header}' threw an exception.", "[NoireTable] ");
             return string.Empty;
         }
     }

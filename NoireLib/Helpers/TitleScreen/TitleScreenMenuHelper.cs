@@ -16,7 +16,7 @@ namespace NoireLib.Helpers;
 public static class TitleScreenMenuHelper
 {
     private const string DisposeKey = "NoireLib.TitleScreenMenuHelper";
-    private const string LoggerPrefix = "TitleScreenMenuHelper";
+    private const string LoggerPrefix = "[TitleScreenMenuHelper] ";
 
     /// <summary>
     /// The size, in pixels on a side, that the title screen requires of an entry's icon. Dalamud removes an entry

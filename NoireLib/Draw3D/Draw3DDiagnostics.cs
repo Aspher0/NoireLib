@@ -209,7 +209,7 @@ public sealed unsafe class Draw3DDiagnostics
                          $"VP cross-check max element delta: {validateMaxMatrixDelta:E2}. Camera fallback active: {frame.UsedFallbackCamera}. " +
                          "Repeat across camera poses: orbit, side-on grazing, wall-collision camera, first-person, max zoom.";
             NoireLogger.PrintToChat($"Draw3D validate: {verdict}, max {validateMaxDelta:F3} px (details in log).");
-            NoireLogger.LogInfo(report, "Draw3D");
+            NoireLogger.LogInfo(report, "[Draw3D] ");
         }
     }
 
@@ -535,7 +535,7 @@ public sealed unsafe class Draw3DDiagnostics
             catch (Exception ex)
             {
                 calibrationStage = 0;
-                NoireLogger.LogError(ex, "Draw3D depth calibration failed.", "Draw3D");
+                NoireLogger.LogError(ex, "Draw3D depth calibration failed.", "[Draw3D] ");
             }
         }
 
@@ -548,7 +548,7 @@ public sealed unsafe class Draw3DDiagnostics
             }
             catch (Exception ex)
             {
-                NoireLogger.LogError(ex, "Draw3D ground grid failed.", "Draw3D");
+                NoireLogger.LogError(ex, "Draw3D ground grid failed.", "[Draw3D] ");
             }
         }
 
@@ -563,7 +563,7 @@ public sealed unsafe class Draw3DDiagnostics
         }
         catch (Exception ex)
         {
-            NoireLogger.LogError(ex, "Draw3D depth probe failed.", "Draw3D");
+            NoireLogger.LogError(ex, "Draw3D depth probe failed.", "[Draw3D] ");
         }
     }
 
@@ -651,7 +651,7 @@ public sealed unsafe class Draw3DDiagnostics
               + "(mismatched rows are usually collision-vs-rendered-surface disagreement, harmless if few)";
 
         Report($"Draw3D probe [{verdict.Split(' ')[0]}]: RTM vs map {mainVsMap}/{screens.Count} (gate >= {gate}). {(verdict.Contains('-') ? verdict[(verdict.IndexOf('-') + 2)..] : "Analytic depth mapping confirmed against ground truth.")}");
-        NoireLogger.LogInfo($"Draw3D probe details:\n{details}", "Draw3D");
+        NoireLogger.LogInfo($"Draw3D probe details:\n{details}", "[Draw3D] ");
     }
 
     private static string Fmt(float[]? values, int i)
@@ -675,6 +675,6 @@ public sealed unsafe class Draw3DDiagnostics
     private static void Report(string message)
     {
         NoireLogger.PrintToChat(message);
-        NoireLogger.LogInfo(message, "Draw3D");
+        NoireLogger.LogInfo(message, "[Draw3D] ");
     }
 }

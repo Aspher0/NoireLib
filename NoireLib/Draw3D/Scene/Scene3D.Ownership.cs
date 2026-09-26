@@ -53,7 +53,7 @@ public sealed partial class Scene3D : IDisposable
     {
         if (IsHubOwned)
         {
-            NoireLogger.LogWarning("Draw3D: MainScene is owned by the library and disposed at shutdown; Dispose() ignored. Use scene.Clear() to empty it.", "Draw3D");
+            NoireLogger.LogWarning("Draw3D: MainScene is owned by the library and disposed at shutdown; Dispose() ignored. Use scene.Clear() to empty it.", "[Draw3D] ");
             return;
         }
 
@@ -86,7 +86,7 @@ public sealed partial class Scene3D : IDisposable
             }
             catch (Exception ex)
             {
-                NoireLogger.LogError<Scene3D>(ex, $"Scene '{Name}': an owned disposable threw during Dispose; continuing.", "Draw3D");
+                NoireLogger.LogError<Scene3D>(ex, $"Scene '{Name}': an owned disposable threw during Dispose; continuing.", "[Draw3D] ");
             }
         }
 

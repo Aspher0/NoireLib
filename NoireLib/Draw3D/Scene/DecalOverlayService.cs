@@ -79,7 +79,7 @@ internal static class DecalOverlayService
             }
             catch (Exception ex)
             {
-                NoireLogger.LogError(ex, "A decal overlay threw while drawing; skipped this frame.", "Draw3D");
+                NoireLogger.LogError(ex, "A decal overlay threw while drawing; skipped this frame.", "[Draw3D] ");
             }
         }
     }

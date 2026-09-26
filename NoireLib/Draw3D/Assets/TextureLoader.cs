@@ -25,7 +25,7 @@ public static class TextureLoader
         if (!ComPtrUtil.TryQi<ID3D11ShaderResourceView>((IUnknown*)(nint)shared.Handle.Handle, out var srv))
         {
             shared.Dispose();
-            NoireLogger.LogError("TextureLoader: the wrap handle is not an ID3D11ShaderResourceView. Cannot bridge.", "Draw3D");
+            NoireLogger.LogError("TextureLoader: the wrap handle is not an ID3D11ShaderResourceView. Cannot bridge.", "[Draw3D] ");
             return null;
         }
 
@@ -104,7 +104,7 @@ public static unsafe class ExternalTexture
             var device1 = device.Device1;
             if (device1 == null)
             {
-                NoireLogger.LogError("ExternalTexture: NT-handle sharing requires ID3D11Device1, which this device does not expose.", "Draw3D");
+                NoireLogger.LogError("ExternalTexture: NT-handle sharing requires ID3D11Device1, which this device does not expose.", "[Draw3D] ");
                 return null;
             }
 
@@ -117,7 +117,7 @@ public static unsafe class ExternalTexture
 
         if (hr < 0 || texture == null)
         {
-            NoireLogger.LogError($"ExternalTexture: OpenSharedResource failed (hr=0x{(int)hr:X8}).", "Draw3D");
+            NoireLogger.LogError($"ExternalTexture: OpenSharedResource failed (hr=0x{(int)hr:X8}).", "[Draw3D] ");
             return null;
         }
 
@@ -128,7 +128,7 @@ public static unsafe class ExternalTexture
         if (device.Device->CreateShaderResourceView((ID3D11Resource*)texture, null, &srv) < 0 || srv == null)
         {
             texture->Release();
-            NoireLogger.LogError("ExternalTexture: CreateShaderResourceView failed on the shared resource.", "Draw3D");
+            NoireLogger.LogError("ExternalTexture: CreateShaderResourceView failed on the shared resource.", "[Draw3D] ");
             return null;
         }
 

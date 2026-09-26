@@ -75,7 +75,7 @@ public static class IconHelper
         }
         catch (System.Exception ex)
         {
-            NoireLogger.LogError(ex, $"Could not resolve icon {iconId}.", nameof(IconHelper));
+            NoireLogger.LogError(ex, $"Could not resolve icon {iconId}.", "[IconHelper] ");
             return null;
         }
 
@@ -159,7 +159,7 @@ public static class IconHelper
         }
         catch (System.Exception ex)
         {
-            NoireLogger.LogDebug($"Could not read the color of icon {iconId}: {ex.Message}", nameof(IconHelper));
+            NoireLogger.LogDebug($"Could not read the color of icon {iconId}: {ex.Message}", "[IconHelper] ");
             return null;
         }
     }

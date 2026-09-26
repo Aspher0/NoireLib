@@ -19,7 +19,7 @@ internal static class UiPersistKey
             NoireLogger.LogWarning(
                 $"This {kind} was created without an id, so its id is a new GUID every session and nothing keyed on it can be restored. " +
                 "Its persisted state is being skipped. Give it a stable id in the constructor to persist it.",
-                nameof(UiPersistKey));
+                "[UiPersistKey] ");
         }
 
         return false;

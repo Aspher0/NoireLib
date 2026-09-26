@@ -193,7 +193,7 @@ internal sealed unsafe class ShaderLibrary : IDisposable
         if (!customSources.TryGetValue(name, out var source))
         {
             cache[key] = null;
-            NoireLogger.LogError<ShaderLibrary>($"Material references unregistered custom pipeline '{name}'.", "Draw3D");
+            NoireLogger.LogError<ShaderLibrary>($"Material references unregistered custom pipeline '{name}'.", "[Draw3D] ");
             return null;
         }
 
@@ -225,7 +225,7 @@ internal sealed unsafe class ShaderLibrary : IDisposable
 
         if (!ShaderCompiler.TryCompile(name, source, "vs", "vs_5_0", defines, out var vsBlob, out var vsError))
         {
-            NoireLogger.LogError<ShaderLibrary>($"Pipeline '{name}' vertex shader failed to compile:\n{vsError}", "Draw3D");
+            NoireLogger.LogError<ShaderLibrary>($"Pipeline '{name}' vertex shader failed to compile:\n{vsError}", "[Draw3D] ");
             return null;
         }
 
@@ -233,7 +233,7 @@ internal sealed unsafe class ShaderLibrary : IDisposable
         {
             if (!ShaderCompiler.TryCompile(name, source, "ps", "ps_5_0", defines, out var psBlob, out var psError))
             {
-                NoireLogger.LogError<ShaderLibrary>($"Pipeline '{name}' pixel shader failed to compile:\n{psError}", "Draw3D");
+                NoireLogger.LogError<ShaderLibrary>($"Pipeline '{name}' pixel shader failed to compile:\n{psError}", "[Draw3D] ");
                 return null;
             }
 
@@ -244,14 +244,14 @@ internal sealed unsafe class ShaderLibrary : IDisposable
                 if (device.Device->CreateVertexShader(vsBlob.Get()->GetBufferPointer(), vsBlob.Get()->GetBufferSize(), null, pipeline.VsPtr.GetAddressOf()) < 0
                     || device.Device->CreatePixelShader(psBlob.Get()->GetBufferPointer(), psBlob.Get()->GetBufferSize(), null, pipeline.PsPtr.GetAddressOf()) < 0)
                 {
-                    NoireLogger.LogError<ShaderLibrary>($"Pipeline '{name}': shader object creation failed.", "Draw3D");
+                    NoireLogger.LogError<ShaderLibrary>($"Pipeline '{name}': shader object creation failed.", "[Draw3D] ");
                     pipeline.Dispose();
                     return null;
                 }
 
                 if (createLayout && !TryCreateLayout(device, vsBlob.Get(), instanced, pipeline))
                 {
-                    NoireLogger.LogError<ShaderLibrary>($"Pipeline '{name}': input layout creation failed.", "Draw3D");
+                    NoireLogger.LogError<ShaderLibrary>($"Pipeline '{name}': input layout creation failed.", "[Draw3D] ");
                     pipeline.Dispose();
                     return null;
                 }

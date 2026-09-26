@@ -47,11 +47,12 @@ internal sealed class UiFaceBuild
     private UiFaceCacheData? capture;
     private bool captureBroken;
 
-    public UiFaceBuild(string? key, UiFaceEntry[] entries, ushort[]? ranges, int scripts)
+    public UiFaceBuild(string? key, UiFaceEntry[] entries, ushort[]? ranges, int fontNumber, int scripts)
     {
         Key = key;
         Entries = entries;
         Ranges = ranges;
+        FontNumber = fontNumber;
         Scripts = scripts;
 
         for (var index = 0; index < entries.Length; index++)
@@ -63,6 +64,8 @@ internal sealed class UiFaceBuild
     public UiFaceEntry[] Entries { get; }
 
     public ushort[]? Ranges { get; }
+
+    public int FontNumber { get; }
 
     public int Scripts { get; }
 
@@ -139,7 +142,7 @@ internal sealed class UiFaceBuild
         {
             Failed = true;
             captureBroken = true;
-            NoireLogger.LogError(ex, $"Font cache failed on {entry.Face.Name} {entry.EmPx:0.##} px", nameof(NoireFont));
+            NoireLogger.LogError(ex, $"Font cache failed on {entry.Face.Name} {entry.EmPx:0.##} px", "[NoireFont] ");
         }
     }
 
@@ -272,6 +275,10 @@ internal static class UiFaceCache
 
     private static readonly TimeSpan SweepDelay = TimeSpan.FromSeconds(30);
 
+    private static readonly TimeSpan Unused = TimeSpan.FromDays(7);
+
+    private const long MaxBytes = 200L * 1024 * 1024;
+
     private static readonly HashSet<string> Used = new(StringComparer.OrdinalIgnoreCase);
 
     private static string? directory;
@@ -299,6 +306,7 @@ internal static class UiFaceCache
     internal static UiFaceBuild Prepare(UiFacePage page, bool skipCache)
     {
         var (ranges, scripts) = NoireScriptFonts.Snapshot;
+        var fontNumber = NoireScriptFonts.FontNumber;
         var entries = page.Entries.ToArray();
 
         Array.Sort(entries, static (a, b) =>
@@ -307,18 +315,18 @@ internal static class UiFaceCache
             return byName != 0 ? byName : a.EmPx.CompareTo(b.EmPx);
         });
 
-        var key = Enabled ? KeyOf(entries, ranges) : null;
+        var key = Enabled ? KeyOf(entries, ranges, fontNumber) : null;
         var handOff = page.HandOff;
         page.HandOff = null;
 
-        return new UiFaceBuild(key, entries, ranges, scripts)
+        return new UiFaceBuild(key, entries, ranges, fontNumber, scripts)
         {
             SkipCache = skipCache,
             Preloaded = handOff is { } given && given.Key == key ? given.Data : null,
         };
     }
 
-    private static string? KeyOf(UiFaceEntry[] entries, ushort[]? ranges)
+    private static string? KeyOf(UiFaceEntry[] entries, ushort[]? ranges, int fontNumber)
     {
         if (entries.Length == 0 || !NoireService.IsInitialized())
             return null;
@@ -331,6 +339,7 @@ internal static class UiFaceCache
             .Append('|').Append(NoireService.PluginInterface.UiLanguage)
             .Append('|').Append(UiFaceAtlas.TextureWidth)
             .Append('|').Append(UiFaceAtlas.Gamma?.ToString("R", CultureInfo.InvariantCulture) ?? "-")
+            .Append('|').Append(fontNumber)
             .Append('|');
 
         AppendRanges(text, ranges);
@@ -347,6 +356,7 @@ internal static class UiFaceCache
                 .Append(',').Append(face.LineRatio.ToString("R", CultureInfo.InvariantCulture))
                 .Append(',').Append(face.Oversample?.ToString(CultureInfo.InvariantCulture) ?? "-")
                 .Append(',').Append(face.MergeLanguageGlyphs ? '1' : '0')
+                .Append(face.MergeDalamudLanguageGlyphs ? '1' : '0')
                 .Append(',');
 
             AppendRanges(text, face.GlyphRanges ?? UiFontCache.DefaultGlyphRanges);
@@ -432,11 +442,12 @@ internal static class UiFaceCache
             }
 
             NoteUsed(key);
+            Touch(path);
             return data;
         }
         catch (Exception ex)
         {
-            NoireLogger.LogWarning($"Font cache unreadable, rebuilding: {Path.GetFileName(path)} ({ex.Message})", nameof(NoireFont));
+            NoireLogger.LogWarning($"Font cache unreadable, rebuilding: {Path.GetFileName(path)} ({ex.Message})", "[NoireFont] ");
             TryDelete(path);
             return null;
         }
@@ -492,7 +503,7 @@ internal static class UiFaceCache
             }
             catch (Exception ex)
             {
-                NoireLogger.LogWarning($"Font cache not saved: {Path.GetFileName(path)} ({ex.Message})", nameof(NoireFont));
+                NoireLogger.LogWarning($"Font cache not saved: {Path.GetFileName(path)} ({ex.Message})", "[NoireFont] ");
                 TryDelete(temporary);
             }
         });
@@ -532,7 +543,7 @@ internal static class UiFaceCache
 
     private static UiFaceCacheData? Discard(string path, string reason)
     {
-        NoireLogger.LogDebug($"Font cache dropped: {Path.GetFileName(path)} ({reason})", nameof(NoireFont));
+        NoireLogger.LogDebug($"Font cache dropped: {Path.GetFileName(path)} ({reason})", "[NoireFont] ");
         TryDelete(path);
         return null;
     }
@@ -545,10 +556,29 @@ internal static class UiFaceCache
         ArmSweep();
     }
 
-    internal static void ForgetUsed()
+    internal static void DropUsed()
     {
+        string[] dropped;
+
         lock (Used)
+        {
+            dropped = [.. Used];
             Used.Clear();
+        }
+
+        foreach (var key in dropped)
+            Delete(key);
+    }
+
+    private static void Touch(string path)
+    {
+        try
+        {
+            File.SetLastWriteTimeUtc(path, DateTime.UtcNow);
+        }
+        catch
+        {
+        }
     }
 
     internal static void ArmSweep()
@@ -596,28 +626,48 @@ internal static class UiFaceCache
         HashSet<string> keep;
 
         lock (Used)
-        {
-            if (Used.Count == 0)
-                return;
-
             keep = new HashSet<string>(Used, StringComparer.OrdinalIgnoreCase);
-        }
 
         try
         {
             var now = DateTime.UtcNow;
+            var others = new List<FileInfo>();
+            var total = 0L;
 
-            foreach (var file in System.IO.Directory.EnumerateFiles(root))
+            foreach (var file in new DirectoryInfo(root).EnumerateFiles())
             {
-                if (file.EndsWith(Extension, StringComparison.OrdinalIgnoreCase))
+                if (!file.Extension.Equals(Extension, StringComparison.OrdinalIgnoreCase))
                 {
-                    if (!keep.Contains(Path.GetFileNameWithoutExtension(file)))
-                        TryDelete(file);
+                    if (now - file.LastWriteTimeUtc > TimeSpan.FromHours(1))
+                        TryDelete(file.FullName);
+
+                    continue;
                 }
-                else if (now - File.GetLastWriteTimeUtc(file) > TimeSpan.FromHours(1))
+
+                total += file.Length;
+
+                if (keep.Contains(Path.GetFileNameWithoutExtension(file.Name)))
+                    continue;
+
+                if (now - file.LastWriteTimeUtc > Unused)
                 {
-                    TryDelete(file);
+                    TryDelete(file.FullName);
+                    total -= file.Length;
+                    continue;
                 }
+
+                others.Add(file);
+            }
+
+            others.Sort(static (a, b) => a.LastWriteTimeUtc.CompareTo(b.LastWriteTimeUtc));
+
+            foreach (var file in others)
+            {
+                if (total <= MaxBytes)
+                    break;
+
+                TryDelete(file.FullName);
+                total -= file.Length;
             }
         }
         catch

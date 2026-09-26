@@ -98,9 +98,9 @@ public sealed class UiDiagnostics
         }
 
         if (exception != null)
-            NoireLogger.LogError(exception, $"[{source}] {message}", nameof(NoireUI));
+            NoireLogger.LogError(exception, $"[{source}] {message}", "[NoireUI] ");
         else
-            NoireLogger.LogWarning($"[{source}] {message}", nameof(NoireUI));
+            NoireLogger.LogWarning($"[{source}] {message}", "[NoireUI] ");
 
         var handler = OnFault;
         if (handler == null)
@@ -112,7 +112,7 @@ public sealed class UiDiagnostics
         }
         catch (Exception ex)
         {
-            NoireLogger.LogError(ex, "The NoireUI fault handler threw. It is left attached; fix the handler.", nameof(NoireUI));
+            NoireLogger.LogError(ex, "The NoireUI fault handler threw. It is left attached; fix the handler.", "[NoireUI] ");
         }
     }
 

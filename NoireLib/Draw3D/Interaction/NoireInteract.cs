@@ -238,7 +238,7 @@ public static class NoireInteract
                     $"gameUi={overGameUi}{(overGameUi ? $"('{uiAddonName}')" : string.Empty)} blocksUi={GameUiBlocksInteraction} " +
                     $"selfDriven={selfDrivenOwnsMouse} rayValid={rayValid} foreignCapturing={foreignCapturing} " +
                     $"pos=({mousePos.X:F0},{mousePos.Y:F0})",
-                    "Draw3D");
+                    "[Draw3D] ");
             }
         }
 
@@ -269,7 +269,7 @@ public static class NoireInteract
                 $"[Interact] left={leftDown} (imgui={imguiLeft} phys={KeybindsHelper.IsAsyncKeyDown(VkLButton)}) hover={DescribeToken(hoverToken)} " +
                 $"draggable={hoverDraggable} foreign={foreignCapturing} inside={insideWindow} rayValid={rayValid} " +
                 $"pos=({mousePos.X:F0},{mousePos.Y:F0})",
-                "Draw3D");
+                "[Draw3D] ");
             debugPrevLeft = leftDown;
             debugPrevHover = hoverToken;
         }
@@ -350,7 +350,7 @@ public static class NoireInteract
             }
             catch (Exception ex)
             {
-                NoireLogger.LogError(ex, $"An interactor {it.GetType().Name} threw during hit-testing.", "Draw3D");
+                NoireLogger.LogError(ex, $"An interactor {it.GetType().Name} threw during hit-testing.", "[Draw3D] ");
             }
         }
 
@@ -408,7 +408,7 @@ public static class NoireInteract
         }
         catch (Exception ex)
         {
-            NoireLogger.LogError(ex, $"The {name} predicate threw.", "Draw3D");
+            NoireLogger.LogError(ex, $"The {name} predicate threw.", "[Draw3D] ");
             return false;
         }
     }
@@ -430,7 +430,7 @@ public static class NoireInteract
             }
             catch (Exception ex)
             {
-                NoireLogger.LogError(ex, $"An interactor {it.GetType().Name} threw while drawing.", "Draw3D");
+                NoireLogger.LogError(ex, $"An interactor {it.GetType().Name} threw while drawing.", "[Draw3D] ");
             }
         }
     }
@@ -453,7 +453,7 @@ public static class NoireInteract
             }
             catch (Exception ex)
             {
-                NoireLogger.LogError(ex, $"An interactor {it.GetType().Name} threw in its self-driven pre-pass.", "Draw3D");
+                NoireLogger.LogError(ex, $"An interactor {it.GetType().Name} threw in its self-driven pre-pass.", "[Draw3D] ");
             }
         }
 
@@ -483,7 +483,7 @@ public static class NoireInteract
             }
             catch (Exception ex)
             {
-                NoireLogger.LogError(ex, $"An interactor {it.GetType().Name} threw while drawing its render overlay.", "Draw3D");
+                NoireLogger.LogError(ex, $"An interactor {it.GetType().Name} threw while drawing its render overlay.", "[Draw3D] ");
             }
         }
     }
@@ -598,7 +598,7 @@ public static class NoireInteract
         }
         catch (Exception ex)
         {
-            NoireLogger.LogError(ex, $"A NoireInteract node {what} handler threw.", "Draw3D");
+            NoireLogger.LogError(ex, $"A NoireInteract node {what} handler threw.", "[Draw3D] ");
         }
     }
 
@@ -613,7 +613,7 @@ public static class NoireInteract
         }
         catch (Exception ex)
         {
-            NoireLogger.LogError(ex, $"A NoireInteract node {what} handler threw.", "Draw3D");
+            NoireLogger.LogError(ex, $"A NoireInteract node {what} handler threw.", "[Draw3D] ");
         }
     }
 
@@ -686,7 +686,7 @@ public static class NoireInteract
         }
         catch (Exception ex)
         {
-            NoireLogger.LogError(ex, "NoireInteract.Update threw; interaction skipped this frame.", "Draw3D");
+            NoireLogger.LogError(ex, "NoireInteract.Update threw; interaction skipped this frame.", "[Draw3D] ");
         }
     }
 
@@ -748,7 +748,7 @@ public static class NoireInteract
         public void Press(object token, MouseButton button)
         {
             if (DebugLog)
-                NoireLogger.LogInfo($"[Interact] PRESS {button} on {DescribeToken(token)}", "Draw3D");
+                NoireLogger.LogInfo($"[Interact] PRESS {button} on {DescribeToken(token)}", "[Draw3D] ");
 
             pressScreen = mousePos;
             pressRayOrigin = rayOrigin;
@@ -761,7 +761,7 @@ public static class NoireInteract
         public void Click(object token, MouseButton button)
         {
             if (DebugLog)
-                NoireLogger.LogInfo($"[Interact] CLICK {button} on {DescribeToken(token)}", "Draw3D");
+                NoireLogger.LogInfo($"[Interact] CLICK {button} on {DescribeToken(token)}", "[Draw3D] ");
 
             if (token is SceneNode node)
             {
@@ -791,7 +791,7 @@ public static class NoireInteract
         public void BackgroundClick()
         {
             if (DebugLog)
-                NoireLogger.LogInfo("[Interact] BACKGROUND CLICK (empty world)", "Draw3D");
+                NoireLogger.LogInfo("[Interact] BACKGROUND CLICK (empty world)", "[Draw3D] ");
 
             if ((DeselectOn & DeselectMode.ClickEmpty) != 0)
                 NoireDraw3D.ClearAllSelections();
@@ -800,7 +800,7 @@ public static class NoireInteract
         public void DragStart(object token)
         {
             if (DebugLog)
-                NoireLogger.LogInfo($"[Interact] DRAGSTART on {DescribeToken(token)}", "Draw3D");
+                NoireLogger.LogInfo($"[Interact] DRAGSTART on {DescribeToken(token)}", "[Draw3D] ");
 
             var ctx = BuildDragContext();
             if (token is SceneNode node)
@@ -842,7 +842,7 @@ public static class NoireInteract
             }
             catch (Exception ex)
             {
-                NoireLogger.LogError(ex, $"An interactor {it.GetType().Name} threw handling a pointer event.", "Draw3D");
+                NoireLogger.LogError(ex, $"An interactor {it.GetType().Name} threw handling a pointer event.", "[Draw3D] ");
             }
         }
     }

@@ -13,7 +13,7 @@ namespace NoireLib.Helpers;
 /// </summary>
 public static class DalamudPluginsHelper
 {
-    private const string LoggerPrefix = "DalamudPluginsHelper";
+    private const string LoggerPrefix = "[DalamudPluginsHelper] ";
 
     /// <summary>Whether Dalamud's plugin manager could be reached. Every operation fails with a message when it cannot.</summary>
     public static bool Available => DalamudInternals.PluginManager() != null;

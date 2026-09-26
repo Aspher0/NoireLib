@@ -555,7 +555,7 @@ public static class NoireInputs
         }
         catch (Exception ex)
         {
-            NoireLogger.LogError(ex, "The validation callback of an input threw an exception.", nameof(NoireInputs));
+            NoireLogger.LogError(ex, "The validation callback of an input threw an exception.", "[NoireInputs] ");
             return "Validation failed.";
         }
     }

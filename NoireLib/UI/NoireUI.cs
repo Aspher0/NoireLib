@@ -181,7 +181,7 @@ public static partial class NoireUI
                 "Overlay buttons fall back to being drawn from the plugin's own draw callback, which Dalamud hides for the whole plugin at once. " +
                 $"Setting {nameof(NoireOverlayButton.DrawConditions)} on a single overlay will therefore also keep the rest of this plugin's UI visible in that state. " +
                 $"See {nameof(NoireUI)}.{nameof(OverlaysDrawIndependently)}.",
-                nameof(NoireUI));
+                "[NoireUI] ");
         }
 
         if (!NoireLibMain.IsRegisteredOnDispose(DisposeCallbackKey))
@@ -214,7 +214,7 @@ public static partial class NoireUI
         }
         catch (Exception ex)
         {
-            NoireLogger.LogWarning(ex, "Failed to install the independent overlay draw hook.", nameof(NoireUI));
+            NoireLogger.LogWarning(ex, "Failed to install the independent overlay draw hook.", "[NoireUI] ");
             return false;
         }
     }
@@ -244,7 +244,7 @@ public static partial class NoireUI
                     }
                     catch (Exception ex)
                     {
-                        NoireLogger.LogError(ex, "Failed to remove the independent overlay draw hook.", nameof(NoireUI));
+                        NoireLogger.LogError(ex, "Failed to remove the independent overlay draw hook.", "[NoireUI] ");
                     }
 
                     removeIndependentHook = null;

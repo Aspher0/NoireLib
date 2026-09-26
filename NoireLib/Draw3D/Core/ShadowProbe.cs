@@ -112,7 +112,7 @@ internal sealed unsafe class ShadowProbe : IDisposable
         if (bindsSeen > bindsCaptured)
             report.AppendLine($"({bindsSeen} depth-only binds seen, first {bindsCaptured} captured)");
 
-        NoireLogger.LogInfo($"Draw3D shadow probe:\n{report}", "Draw3D");
+        NoireLogger.LogInfo($"Draw3D shadow probe:\n{report}", "[Draw3D] ");
         report.Clear();
     }
 

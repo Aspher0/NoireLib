@@ -404,7 +404,7 @@ public sealed partial class NoireTable<T>
         }
         catch (Exception ex)
         {
-            NoireLogger.LogError(ex, $"The renderer of table column '{column.Header}' threw an exception.", nameof(NoireTable<T>));
+            NoireLogger.LogError(ex, $"The renderer of table column '{column.Header}' threw an exception.", "[NoireTable] ");
         }
     }
 
@@ -476,7 +476,7 @@ public sealed partial class NoireTable<T>
             }
             catch (Exception ex)
             {
-                NoireLogger.LogError(ex, $"The aggregate of table column '{column.Header}' threw an exception.", nameof(NoireTable<T>));
+                NoireLogger.LogError(ex, $"The aggregate of table column '{column.Header}' threw an exception.", "[NoireTable] ");
                 continue;
             }
 
@@ -604,7 +604,7 @@ public sealed partial class NoireTable<T>
         }
         catch (Exception ex)
         {
-            NoireLogger.LogError(ex, $"The selection callback of table '{Id}' threw an exception.", nameof(NoireTable<T>));
+            NoireLogger.LogError(ex, $"The selection callback of table '{Id}' threw an exception.", "[NoireTable] ");
         }
     }
 }

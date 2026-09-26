@@ -264,12 +264,12 @@ internal sealed unsafe class RenderTargetTap : IDisposable
         }
         catch (Exception ex)
         {
-            NoireLogger.LogError(ex, "Draw3D: failed to install the render-thread hook (pre-UI features unavailable).", "Draw3D");
+            NoireLogger.LogError(ex, "Draw3D: failed to install the render-thread hook (pre-UI features unavailable).", "[Draw3D] ");
             Dispose();
             return false;
         }
 
-        NoireLogger.LogInfo("Draw3D: render-thread hook installed (disabled until armed/enabled).", "Draw3D");
+        NoireLogger.LogInfo("Draw3D: render-thread hook installed (disabled until armed/enabled).", "[Draw3D] ");
         return true;
     }
 
@@ -363,18 +363,18 @@ internal sealed unsafe class RenderTargetTap : IDisposable
         {
             var path = System.IO.Path.Combine(dumpFolder, $"frame_bind{finished:D3}.bmp");
             var note = GBufferProbe.Dump(dev, resource, path);
-            NoireLogger.LogInfo($"[FrameDump] bind {finished}: {note}", "Draw3D");
+            NoireLogger.LogInfo($"[FrameDump] bind {finished}: {note}", "[Draw3D] ");
 
             // The light volumes' stencil mark only exists between the geometry and lighting passes.
             if (GameRenderSources.TryGetDepthTexture(out var depth) && depth.Texture != 0)
             {
                 var stencilPath = System.IO.Path.Combine(dumpFolder, $"frame_bind{finished:D3}_stencil.bmp");
-                NoireLogger.LogInfo($"[FrameDump] bind {finished}: {GBufferProbe.DumpStencil(dev, depth.Texture, stencilPath)}", "Draw3D");
+                NoireLogger.LogInfo($"[FrameDump] bind {finished}: {GBufferProbe.DumpStencil(dev, depth.Texture, stencilPath)}", "[Draw3D] ");
             }
         }
         catch (Exception ex)
         {
-            NoireLogger.LogError(ex, $"Draw3D: frame dump of bind {finished} failed.", "Draw3D");
+            NoireLogger.LogError(ex, $"Draw3D: frame dump of bind {finished} failed.", "[Draw3D] ");
         }
     }
 
@@ -438,7 +438,7 @@ internal sealed unsafe class RenderTargetTap : IDisposable
             case 2:
                 Flush();
                 if (census is { Active: true } finished)
-                    NoireLogger.LogInfo(finished.Finish(), "Draw3D");
+                    NoireLogger.LogInfo(finished.Finish(), "[Draw3D] ");
                 state = 0;
                 RefreshOmHookState();
                 break;
@@ -608,7 +608,7 @@ internal sealed unsafe class RenderTargetTap : IDisposable
                 }
                 catch (Exception ex)
                 {
-                    NoireLogger.LogError(ex, "Draw3D: native-UI injection callback threw.", "Draw3D");
+                    NoireLogger.LogError(ex, "Draw3D: native-UI injection callback threw.", "[Draw3D] ");
                 }
                 finally
                 {
@@ -634,7 +634,7 @@ internal sealed unsafe class RenderTargetTap : IDisposable
             }
             catch (Exception ex)
             {
-                NoireLogger.LogError(ex, "Draw3D: the opaque-depth snapshot threw - translucent surfaces occlude again.", "Draw3D");
+                NoireLogger.LogError(ex, "Draw3D: the opaque-depth snapshot threw - translucent surfaces occlude again.", "[Draw3D] ");
                 OpaqueDepthFaulted = true;
                 OpaqueDepthEnabled = false;
             }
@@ -672,7 +672,7 @@ internal sealed unsafe class RenderTargetTap : IDisposable
         }
         catch (Exception ex)
         {
-            NoireLogger.LogError(ex, "Draw3D: G-buffer injection callback threw - injection disabled for safety.", "Draw3D");
+            NoireLogger.LogError(ex, "Draw3D: G-buffer injection callback threw - injection disabled for safety.", "[Draw3D] ");
             GBufferInjectionEnabled = false;
         }
         finally
@@ -697,7 +697,7 @@ internal sealed unsafe class RenderTargetTap : IDisposable
         }
         catch (Exception ex)
         {
-            NoireLogger.LogError(ex, "Draw3D: shadow injection callback threw - shadow casting disabled for safety.", "Draw3D");
+            NoireLogger.LogError(ex, "Draw3D: shadow injection callback threw - shadow casting disabled for safety.", "[Draw3D] ");
             ShadowInjectionEnabled = false;
         }
         finally
@@ -982,7 +982,7 @@ internal sealed unsafe class RenderTargetTap : IDisposable
 
         AppendMultiTargets(sb);
 
-        NoireLogger.LogInfo(sb.ToString(), "Draw3D");
+        NoireLogger.LogInfo(sb.ToString(), "[Draw3D] ");
         NoireLogger.PrintToChat($"Draw3D: captured {bindCount} binds / {drawCounter} draws this frame.");
     }
 

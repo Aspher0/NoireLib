@@ -118,7 +118,7 @@ internal sealed unsafe class DynamicRing : IDisposable
                 newSize *= 2;
 
             if (buffer != null)
-                NoireLogger.LogDebug<DynamicRing>($"Growing {name} ring {buffer.SizeBytes} to {newSize} bytes.", "Draw3D");
+                NoireLogger.LogDebug<DynamicRing>($"Growing {name} ring {buffer.SizeBytes} to {newSize} bytes.", "[Draw3D] ");
 
             buffer?.Dispose(); // in-flight GPU commands hold their own reference
             buffer = GpuBuffer.CreateDynamic(device, newSize, bind);

@@ -202,7 +202,7 @@ internal static class UiFontCache
             }
             catch (Exception ex)
             {
-                NoireLogger.LogError(ex, $"Failed to dispose the unused {size:0.#} px text font.", nameof(NoireText));
+                NoireLogger.LogError(ex, $"Failed to dispose the unused {size:0.#} px text font.", "[NoireText] ");
             }
 
             Handles.Remove(size);
@@ -232,7 +232,7 @@ internal static class UiFontCache
                 }
                 catch (Exception ex)
                 {
-                    NoireLogger.LogError(ex, "Failed to dispose a NoireText font handle.", nameof(NoireText));
+                    NoireLogger.LogError(ex, "Failed to dispose a NoireText font handle.", "[NoireText] ");
                 }
             }
 
@@ -244,7 +244,7 @@ internal static class UiFontCache
             }
             catch (Exception ex)
             {
-                NoireLogger.LogError(ex, "Failed to dispose the NoireText font atlas.", nameof(NoireText));
+                NoireLogger.LogError(ex, "Failed to dispose the NoireText font atlas.", "[NoireText] ");
             }
 
             UiTextMeasureCache.Clear();
@@ -305,7 +305,7 @@ internal static class UiFontCache
             $"Built {sizes} text size(s) in {Stopwatch.GetElapsedTime(started).TotalMilliseconds:0} ms. "
             + "The time scales with the glyph ranges the Dalamud language settings ask for. "
             + $"Call {nameof(NoireText)}.{nameof(NoireText.Prewarm)}(wait: true) from your plugin's constructor to spend it at load instead.",
-            nameof(NoireText));
+            "[NoireText] ");
     }
 
     private static void RegisterScaleLocked()
@@ -423,6 +423,6 @@ internal static class UiFontCache
             $"NoireText reached its limit of {MaxSizes} font sizes. {size:0.#} px is drawn at the nearest built size. "
             + $"Each size is a full glyph atlas. "
             + $"Ask for text by {nameof(TextSize)}, or set the sizes you need on {nameof(NoireTheme)}.",
-            nameof(NoireText));
+            "[NoireText] ");
     }
 }

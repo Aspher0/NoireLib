@@ -154,6 +154,6 @@ public sealed partial class NoireTabBar
         NoireLogger.LogWarning(
             $"Tab bar '{Id}' was asked to open '{id}' and did not, because {reason}. "
             + $"Reported once per id; check the id against {nameof(Tabs)}.",
-            nameof(NoireTabBar));
+            "[NoireTabBar] ");
     }
 }

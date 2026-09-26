@@ -392,7 +392,7 @@ public static partial class NoireLayout
                 NoireLogger.LogWarning(
                     "A collapsible section asked to persist its open state with a blank id. Its state is not saved. " +
                     "Give the section a stable id to persist it.",
-                    nameof(NoireLayout));
+                    "[NoireLayout] ");
             }
         }
 

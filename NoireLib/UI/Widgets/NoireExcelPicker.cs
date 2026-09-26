@@ -292,7 +292,7 @@ public sealed class NoireExcelPicker<TRow> where TRow : struct, IExcelRow<TRow>
         }
         catch (Exception ex)
         {
-            NoireLogger.LogError(ex, $"Failed to read the '{typeof(TRow).Name}' sheet for a picker.", nameof(NoireExcelPicker<TRow>));
+            NoireLogger.LogError(ex, $"Failed to read the '{typeof(TRow).Name}' sheet for a picker.", "[NoireExcelPicker] ");
         }
 
         // Back on the draw thread before touching anything the drawing reads, so a frame never sees a half-filled

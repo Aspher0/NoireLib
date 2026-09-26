@@ -136,7 +136,7 @@ public sealed partial class Scene3D
         }
         catch (Exception ex)
         {
-            NoireLogger.LogError<Scene3D>(ex, "A decal-shape outline threw while tracing for wireframe; skipped this frame.", "Draw3D");
+            NoireLogger.LogError<Scene3D>(ex, "A decal-shape outline threw while tracing for wireframe; skipped this frame.", "[Draw3D] ");
         }
 
         foreach (var child in node.Children)
@@ -167,7 +167,7 @@ public sealed partial class Scene3D
         }
         catch (Exception ex)
         {
-            NoireLogger.LogError<Scene3D>(ex, "A decal volume box threw while tracing; skipped this frame.", "Draw3D");
+            NoireLogger.LogError<Scene3D>(ex, "A decal volume box threw while tracing; skipped this frame.", "[Draw3D] ");
         }
 
         foreach (var child in node.Children)
@@ -183,7 +183,7 @@ public sealed partial class Scene3D
         }
         catch (Exception ex)
         {
-            NoireLogger.LogError<Scene3D>(ex, $"Scene '{Name}': OnPrepareFrame handler threw. Handlers must not throw; continuing.", "Draw3D");
+            NoireLogger.LogError<Scene3D>(ex, $"Scene '{Name}': OnPrepareFrame handler threw. Handlers must not throw; continuing.", "[Draw3D] ");
         }
 
         // Features may add or remove features.
@@ -206,7 +206,7 @@ public sealed partial class Scene3D
             {
                 lock (GraphLock)
                     FeatureList.Remove(feature);
-                NoireLogger.LogError<Scene3D>(ex, $"Scene '{Name}': feature {feature.GetType().Name} threw and was detached.", "Draw3D");
+                NoireLogger.LogError<Scene3D>(ex, $"Scene '{Name}': feature {feature.GetType().Name} threw and was detached.", "[Draw3D] ");
                 NoireDraw3D.RaiseFault(Enums.Draw3DFaultKind.Feature, ex, $"Feature {feature.GetType().Name} detached.");
             }
         }

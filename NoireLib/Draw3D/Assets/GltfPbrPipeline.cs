@@ -9,7 +9,7 @@ public static class GltfPbrPipeline
     /// <summary>Name to pass to <see cref="Materials.Material.Custom"/> for this pipeline.</summary>
     public const string Name = "NoireGltfPbr";
 
-    private const string LogPrefix = "Draw3D";
+    private const string LogPrefix = "[Draw3D] ";
 
     private static readonly System.Threading.Lock RegisterLock = new();
     private static bool registered;

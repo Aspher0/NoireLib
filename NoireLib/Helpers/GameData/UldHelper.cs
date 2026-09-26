@@ -83,7 +83,7 @@ public static class UldHelper
         }
         catch (System.Exception ex)
         {
-            NoireLogger.LogError(ex, $"Could not load the texture of a part of {part.TexturePath}.", nameof(UldHelper));
+            NoireLogger.LogError(ex, $"Could not load the texture of a part of {part.TexturePath}.", "[UldHelper] ");
             return null;
         }
 

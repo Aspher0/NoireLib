@@ -9,7 +9,7 @@ namespace NoireLib.Helpers;
 // Every name Dalamud does not publish sits here. None of it is API. Each lookup is cached, guarded, and yields null.
 internal static class DalamudInternals
 {
-    internal const string LoggerPrefix = "DalamudInternals";
+    internal const string LoggerPrefix = "[DalamudInternals] ";
 
     internal const string ServiceType = "Dalamud.Service`1";
     internal const string PluginManagerType = "Dalamud.Plugin.Internal.PluginManager";

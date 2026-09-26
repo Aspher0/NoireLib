@@ -75,7 +75,7 @@ internal sealed unsafe class OpaqueDepthSnapshot : IDisposable
             if (!loggedUnusable)
             {
                 loggedUnusable = true;
-                NoireLogger.LogError<OpaqueDepthSnapshot>($"The scene depth ({sourceDesc.Format}, {sourceDesc.SampleDesc.Count} samples) cannot be copied for the opaque-depth snapshot. Translucent surfaces occlude on this machine.", "Draw3D");
+                NoireLogger.LogError<OpaqueDepthSnapshot>($"The scene depth ({sourceDesc.Format}, {sourceDesc.SampleDesc.Count} samples) cannot be copied for the opaque-depth snapshot. Translucent surfaces occlude on this machine.", "[Draw3D] ");
             }
 
             return false;
@@ -115,7 +115,7 @@ internal sealed unsafe class OpaqueDepthSnapshot : IDisposable
 
         Allocations++;
         Description = $"{srvFormat} over {copyFormat} ({width}x{height})";
-        NoireLogger.LogDebug<OpaqueDepthSnapshot>($"Opaque-depth snapshot allocated: {Description}.", "Draw3D");
+        NoireLogger.LogDebug<OpaqueDepthSnapshot>($"Opaque-depth snapshot allocated: {Description}.", "[Draw3D] ");
         return true;
     }
 
