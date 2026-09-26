@@ -1,8 +1,7 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Project Sdk="Dalamud.NET.Sdk/15.0.0">
-    <Import Project="..\NoireLib.Version.props" />
-
     <PropertyGroup>
+        <Version>2.1.0.1</Version>
         <Use_DalamudPackager>false</Use_DalamudPackager>
         <Title>NoireLib - A library for Dalamud Plugins</Title>
         <Authors>Aspher0</Authors>
@@ -179,12 +178,10 @@
         </ItemGroup>
     </Target>
 
-    <!-- Any other configuration ships the Automation folder or debug code. -->
     <Target Name="NoireGuardPackConfiguration" BeforeTargets="GenerateNuspec" Condition="'$(Configuration)' != 'PublicRelease'">
         <Error Code="NOIREPACK001" Text="NoireLib is packed in PublicRelease only, not $(Configuration)." />
     </Target>
 
-    <!-- The NoireLib package depends on the NoireLib.Client package of the same version. -->
     <Target Name="NoirePackClient" AfterTargets="Pack">
         <MSBuild Projects="..\NoireLib.Client\NoireLib.Client.csproj" Targets="Pack" Properties="Configuration=$(Configuration);PackageOutputPath=$([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)', '$(PackageOutputPath)'))" />
     </Target>
