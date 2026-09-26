@@ -1,4 +1,5 @@
 using System;
+using System.Reflection;
 using System.Threading.Tasks;
 
 namespace NoireLib.UI;
@@ -14,8 +15,16 @@ public static partial class NoireUI
     public static Task WarmDrawPath(params Type[]? alsoWarm)
         => UiCodeWarmup.Start(alsoWarm);
 
+    public static Task WarmDrawPath(Assembly assembly, string? namespacePrefix = null)
+    {
+        ArgumentNullException.ThrowIfNull(assembly);
+
+        return Task.Run(() => UiCodeWarmup.Start(Array.FindAll(assembly.GetTypes(),
+            type => namespacePrefix == null || type.Namespace?.StartsWith(namespacePrefix, StringComparison.Ordinal) == true)));
+    }
+
     /// <summary>
-    /// Whether <see cref="WarmDrawPath"/> has run to completion.
+    /// Whether <see cref="WarmDrawPath(Type[])"/> has run to completion.
     /// </summary>
     public static bool DrawPathWarmed => UiCodeWarmup.Finished;
 }

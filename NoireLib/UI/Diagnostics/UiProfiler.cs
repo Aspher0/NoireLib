@@ -156,6 +156,18 @@ public sealed class UiProfiler
         set => detailed = value;
     }
 
+    private double slowFrameMs;
+
+    private string? slowFrameReport;
+
+    public double SlowFrameMs
+    {
+        get => slowFrameMs;
+        set => slowFrameMs = Math.Max(0d, value);
+    }
+
+    public event Action<string>? SlowFrame;
+
     // Both switches a per-method scope needs, in one read for the gate that asks on every shape drawn.
     internal bool MeasuringMethods => enabled && detailed;
 
@@ -487,8 +499,17 @@ public sealed class UiProfiler
         // between them.
         if (depth == 0 && NoireUI.FrameCount != currentFrame)
         {
+            string? report;
+
             lock (syncRoot)
+            {
                 RollFrameLocked();
+                report = slowFrameReport;
+                slowFrameReport = null;
+            }
+
+            if (report != null)
+                SlowFrame?.Invoke(report);
         }
 
         var parentId = depth > 0 ? stack[depth - 1].NodeId : 0;
@@ -788,6 +809,29 @@ public sealed class UiProfiler
             node.SelfBytes = 0L;
             node.Calls = 0;
         }
+
+        if (slowFrameMs > 0d && rootNode is { } root && root.LastMs >= slowFrameMs && SlowFrame != null)
+            slowFrameReport = SlowFrameReportLocked(root.LastMs);
+    }
+
+    private string SlowFrameReportLocked(double frameMs)
+    {
+        var slowest = new List<Node>(nodes.Values);
+        slowest.Sort(static (a, b) => b.SelfLastMs.CompareTo(a.SelfLastMs));
+
+        var text = new System.Text.StringBuilder($"Slow frame: {frameMs:0} ms, draw path warmed {NoireUI.DrawPathWarmed}. Slowest scopes, self/total ms:");
+
+        for (var index = 0; index < slowest.Count && index < 12; index++)
+        {
+            var node = slowest[index];
+
+            if (node.SelfLastMs < 0.5d)
+                break;
+
+            text.Append($" {node.Name} {node.SelfLastMs:0.0}/{node.LastMs:0.0};");
+        }
+
+        return text.ToString();
     }
 
     private static double ToMilliseconds(long ticks)

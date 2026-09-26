@@ -12,6 +12,8 @@ public interface IFontSkin
     /// <summary>Releases the faces; called when another skin takes over.</summary>
     void Unload();
 
+    bool IsReady => true;
+
     /// <summary>Makes a role's face the current ImGui font, at the drawing window's text size.</summary>
     /// <param name="role">What the text is.</param>
     void Push(TextRole role);

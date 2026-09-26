@@ -383,6 +383,12 @@ internal static class UiFaceAtlas
         return fresh.ImFont;
     }
 
+    internal static void Maintain()
+    {
+        if (tickedFrame == int.MinValue || NoireUI.FrameCount - tickedFrame > 1)
+            Tick();
+    }
+
     private static void Tick()
     {
         var frame = NoireUI.FrameCount;
@@ -737,6 +743,8 @@ internal static class UiFaceAtlas
             FontAtlasAutoRebuildMode.Disable,
             isGlobalScaled: false,
             debugName: "NoireFont " + page.Name);
+
+        UiFontPump.Ensure();
 
         if (!disposeRegistered && !NoireLibMain.IsRegisteredOnDispose(DisposeCallbackKey))
         {

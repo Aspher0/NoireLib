@@ -1,4 +1,4 @@
-﻿using Dalamud.Interface;
+using Dalamud.Interface;
 using Dalamud.Interface.FontIdentifier;
 using Dalamud.Interface.ManagedFontAtlas;
 using System;
@@ -222,6 +222,8 @@ internal static class UiFontCache
 
     internal static void Cleanup()
     {
+        Volatile.Write(ref reportedFirstBuild, 0);
+
         lock (SyncRoot)
         {
             foreach (var entry in Handles.Values)
@@ -296,15 +298,24 @@ internal static class UiFontCache
         }
     }
 
+    private static int reportedFirstBuild;
+
     private static void Report(int sizes, long started)
     {
         // Bumped when the font becomes available.
         Interlocked.Increment(ref generation);
 
+        var elapsed = Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+
+        if (Interlocked.Exchange(ref reportedFirstBuild, 1) == 1)
+        {
+            NoireLogger.LogDebug($"Rebuilt {sizes} text size(s) in {elapsed:0} ms.", "[NoireText] ");
+            return;
+        }
+
         NoireLogger.LogInformation(
-            $"Built {sizes} text size(s) in {Stopwatch.GetElapsedTime(started).TotalMilliseconds:0} ms. "
-            + "The time scales with the glyph ranges the Dalamud language settings ask for. "
-            + $"Call {nameof(NoireText)}.{nameof(NoireText.Prewarm)}(wait: true) from your plugin's constructor to spend it at load instead.",
+            $"Built {sizes} text size(s) in {elapsed:0} ms. "
+            + $"Call {nameof(NoireText)}.{nameof(NoireText.Prewarm)}(wait: true) from your plugin's constructor to build at load instead.",
             "[NoireText] ");
     }
 
@@ -387,6 +398,8 @@ internal static class UiFontCache
             FontAtlasAutoRebuildMode.Disable,
             isGlobalScaled: true,
             debugName: "NoireText");
+
+        UiFontPump.Ensure();
 
         if (!NoireLibMain.IsRegisteredOnDispose(DisposeCallbackKey))
             NoireLibMain.RegisterOnDispose(DisposeCallbackKey, Cleanup);

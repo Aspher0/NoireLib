@@ -15,6 +15,7 @@ namespace NoireLib.Tests;
 public sealed class NoireScriptFontsTests : IDisposable
 {
     private readonly List<NoireLocalizer> localizers = [];
+    private readonly NoireGlyphLoading loading = NoireScriptFonts.Loading;
 
     public NoireScriptFontsTests() => ResetPersistedConfiguration();
 
@@ -23,6 +24,7 @@ public sealed class NoireScriptFontsTests : IDisposable
         foreach (var localizer in localizers)
             localizer.Dispose();
 
+        NoireScriptFonts.Loading = loading;
         ResetPersistedConfiguration();
     }
 
@@ -46,6 +48,8 @@ public sealed class NoireScriptFontsTests : IDisposable
     [Fact]
     public void Generation_StaysWhenTheLanguageChanges_AndMovesWhenATextBringsANewCharacter()
     {
+        NoireScriptFonts.Loading = NoireGlyphLoading.AllLanguages;
+
         var localizer = new NoireLocalizer(active: true, enableLogging: false, defaultLocale: "en-US");
         localizers.Add(localizer);
         localizer.AddTranslation("ja", "test.hello", "こんにちは");
@@ -63,6 +67,43 @@ public sealed class NoireScriptFontsTests : IDisposable
 
         localizer.AddTranslation("ja", "test.bye", "さようなら");
         NoireScriptFonts.Generation.Should().NotBe(loaded);
+    }
+
+    [Fact]
+    public void CurrentThenAll_WidensOnceNothingIsLeftToBuild()
+    {
+        NoireScriptFonts.Loading = NoireGlyphLoading.CurrentLanguage;
+
+        var localizer = new NoireLocalizer(active: true, enableLogging: false, defaultLocale: "en-US");
+        localizers.Add(localizer);
+        localizer.AddTranslation("ja", "test.hello", "こんにちは");
+
+        var current = NoireScriptFonts.GlyphCount;
+        NoireScriptFonts.AllLanguagesLoaded.Should().BeFalse();
+
+        NoireScriptFonts.Loading = NoireGlyphLoading.CurrentThenAll;
+
+        NoireScriptFonts.AllLanguagesLoaded.Should().BeTrue();
+        NoireScriptFonts.GlyphCount.Should().BeGreaterThan(current);
+    }
+
+    [Fact]
+    public void CurrentLanguage_KeepsAPreparedLanguage()
+    {
+        NoireScriptFonts.Loading = NoireGlyphLoading.CurrentLanguage;
+
+        var localizer = new NoireLocalizer(active: true, enableLogging: false, defaultLocale: "en-US");
+        localizers.Add(localizer);
+        localizer.AddTranslation("ja", "test.hello", "こんにちは");
+
+        var current = NoireScriptFonts.GlyphCount;
+
+        NoireScriptFonts.Prepare("ja");
+        var prepared = NoireScriptFonts.GlyphCount;
+        NoireScriptFonts.Unprepare("ja");
+
+        prepared.Should().BeGreaterThan(current);
+        NoireScriptFonts.GlyphCount.Should().Be(current);
     }
 
     private static void ResetPersistedConfiguration()

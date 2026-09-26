@@ -1,6 +1,8 @@
 using Dalamud;
 using Dalamud.Bindings.ImGui;
+using Dalamud.Game;
 using Dalamud.Interface.ManagedFontAtlas;
+using Lumina.Excel;
 using NoireLib.Helpers;
 using NoireLib.Localizer;
 using System;
@@ -9,6 +11,13 @@ using System.Linq;
 using System.Threading;
 
 namespace NoireLib.UI;
+
+public enum NoireGlyphLoading
+{
+    CurrentThenAll,
+    CurrentLanguage,
+    AllLanguages,
+}
 
 /// <summary>
 /// The CJK glyphs the plugin's loaded translations use, merged from Dalamud's Noto Sans CJK. Every loaded language
@@ -24,7 +33,8 @@ public static class NoireScriptFonts
     private static int extrasVersion;
     private static readonly Dictionary<string, string[]> Extras = new();
     private static readonly HashSet<string> Prepared = new(StringComparer.OrdinalIgnoreCase);
-    private static bool currentLanguageOnly;
+    private static bool currentLanguageOnly = true;
+    private static NoireGlyphLoading loading = NoireGlyphLoading.CurrentThenAll;
     private static ushort[]? ranges;
     private static int glyphCount;
     private static int generation;
@@ -76,22 +86,49 @@ public static class NoireScriptFonts
         }
     }
 
-    public static bool CurrentLanguageOnly
+    public static NoireGlyphLoading Loading
     {
-        get => Volatile.Read(ref currentLanguageOnly);
+        get => loading;
         set
         {
-            lock (SyncRoot)
-            {
-                if (currentLanguageOnly == value)
-                    return;
+            if (loading == value)
+                return;
 
-                currentLanguageOnly = value;
-                Interlocked.Increment(ref extrasVersion);
-            }
-
-            UiFaceAtlas.MarkAllStale();
+            loading = value;
+            UiFontPump.Ensure();
+            UpdateStage();
         }
+    }
+
+    public static bool AllLanguagesLoaded => !Volatile.Read(ref currentLanguageOnly);
+
+    internal static void UpdateStage()
+    {
+        var narrow = loading switch
+        {
+            NoireGlyphLoading.CurrentLanguage => true,
+            NoireGlyphLoading.AllLanguages => false,
+            _ => NoireFontLadder.AllParked || (Volatile.Read(ref currentLanguageOnly) && !(NoireFontLadder.AllBuilt && !UiFaceAtlas.Busy)),
+        };
+
+        SetCurrentLanguageOnly(narrow);
+    }
+
+    private static void SetCurrentLanguageOnly(bool value)
+    {
+        if (Volatile.Read(ref currentLanguageOnly) == value)
+            return;
+
+        lock (SyncRoot)
+        {
+            if (currentLanguageOnly == value)
+                return;
+
+            currentLanguageOnly = value;
+            Interlocked.Increment(ref extrasVersion);
+        }
+
+        UiFaceAtlas.MarkAllStale();
     }
 
     public static void Prepare(string locale)
@@ -137,6 +174,34 @@ public static class NoireScriptFonts
         }
 
         UiFaceAtlas.MarkAllStale();
+    }
+
+    public static void IncludeSheet<T>(string key, Func<T, IEnumerable<string?>> texts, bool everyLanguage = false) where T : struct, IExcelRow<T>
+    {
+        ArgumentNullException.ThrowIfNull(texts);
+
+        var kept = new List<string?>();
+
+        if (everyLanguage)
+        {
+            foreach (var language in Enum.GetValues<ClientLanguage>())
+                AddSheet(kept, ExcelSheetHelper.GetSheet<T>(language), texts);
+        }
+        else
+        {
+            AddSheet(kept, ExcelSheetHelper.GetSheet<T>(), texts);
+        }
+
+        Include(key, kept);
+    }
+
+    private static void AddSheet<T>(List<string?> kept, ExcelSheet<T>? sheet, Func<T, IEnumerable<string?>> texts) where T : struct, IExcelRow<T>
+    {
+        if (sheet == null)
+            return;
+
+        foreach (var row in sheet)
+            kept.AddRange(texts(row));
     }
 
     public static void Exclude(string key)

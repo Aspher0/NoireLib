@@ -292,7 +292,7 @@ public abstract class NoireSkinnedWindowBase : NoireWindow, IDisposable
         HookOptionSync();
         SyncOptions();
 
-        if (Presentation == Presentation.Hidden)
+        if (Presentation == Presentation.Hidden || !NoireSkins.Active.Fonts.IsReady)
             return false;
 
         if (Owner is { } owner && (!owner.IsOpen || owner.IsCollapsed))

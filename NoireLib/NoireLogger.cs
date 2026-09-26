@@ -9,6 +9,8 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Numerics;
+using System.Reflection;
+using System.Runtime.CompilerServices;
 
 namespace NoireLib;
 
@@ -25,12 +27,14 @@ public static class NoireLogger
     /// <typeparam name="T">The caller type.</typeparam>
     /// <param name="message">The message to display.</param>
     /// <param name="prefix">The optional prefix to prepend to the message.</param>
+    [MethodImpl(MethodImplOptions.NoInlining)]
     public static void LogInfo<T>(string message, string? prefix = null) where T : class
-        => WriteLog(LogLevel.Info, GetLogStringWithCaller<T>(message, prefix));
+        => WriteLog(LogLevel.Info, GetLogStringWithCaller<T>(message, Tagged(prefix, Assembly.GetCallingAssembly())));
 
     /// <inheritdoc cref="LogInfo{T}(string, string?)"/>
+    [MethodImpl(MethodImplOptions.NoInlining)]
     public static void LogInformation<T>(string message, string? prefix = null) where T : class
-        => LogInfo<T>(message, prefix);
+        => WriteLog(LogLevel.Info, GetLogStringWithCaller<T>(message, Tagged(prefix, Assembly.GetCallingAssembly())));
 
     /// <summary>
     /// Writes an info log message including the caller instance and an optional prefix.
@@ -39,24 +43,28 @@ public static class NoireLogger
     /// <param name="instance">The caller instance.</param>
     /// <param name="message">The message to display.</param>
     /// <param name="prefix">The optional prefix to prepend to the message.</param>
+    [MethodImpl(MethodImplOptions.NoInlining)]
     public static void LogInfo<T>(T instance, string message, string? prefix = null) where T : class
-        => WriteLog(LogLevel.Info, GetLogStringWithCaller(instance, message, prefix));
+        => WriteLog(LogLevel.Info, GetLogStringWithCaller(instance, message, Tagged(prefix, Assembly.GetCallingAssembly(), instance)));
 
     /// <inheritdoc cref="LogInfo{T}(T, string, string?)"/>
+    [MethodImpl(MethodImplOptions.NoInlining)]
     public static void LogInformation<T>(T instance, string message, string? prefix = null) where T : class
-        => LogInfo<T>(instance, message, prefix);
+        => WriteLog(LogLevel.Info, GetLogStringWithCaller(instance, message, Tagged(prefix, Assembly.GetCallingAssembly(), instance)));
 
     /// <summary>
     /// Writes an info log message including an optional prefix.
     /// </summary>
     /// <param name="message">The message to display.</param>
     /// <param name="prefix">The optional prefix to prepend to the message.</param>
+    [MethodImpl(MethodImplOptions.NoInlining)]
     public static void LogInfo(string message, string? prefix = null)
-        => WriteLog(LogLevel.Info, GetLogString(message, prefix));
+        => WriteLog(LogLevel.Info, GetLogString(message, Tagged(prefix, Assembly.GetCallingAssembly())));
 
     /// <inheritdoc cref="LogInfo(string, string?)"/>
+    [MethodImpl(MethodImplOptions.NoInlining)]
     public static void LogInformation(string message, string? prefix = null)
-        => LogInfo(message, prefix);
+        => WriteLog(LogLevel.Info, GetLogString(message, Tagged(prefix, Assembly.GetCallingAssembly())));
 
     #endregion
 
@@ -68,8 +76,9 @@ public static class NoireLogger
     /// <typeparam name="T">The caller type.</typeparam>
     /// <param name="message">The message to display.</param>
     /// <param name="prefix">The optional prefix to prepend to the message.</param>
+    [MethodImpl(MethodImplOptions.NoInlining)]
     public static void LogError<T>(string message, string? prefix = null) where T : class
-        => WriteLog(LogLevel.Error, GetLogStringWithCaller<T>(message, prefix));
+        => WriteLog(LogLevel.Error, GetLogStringWithCaller<T>(message, Tagged(prefix, Assembly.GetCallingAssembly())));
 
     /// <summary>
     /// Writes an error log message including the caller instance and an optional prefix.
@@ -78,16 +87,18 @@ public static class NoireLogger
     /// <param name="instance">The caller instance.</param>
     /// <param name="message">The message to display.</param>
     /// <param name="prefix">The optional prefix to prepend to the message.</param>
+    [MethodImpl(MethodImplOptions.NoInlining)]
     public static void LogError<T>(T instance, string message, string? prefix = null) where T : class
-        => WriteLog(LogLevel.Error, GetLogStringWithCaller(instance, message, prefix));
+        => WriteLog(LogLevel.Error, GetLogStringWithCaller(instance, message, Tagged(prefix, Assembly.GetCallingAssembly(), instance)));
 
     /// <summary>
     /// Writes an error log message including an optional prefix.
     /// </summary>
     /// <param name="message">The message to display.</param>
     /// <param name="prefix">The optional prefix to prepend to the message.</param>
+    [MethodImpl(MethodImplOptions.NoInlining)]
     public static void LogError(string message, string? prefix = null)
-        => WriteLog(LogLevel.Error, GetLogString(message, prefix));
+        => WriteLog(LogLevel.Error, GetLogString(message, Tagged(prefix, Assembly.GetCallingAssembly())));
 
     /// <summary>
     /// Writes an error log message including the caller, an exception, and an optional prefix.
@@ -96,8 +107,9 @@ public static class NoireLogger
     /// <param name="ex">The exception.</param>
     /// <param name="message">The message to display.</param>
     /// <param name="prefix">The optional prefix to prepend to the message.</param>
+    [MethodImpl(MethodImplOptions.NoInlining)]
     public static void LogError<T>(Exception? ex, string message, string? prefix = null) where T : class
-        => WriteLog(LogLevel.Error, GetLogStringWithCaller<T>(message, prefix), ex);
+        => WriteLog(LogLevel.Error, GetLogStringWithCaller<T>(message, Tagged(prefix, Assembly.GetCallingAssembly())), ex);
 
     /// <summary>
     /// Writes an error log message including the caller instance, an exception, and an optional prefix.
@@ -107,8 +119,9 @@ public static class NoireLogger
     /// <param name="ex">The exception.</param>
     /// <param name="message">The message to display.</param>
     /// <param name="prefix">The optional prefix to prepend to the message.</param>
+    [MethodImpl(MethodImplOptions.NoInlining)]
     public static void LogError<T>(T instance, Exception? ex, string message, string? prefix = null) where T : class
-        => WriteLog(LogLevel.Error, GetLogStringWithCaller(instance, message, prefix), ex);
+        => WriteLog(LogLevel.Error, GetLogStringWithCaller(instance, message, Tagged(prefix, Assembly.GetCallingAssembly(), instance)), ex);
 
     /// <summary>
     /// Writes an error log message including an exception and an optional prefix.
@@ -116,8 +129,9 @@ public static class NoireLogger
     /// <param name="ex">The exception.</param>
     /// <param name="message">The message to display.</param>
     /// <param name="prefix">The optional prefix to prepend to the message.</param>
+    [MethodImpl(MethodImplOptions.NoInlining)]
     public static void LogError(Exception? ex, string message, string? prefix = null)
-        => WriteLog(LogLevel.Error, GetLogString(message, prefix), ex);
+        => WriteLog(LogLevel.Error, GetLogString(message, Tagged(prefix, Assembly.GetCallingAssembly())), ex);
 
     #endregion
 
@@ -133,18 +147,26 @@ public static class NoireLogger
     /// <param name="message">The message to display.</param>
     /// <param name="prefix">The optional prefix to prepend to the message.</param>
     /// <returns>True when this call was the one that logged.</returns>
+    [MethodImpl(MethodImplOptions.NoInlining)]
     public static bool LogErrorOnce(string key, Exception? ex, string message, string? prefix = null)
     {
         if (!TakeOnceSlot(key))
             return false;
 
-        LogError(ex, message, prefix);
+        WriteLog(LogLevel.Error, GetLogString(message, Tagged(prefix, Assembly.GetCallingAssembly())), ex);
         return true;
     }
 
     /// <inheritdoc cref="LogErrorOnce(string, Exception?, string, string?)"/>
+    [MethodImpl(MethodImplOptions.NoInlining)]
     public static bool LogErrorOnce(string key, string message, string? prefix = null)
-        => LogErrorOnce(key, null, message, prefix);
+    {
+        if (!TakeOnceSlot(key))
+            return false;
+
+        WriteLog(LogLevel.Error, GetLogString(message, Tagged(prefix, Assembly.GetCallingAssembly())));
+        return true;
+    }
 
     /// <summary>
     /// Writes a warning the first time a key reports, and does nothing on every later call carrying that key.
@@ -153,12 +175,13 @@ public static class NoireLogger
     /// <param name="message">The message to display.</param>
     /// <param name="prefix">The optional prefix to prepend to the message.</param>
     /// <returns>True when this call was the one that logged.</returns>
+    [MethodImpl(MethodImplOptions.NoInlining)]
     public static bool LogWarningOnce(string key, string message, string? prefix = null)
     {
         if (!TakeOnceSlot(key))
             return false;
 
-        LogWarning(message, prefix);
+        WriteLog(LogLevel.Warning, GetLogString(message, Tagged(prefix, Assembly.GetCallingAssembly())));
         return true;
     }
 
@@ -193,8 +216,9 @@ public static class NoireLogger
     /// <typeparam name="T">The caller type.</typeparam>
     /// <param name="message">The message to display.</param>
     /// <param name="prefix">The optional prefix to prepend to the message.</param>
+    [MethodImpl(MethodImplOptions.NoInlining)]
     public static void LogFatal<T>(string message, string? prefix = null) where T : class
-        => WriteLog(LogLevel.Fatal, GetLogStringWithCaller<T>(message, prefix));
+        => WriteLog(LogLevel.Fatal, GetLogStringWithCaller<T>(message, Tagged(prefix, Assembly.GetCallingAssembly())));
 
     /// <summary>
     /// Writes a fatal log message including the caller instance and an optional prefix.
@@ -203,16 +227,18 @@ public static class NoireLogger
     /// <param name="instance">The caller instance.</param>
     /// <param name="message">The message to display.</param>
     /// <param name="prefix">The optional prefix to prepend to the message.</param>
+    [MethodImpl(MethodImplOptions.NoInlining)]
     public static void LogFatal<T>(T instance, string message, string? prefix = null) where T : class
-        => WriteLog(LogLevel.Fatal, GetLogStringWithCaller(instance, message, prefix));
+        => WriteLog(LogLevel.Fatal, GetLogStringWithCaller(instance, message, Tagged(prefix, Assembly.GetCallingAssembly(), instance)));
 
     /// <summary>
     /// Writes a fatal log message including an optional prefix.
     /// </summary>
     /// <param name="message">The message to display.</param>
     /// <param name="prefix">The optional prefix to prepend to the message.</param>
+    [MethodImpl(MethodImplOptions.NoInlining)]
     public static void LogFatal(string message, string? prefix = null)
-        => WriteLog(LogLevel.Fatal, GetLogString(message, prefix));
+        => WriteLog(LogLevel.Fatal, GetLogString(message, Tagged(prefix, Assembly.GetCallingAssembly())));
 
     /// <summary>
     /// Writes a fatal log message including the caller, an exception, and an optional prefix.
@@ -221,8 +247,9 @@ public static class NoireLogger
     /// <param name="ex">The exception.</param>
     /// <param name="message">The message to display.</param>
     /// <param name="prefix">The optional prefix to prepend to the message.</param>
+    [MethodImpl(MethodImplOptions.NoInlining)]
     public static void LogFatal<T>(Exception ex, string message, string? prefix = null) where T : class
-        => WriteLog(LogLevel.Fatal, GetLogStringWithCaller<T>(message, prefix), ex);
+        => WriteLog(LogLevel.Fatal, GetLogStringWithCaller<T>(message, Tagged(prefix, Assembly.GetCallingAssembly())), ex);
 
     /// <summary>
     /// Writes a fatal log message including the caller instance, an exception, and an optional prefix.
@@ -232,8 +259,9 @@ public static class NoireLogger
     /// <param name="ex">The exception.</param>
     /// <param name="message">The message to display.</param>
     /// <param name="prefix">The optional prefix to prepend to the message.</param>
+    [MethodImpl(MethodImplOptions.NoInlining)]
     public static void LogFatal<T>(T instance, Exception ex, string message, string? prefix = null) where T : class
-        => WriteLog(LogLevel.Fatal, GetLogStringWithCaller(instance, message, prefix), ex);
+        => WriteLog(LogLevel.Fatal, GetLogStringWithCaller(instance, message, Tagged(prefix, Assembly.GetCallingAssembly(), instance)), ex);
 
     /// <summary>
     /// Writes a fatal log message including an exception and an optional prefix.
@@ -241,8 +269,9 @@ public static class NoireLogger
     /// <param name="ex">The exception.</param>
     /// <param name="message">The message to display.</param>
     /// <param name="prefix">The optional prefix to prepend to the message.</param>
+    [MethodImpl(MethodImplOptions.NoInlining)]
     public static void LogFatal(Exception ex, string message, string? prefix = null)
-        => WriteLog(LogLevel.Fatal, GetLogString(message, prefix), ex);
+        => WriteLog(LogLevel.Fatal, GetLogString(message, Tagged(prefix, Assembly.GetCallingAssembly())), ex);
 
     #endregion
 
@@ -254,8 +283,9 @@ public static class NoireLogger
     /// <typeparam name="T">The caller type.</typeparam>
     /// <param name="message">The message to display.</param>
     /// <param name="prefix">The optional prefix to prepend to the message.</param>
+    [MethodImpl(MethodImplOptions.NoInlining)]
     public static void LogWarning<T>(string message, string? prefix = null) where T : class
-        => WriteLog(LogLevel.Warning, GetLogStringWithCaller<T>(message, prefix));
+        => WriteLog(LogLevel.Warning, GetLogStringWithCaller<T>(message, Tagged(prefix, Assembly.GetCallingAssembly())));
 
     /// <summary>
     /// Writes a warning log message including the caller instance and an optional prefix.
@@ -264,16 +294,18 @@ public static class NoireLogger
     /// <param name="instance">The caller instance.</param>
     /// <param name="message">The message to display.</param>
     /// <param name="prefix">The optional prefix to prepend to the message.</param>
+    [MethodImpl(MethodImplOptions.NoInlining)]
     public static void LogWarning<T>(T instance, string message, string? prefix = null) where T : class
-        => WriteLog(LogLevel.Warning, GetLogStringWithCaller(instance, message, prefix));
+        => WriteLog(LogLevel.Warning, GetLogStringWithCaller(instance, message, Tagged(prefix, Assembly.GetCallingAssembly(), instance)));
 
     /// <summary>
     /// Writes a warning log message including an optional prefix.
     /// </summary>
     /// <param name="message">The message to display.</param>
     /// <param name="prefix">The optional prefix to prepend to the message.</param>
+    [MethodImpl(MethodImplOptions.NoInlining)]
     public static void LogWarning(string message, string? prefix = null)
-        => WriteLog(LogLevel.Warning, GetLogString(message, prefix));
+        => WriteLog(LogLevel.Warning, GetLogString(message, Tagged(prefix, Assembly.GetCallingAssembly())));
 
     #endregion
 
@@ -285,8 +317,9 @@ public static class NoireLogger
     /// <typeparam name="T">The caller type.</typeparam>
     /// <param name="message">The message to display.</param>
     /// <param name="prefix">The optional prefix to prepend to the message.</param>
+    [MethodImpl(MethodImplOptions.NoInlining)]
     public static void LogDebug<T>(string message, string? prefix = null) where T : class
-        => WriteLog(LogLevel.Debug, GetLogStringWithCaller<T>(message, prefix));
+        => WriteLog(LogLevel.Debug, GetLogStringWithCaller<T>(message, Tagged(prefix, Assembly.GetCallingAssembly())));
 
     /// <summary>
     /// Writes a debug log message including the caller instance and an optional prefix.
@@ -295,16 +328,18 @@ public static class NoireLogger
     /// <param name="instance">The caller instance.</param>
     /// <param name="message">The message to display.</param>
     /// <param name="prefix">The optional prefix to prepend to the message.</param>
+    [MethodImpl(MethodImplOptions.NoInlining)]
     public static void LogDebug<T>(T instance, string message, string? prefix = null) where T : class
-        => WriteLog(LogLevel.Debug, GetLogStringWithCaller(instance, message, prefix));
+        => WriteLog(LogLevel.Debug, GetLogStringWithCaller(instance, message, Tagged(prefix, Assembly.GetCallingAssembly(), instance)));
 
     /// <summary>
     /// Writes a debug log message including an optional prefix.
     /// </summary>
     /// <param name="message">The message to display.</param>
     /// <param name="prefix">The optional prefix to prepend to the message.</param>
+    [MethodImpl(MethodImplOptions.NoInlining)]
     public static void LogDebug(string message, string? prefix = null)
-        => WriteLog(LogLevel.Debug, GetLogString(message, prefix));
+        => WriteLog(LogLevel.Debug, GetLogString(message, Tagged(prefix, Assembly.GetCallingAssembly())));
 
     #endregion
 
@@ -316,8 +351,9 @@ public static class NoireLogger
     /// <typeparam name="T">The caller type.</typeparam>
     /// <param name="message">The message to display.</param>
     /// <param name="prefix">The optional prefix to prepend to the message.</param>
+    [MethodImpl(MethodImplOptions.NoInlining)]
     public static void LogVerbose<T>(string message, string? prefix = null) where T : class
-        => WriteLog(LogLevel.Verbose, GetLogStringWithCaller<T>(message, prefix));
+        => WriteLog(LogLevel.Verbose, GetLogStringWithCaller<T>(message, Tagged(prefix, Assembly.GetCallingAssembly())));
 
     /// <summary>
     /// Writes a verbose log message including the caller instance and an optional prefix.
@@ -326,16 +362,18 @@ public static class NoireLogger
     /// <param name="instance">The caller instance.</param>
     /// <param name="message">The message to display.</param>
     /// <param name="prefix">The optional prefix to prepend to the message.</param>
+    [MethodImpl(MethodImplOptions.NoInlining)]
     public static void LogVerbose<T>(T instance, string message, string? prefix = null) where T : class
-        => WriteLog(LogLevel.Verbose, GetLogStringWithCaller(instance, message, prefix));
+        => WriteLog(LogLevel.Verbose, GetLogStringWithCaller(instance, message, Tagged(prefix, Assembly.GetCallingAssembly(), instance)));
 
     /// <summary>
     /// Writes a verbose log message including an optional prefix.
     /// </summary>
     /// <param name="message">The message to display.</param>
     /// <param name="prefix">The optional prefix to prepend to the message.</param>
+    [MethodImpl(MethodImplOptions.NoInlining)]
     public static void LogVerbose(string message, string? prefix = null)
-        => WriteLog(LogLevel.Verbose, GetLogString(message, prefix));
+        => WriteLog(LogLevel.Verbose, GetLogString(message, Tagged(prefix, Assembly.GetCallingAssembly())));
 
     #endregion
 
@@ -778,6 +816,15 @@ public static class NoireLogger
             }
         }
     }
+
+    private const string LibraryTag = "[NoireLib] ";
+
+    private static readonly Assembly Library = typeof(NoireLogger).Assembly;
+
+    private static string? Tagged(string? prefix, Assembly caller, object? instance = null)
+        => ReferenceEquals(caller, Library) && (instance == null || ReferenceEquals(instance.GetType().Assembly, Library))
+            ? LibraryTag + GetPrefix(prefix)
+            : prefix;
 
     private static string GetPrefix(string? prefix = null)
     {

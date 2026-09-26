@@ -109,6 +109,16 @@ public sealed class NoireFont : IDisposable
         return new NoireFont(data, name);
     }
 
+    public NoireFont CreateInputFace() => new(Data, Name + " input")
+    {
+        GlyphRanges = GlyphRanges,
+        MergeLanguageGlyphs = MergeLanguageGlyphs,
+        MergeDalamudLanguageGlyphs = true,
+        Oversample = Oversample,
+        Kerning = Kerning,
+        SizeStep = SizeStep,
+    };
+
     /// <summary>Creates a face from a font file on disk.</summary>
     /// <param name="path">The path of the .ttf or .otf file.</param>
     /// <returns>The face.</returns>
