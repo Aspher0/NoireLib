@@ -260,6 +260,7 @@ public static class LayerGroupHelper
         var assetPath = string.Empty;
         var collisionPath = string.Empty;
         var collisionType = ModelCollisionType.None;
+        LayerGroupAnalyticCollider? analytic = null;
         uint attribute = 0, attributeMask = 0, baseId = 0, destInstance = 0, returnInstance = 0;
         var visible = false;
         TriggerBoxShape shape = 0;
@@ -281,6 +282,7 @@ public static class LayerGroupHelper
                 attributeMask = BitConverter.ToUInt32(file[(instance + 0x3C)..]);
                 attribute = BitConverter.ToUInt32(file[(instance + 0x40)..]);
                 visible = file[instance + 0x48] != 0;
+                analytic = ReadAnalyticCollider(file, instance);
                 break;
 
             case LayerEntryType.SharedGroup:
@@ -361,6 +363,7 @@ public static class LayerGroupHelper
             DestInstanceId = destInstance,
             ReturnInstanceId = returnInstance,
             SpawnOffsets = spawnOffsets,
+            AnalyticCollider = analytic,
             Priority = priority,
             WaterRangeFlags = waterFlags,
             FlyingDisabled = flyingDisabled,
@@ -370,6 +373,33 @@ public static class LayerGroupHelper
     }
 
     // The offset to the list counts from the field holding it, and the count follows it. Every PopRange in the game holds 20.
+    // FileLayerGroupInstanceBgPart.OffsetColliderAnalyticData at +0x4C, relative to the instance, and the
+    // FileLayerGroupAnalyticCollider it points at: material mask and id, type at +0x10, transform at +0x14, bounds at +0x38.
+    private static LayerGroupAnalyticCollider? ReadAnalyticCollider(ReadOnlySpan<byte> file, int instance)
+    {
+        if (instance + 0x50 > file.Length)
+            return null;
+
+        var offset = BitConverter.ToInt32(file[(instance + 0x4C)..]);
+        var at = instance + offset;
+        if (offset <= 0 || at + 0x50 > file.Length)
+            return null;
+
+        var type = (AnalyticColliderType)BitConverter.ToInt32(file[(at + 0x10)..]);
+        if (type == AnalyticColliderType.None)
+            return null;
+
+        return new LayerGroupAnalyticCollider
+        {
+            Type = type,
+            MaterialMask = BitConverter.ToUInt32(file[at..]),
+            MaterialId = BitConverter.ToUInt32(file[(at + 4)..]),
+            Local = Compose(ReadVector(file, at + 0x14), ReadVector(file, at + 0x20), ReadVector(file, at + 0x2C)),
+            BoundsMin = ReadVector(file, at + 0x38),
+            BoundsMax = ReadVector(file, at + 0x44),
+        };
+    }
+
     private static IReadOnlyList<Vector3> ReadSpawnOffsets(ReadOnlySpan<byte> file, int field)
     {
         var start = field + BitConverter.ToInt32(file[field..]);

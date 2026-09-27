@@ -1,38 +1,15 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace NoireLib.Animations.Helpers;
 
 /// <summary>
 /// Builds the game path a human skeleton's copy of an animation lives at, and the fallback chain to try when a
-/// skeleton has no copy of its own.
+/// skeleton has no copy of its own. The chains come from <see cref="PapLoadTable"/>, which must have been warmed.
 /// </summary>
 public static class EmotePathHelper
 {
-    // Which other skeletons' animations a skeleton without its own copy can borrow, closest first, with most chains
-    // ending in c0101, the skeleton every human animation exists for.
-    private static readonly Dictionary<string, string[]> HumanSkeletonFallbacks = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ["c0101"] = ["c0101"],
-        ["c0201"] = ["c0201", "c0801", "c0101"],
-        ["c0301"] = ["c0301", "c0101"],
-        ["c0401"] = ["c0401", "c0801", "c0101"],
-        ["c0501"] = ["c0501", "c0101"],
-        ["c0601"] = ["c0601", "c0801", "c0101"],
-        ["c0701"] = ["c0701", "c0101"],
-        ["c0801"] = ["c0801", "c0101"],
-        ["c0901"] = ["c0901", "c1501", "c0101"],
-        ["c1001"] = ["c1001", "c0801", "c0101"],
-        ["c1101"] = ["c1101", "c0101"],
-        ["c1201"] = ["c1201", "c1101", "c0101"],
-        ["c1301"] = ["c1301", "c0101"],
-        ["c1401"] = ["c1401", "c0801", "c0101"],
-        ["c1501"] = ["c1501", "c0901", "c0101"],
-        ["c1601"] = ["c1601", "c0801", "c0101"],
-        ["c1701"] = ["c1701", "c0101"],
-        ["c1801"] = ["c1801", "c0801", "c0101"],
-    };
-
     /// <summary>The game path a skeleton's copy of an animation lives at.</summary>
     /// <param name="skeletonId">The human skeleton id, such as "c0801".</param>
     /// <param name="relativePath">The path under the skeleton's a0001 folder, such as "bt_common/emote/beesknees.pap".</param>
@@ -49,24 +26,52 @@ public static class EmotePathHelper
         => $"c{modelId:D4}";
 
     /// <summary>
-    /// The skeletons to try an animation on, closest first, falling back to the id alone when the table has no
-    /// chain for it.
+    /// The skeletons to try an animation on, the skeleton itself first, as derived by <see cref="PapLoadTable"/>.
+    /// Falls back to the id alone when the table is unread or has no chain for it.
     /// </summary>
     /// <param name="skeletonId">The human skeleton id to start from.</param>
     /// <returns>The chain to walk, closest first.</returns>
     public static IReadOnlyList<string> GetFallbackOrder(string skeletonId)
-        => HumanSkeletonFallbacks.TryGetValue(skeletonId, out var fallbacks)
-            ? fallbacks
-            : [skeletonId];
+        => PapLoadTable.Current?.FallbackOrderFor(skeletonId) ?? [skeletonId];
 
-    /// <summary>Every human skeleton the fallback table knows, in table order.</summary>
-    public static IReadOnlyList<string> AllHumanSkeletons { get; } = [.. HumanSkeletonFallbacks.Keys];
+    /// <summary>
+    /// The skeletons to try one animation on, closest first. When <see cref="PapLoadTable"/> names the skeleton
+    /// the game loads the file from, that skeleton comes first, and alone when the game ships its copy.
+    /// </summary>
+    /// <param name="skeletonId">The human skeleton id to start from.</param>
+    /// <param name="relativePath">The path under the skeleton's a0001 folder, such as "bt_common/emote/hum.pap".</param>
+    /// <returns>The chain to walk, closest first.</returns>
+    public static IReadOnlyList<string> GetFallbackOrder(string skeletonId, string relativePath)
+    {
+        var chain = GetFallbackOrder(skeletonId);
+
+        if (PapLoadTable.Current?.SkeletonFor(skeletonId, relativePath) is not { } loaded)
+            return chain;
+
+        if (NoireService.DataManager.FileExists(GetSkeletonPath(loaded, relativePath)))
+            return [loaded];
+
+        return [loaded, .. chain.Where(skeleton => !string.Equals(skeleton, loaded, StringComparison.OrdinalIgnoreCase))];
+    }
+
+    /// <summary>
+    /// Narrows a chain built by <see cref="GetFallbackOrder(string)"/> to one animation, through
+    /// <see cref="GetFallbackOrder(string, string)"/> on the chain's first skeleton.
+    /// </summary>
+    /// <param name="fallbackSkeletons">The chain, the drawn skeleton first.</param>
+    /// <param name="relativePath">The path under the skeleton's a0001 folder.</param>
+    /// <returns>The chain to walk for that animation.</returns>
+    public static IReadOnlyList<string> GetFallbackOrder(IReadOnlyList<string> fallbackSkeletons, string relativePath)
+        => fallbackSkeletons is { Count: > 0 } ? GetFallbackOrder(fallbackSkeletons[0], relativePath) : [];
+
+    /// <summary>Every playable human skeleton <see cref="PapLoadTable"/> knows, in id order, or none while it is unread.</summary>
+    public static IReadOnlyList<string> AllHumanSkeletons => PapLoadTable.Current?.HumanSkeletons ?? [];
 
     /// <summary>
     /// Walks a fallback chain and returns the full game path of the first skeleton that has the animation.
     /// </summary>
     /// <param name="relativePath">The path under a skeleton's a0001 folder, such as "bt_common/emote/beesknees.pap".</param>
-    /// <param name="fallbackSkeletons">The chain to walk, closest first, as <see cref="GetFallbackOrder"/> returns it.</param>
+    /// <param name="fallbackSkeletons">The chain to walk, closest first, as <see cref="GetFallbackOrder(string)"/> returns it.</param>
     /// <param name="exists">Predicate answering whether a given full game path can be served.</param>
     /// <returns>The first path <paramref name="exists"/> accepts, or null when none does.</returns>
     public static string? FindExistingPath(

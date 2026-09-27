@@ -50,6 +50,9 @@ public sealed record LayerGroupEntry
     /// <summary>Which material bits <see cref="Attribute"/> replaces, zero leaving the mesh's own material.</summary>
     public uint AttributeMask { get; init; }
 
+    /// <summary>The primitive a <see cref="LayerEntryType.BG"/> whose collision is analytic collides with, null otherwise.</summary>
+    public LayerGroupAnalyticCollider? AnalyticCollider { get; init; }
+
     /// <summary>Whether a <see cref="LayerEntryType.BG"/> is drawn. An invisible one is collision only.</summary>
     public bool IsVisible { get; init; }
 
