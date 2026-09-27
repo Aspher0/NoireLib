@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
@@ -8,14 +9,14 @@ using System.Threading;
 namespace NoireLib.Animations.Helpers;
 
 /// <summary>
-/// The game's pap load table, naming for each skeleton which skeleton's copy of an animation file it loads.
-/// The choice is made file by file. The per-skeleton fallback chains are derived from it.
+/// The game's pap load table, naming per skeleton and per file whose copy of an animation the game loads.
+/// The fallback chains of <see cref="EmotePathHelper"/> are derived from it.
 /// </summary>
 public sealed class PapLoadTable
 {
     private const string LogPrefix = "[PapLoadTable] ";
 
-    /// <summary> The game file the table is read from. </summary>
+    /// <summary>The game file the table is read from.</summary>
     public const string GamePath = "chara/xls/animation/papLoadTable.plt";
 
     private const int HeaderLength = 0x10;
@@ -27,26 +28,31 @@ public sealed class PapLoadTable
     private const ushort BaseVariant = 1;
     private const int PlayableBodyModulo = 100;
 
-    private readonly byte[] _file;
-    private readonly uint _folderBase;
-    private readonly int _overrideBase;
-    private readonly string[] _keys;
-    private readonly string[] _folders;
-    private readonly Dictionary<string, int> _files;
-    private readonly Dictionary<ushort, int> _humanEntries;
-    private IReadOnlyDictionary<string, IReadOnlyList<string>> _fallbackOrders =
-        new Dictionary<string, IReadOnlyList<string>>();
+    private static readonly Lazy<PapLoadTable?> Loaded = new(Load, LazyThreadSafetyMode.PublicationOnly);
+
+    private readonly byte[] file;
+    private readonly uint folderBase;
+    private readonly int overrideBase;
+    private readonly string[] keys;
+    private readonly string[] folders;
+    private readonly Dictionary<string, int> files;
+    private readonly Dictionary<ushort, int> humanEntries;
+    private readonly Func<string, bool> fileExists;
+    private readonly Dictionary<ushort, byte[]> ships;
+    private readonly ConcurrentDictionary<string, IReadOnlyList<string>> fallbackOrders = new(StringComparer.OrdinalIgnoreCase);
 
     private PapLoadTable(byte[] file, uint folderBase, int overrideBase, string[] keys, string[] folders,
-        Dictionary<string, int> files, Dictionary<ushort, int> humanEntries)
+        Dictionary<string, int> files, Dictionary<ushort, int> humanEntries, Func<string, bool> fileExists)
     {
-        _file = file;
-        _folderBase = folderBase;
-        _overrideBase = overrideBase;
-        _keys = keys;
-        _folders = folders;
-        _files = files;
-        _humanEntries = humanEntries;
+        this.file = file;
+        this.folderBase = folderBase;
+        this.overrideBase = overrideBase;
+        this.keys = keys;
+        this.folders = folders;
+        this.files = files;
+        this.humanEntries = humanEntries;
+        this.fileExists = fileExists;
+        ships = humanEntries.Keys.ToDictionary(modelId => modelId, _ => new byte[keys.Length]);
 
         HumanSkeletons = [.. humanEntries.Keys
             .Where(modelId => modelId % PlayableBodyModulo == 1)
@@ -54,16 +60,20 @@ public sealed class PapLoadTable
             .Select(modelId => EmotePathHelper.NormalizeHumanSkeletonId(modelId))];
     }
 
-    /// <summary> How many animation files the table lists. </summary>
-    public int FileCount => _files.Count;
+    /// <summary>The table read from the game's files on first access, or null when it cannot be read.</summary>
+    public static PapLoadTable? Current => Loaded.Value;
 
-    /// <summary> The playable human skeletons the table has an a0001 entry for, in id order. </summary>
+    /// <summary>How many animation files the table lists.</summary>
+    public int FileCount => files.Count;
+
+    /// <summary>The playable human skeletons the table has an a0001 entry for, in id order.</summary>
     public IReadOnlyList<string> HumanSkeletons { get; }
 
-    /// <summary> Parses the table's bytes. </summary>
+    /// <summary>Parses the table's bytes.</summary>
     /// <param name="file">The file's bytes.</param>
-    /// <returns>The parsed table, or null when the bytes are not in a layout this reads.</returns>
-    public static PapLoadTable? Parse(byte[] file)
+    /// <param name="fileExists">The check for whether the game ships a full game path.</param>
+    /// <returns>The parsed table, or null for an unknown layout.</returns>
+    public static PapLoadTable? Parse(byte[] file, Func<string, bool> fileExists)
     {
         if (file.Length < HeaderLength)
             return null;
@@ -111,100 +121,107 @@ public sealed class PapLoadTable
                 humanEntries.TryAdd((ushort)code, offset);
         }
 
-        return new PapLoadTable(file, folderBase, overrideBase, keys, folders, files, humanEntries);
+        return new PapLoadTable(file, folderBase, overrideBase, keys, folders, files, humanEntries, fileExists);
     }
 
-    /// <summary>
-    /// The skeleton whose copy of an animation the game loads for a human skeleton, read from its a0001 entry.
-    /// </summary>
+    /// <summary>Reads the table and derives every fallback chain now, off the frame thread.</summary>
+    public static void Warm()
+    {
+        if (Current is not { } table)
+            return;
+
+        foreach (var skeletonId in table.HumanSkeletons)
+            table.FallbackOrderFor(skeletonId);
+    }
+
+    /// <summary>The skeleton whose copy of an animation the game loads for a human skeleton.</summary>
     /// <param name="skeletonId">The human skeleton id, such as "c0401".</param>
     /// <param name="relativePath">The path under the skeleton's a0001 folder, such as "bt_common/emote/hum.pap".</param>
-    /// <returns>The skeleton id, or null when the table does not list the file or sends it to another folder.</returns>
+    /// <returns>The skeleton id, or null when the table does not list the file or moves it to another folder.</returns>
     public string? SkeletonFor(string skeletonId, string relativePath)
     {
-        if (ModelIdOf(skeletonId) is not { } modelId || !_humanEntries.TryGetValue(modelId, out var entry))
+        if (ModelIdOf(skeletonId) is not { } modelId || !humanEntries.TryGetValue(modelId, out var entry))
             return null;
 
-        if (KeyOf(relativePath) is not { } key || !_files.TryGetValue(key, out var fileIndex))
+        if (KeyOf(relativePath) is not { } key || !files.TryGetValue(key, out var fileIndex))
             return null;
 
         return TargetOf(entry, fileIndex) is { } target ? EmotePathHelper.NormalizeHumanSkeletonId(target) : null;
     }
 
     /// <summary>
-    /// The skeletons to try an animation on when the table does not list it, the skeleton itself first.
+    /// The skeletons to try an animation the table does not list on, the skeleton itself first.<br/>
+    /// The first call per skeleton checks thousands of game paths; <see cref="Warm"/> pays that off the frame thread.
     /// </summary>
     /// <param name="skeletonId">The human skeleton id.</param>
-    /// <returns>The chain, or null when the table has none for that skeleton.</returns>
+    /// <returns>The chain, or null when the table has no a0001 entry for the skeleton.</returns>
     public IReadOnlyList<string>? FallbackOrderFor(string skeletonId)
-        => _fallbackOrders.TryGetValue(skeletonId, out var chain) ? chain : null;
-
-    /// <summary>
-    /// Derives every playable skeleton's fallback chain: the skeleton itself, then the skeletons the table sends its
-    /// files to, ordered by which one the table picks when both ship a copy of the same file.
-    /// </summary>
-    /// <param name="fileExists">Whether the game ships a given full game path.</param>
-    public void BuildFallbackOrders(Func<string, bool> fileExists)
     {
-        var exists = new Dictionary<(ushort, int), bool>();
+        if (fallbackOrders.TryGetValue(skeletonId, out var chain))
+            return chain;
 
-        bool Ships(ushort modelId, int fileIndex)
-        {
-            if (!exists.TryGetValue((modelId, fileIndex), out var ships))
-            {
-                ships = fileExists(EmotePathHelper.GetSkeletonPath(
-                    EmotePathHelper.NormalizeHumanSkeletonId(modelId), _keys[fileIndex] + ".pap"));
-                exists[(modelId, fileIndex)] = ships;
-            }
+        if (ModelIdOf(skeletonId) is not { } self || !humanEntries.ContainsKey(self))
+            return null;
 
-            return ships;
-        }
-
-        var orders = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase);
-
-        foreach (var skeletonId in HumanSkeletons)
-        {
-            var self = ModelIdOf(skeletonId)!.Value;
-            var entry = _humanEntries[self];
-            var targets = new List<(int FileIndex, ushort Target)>();
-            var counts = new Dictionary<ushort, int> { [self] = 0 };
-
-            for (var fileIndex = 0; fileIndex < _keys.Length; fileIndex++)
-            {
-                if (TargetOf(entry, fileIndex) is not { } target || !Ships(target, fileIndex))
-                    continue;
-
-                targets.Add((fileIndex, target));
-                counts[target] = counts.GetValueOrDefault(target) + 1;
-            }
-
-            var candidates = counts.Keys.ToList();
-            var beats = new Dictionary<(ushort, ushort), int>();
-
-            foreach (var (fileIndex, target) in targets)
-            {
-                foreach (var other in candidates)
-                {
-                    if (other != target && Ships(other, fileIndex))
-                        beats[(target, other)] = beats.GetValueOrDefault((target, other)) + 1;
-                }
-            }
-
-            int Wins(ushort candidate)
-                => candidates.Count(other => other != candidate
-                    && beats.GetValueOrDefault((candidate, other)) > beats.GetValueOrDefault((other, candidate)));
-
-            orders[skeletonId] = [skeletonId, .. candidates
-                .Where(candidate => candidate != self)
-                .OrderByDescending(Wins)
-                .ThenByDescending(candidate => counts[candidate])
-                .ThenBy(candidate => candidate)
-                .Select(candidate => EmotePathHelper.NormalizeHumanSkeletonId(candidate))];
-        }
-
-        _fallbackOrders = orders;
+        return fallbackOrders.GetOrAdd(skeletonId, _ => DeriveFallbackOrder(self));
     }
 
+    // Other skeletons rank by how often the table picks them over each other when both ship the same file.
+    private IReadOnlyList<string> DeriveFallbackOrder(ushort self)
+    {
+        var entry = humanEntries[self];
+        var targets = new List<(int FileIndex, ushort Target)>();
+        var counts = new Dictionary<ushort, int> { [self] = 0 };
+
+        for (var fileIndex = 0; fileIndex < keys.Length; fileIndex++)
+        {
+            if (TargetOf(entry, fileIndex) is not { } target || !Ships(target, fileIndex))
+                continue;
+
+            targets.Add((fileIndex, target));
+            counts[target] = counts.GetValueOrDefault(target) + 1;
+        }
+
+        var candidates = counts.Keys.ToList();
+        var beats = new Dictionary<(ushort, ushort), int>();
+
+        foreach (var (fileIndex, target) in targets)
+        {
+            foreach (var other in candidates)
+            {
+                if (other != target && Ships(other, fileIndex))
+                    beats[(target, other)] = beats.GetValueOrDefault((target, other)) + 1;
+            }
+        }
+
+        int Wins(ushort candidate)
+            => candidates.Count(other => other != candidate
+                && beats.GetValueOrDefault((candidate, other)) > beats.GetValueOrDefault((other, candidate)));
+
+        return [EmotePathHelper.NormalizeHumanSkeletonId(self), .. candidates
+            .Where(candidate => candidate != self)
+            .OrderByDescending(Wins)
+            .ThenByDescending(candidate => counts[candidate])
+            .ThenBy(candidate => candidate)
+            .Select(candidate => EmotePathHelper.NormalizeHumanSkeletonId(candidate))];
+    }
+
+    // 0 unknown, 1 shipped, 2 missing. Concurrent writers store the same answer.
+    private bool Ships(ushort modelId, int fileIndex)
+    {
+        if (!ships.TryGetValue(modelId, out var known))
+            return false;
+
+        if (known[fileIndex] == 0)
+        {
+            known[fileIndex] = fileExists(EmotePathHelper.GetSkeletonPath(
+                EmotePathHelper.NormalizeHumanSkeletonId(modelId), keys[fileIndex] + ".pap")) ? (byte)1 : (byte)2;
+        }
+
+        return known[fileIndex] == 1;
+    }
+
+    // One bit covers four consecutive files; a set bit points at four override records, one per file.
     private ushort? TargetOf(int entry, int fileIndex)
     {
         var word = fileIndex >> 8;
@@ -213,30 +230,30 @@ public sealed class PapLoadTable
         if (word >= EntryWordCount)
             return null;
 
-        var bits = BitConverter.ToUInt64(_file, entry + EntryBitsOffset + word * 8);
+        var bits = BitConverter.ToUInt64(file, entry + EntryBitsOffset + word * 8);
 
         if (((bits >> bit) & 1) == 0)
-            return (ushort)BitConverter.ToUInt32(_file, entry);
+            return (ushort)BitConverter.ToUInt32(file, entry);
 
         var before = BitOperations.PopCount(bits & ((1UL << bit) - 1));
 
         for (var previous = 0; previous < word; previous++)
-            before += BitOperations.PopCount(BitConverter.ToUInt64(_file, entry + EntryBitsOffset + previous * 8));
+            before += BitOperations.PopCount(BitConverter.ToUInt64(file, entry + EntryBitsOffset + previous * 8));
 
-        var first = BitConverter.ToUInt16(_file, entry + 6);
-        var record = _overrideBase + OverrideLength * ((fileIndex & 3) + 4 * (before + first));
+        var first = BitConverter.ToUInt16(file, entry + 6);
+        var record = overrideBase + OverrideLength * ((fileIndex & 3) + 4 * (before + first));
 
-        if (record < _overrideBase || record + OverrideLength > _file.Length)
+        if (record < overrideBase || record + OverrideLength > file.Length)
             return null;
 
-        var code = BitConverter.ToUInt32(_file, record);
+        var code = BitConverter.ToUInt32(file, record);
 
-        if (code >> 16 != 0 || BitConverter.ToUInt16(_file, record + 4) != BaseVariant)
+        if (code >> 16 != 0 || BitConverter.ToUInt16(file, record + 4) != BaseVariant)
             return null;
 
-        var folder = ReadString(_file, _folderBase, BitConverter.ToUInt16(_file, record + 6));
+        var folder = ReadString(file, folderBase, BitConverter.ToUInt16(file, record + 6));
 
-        return string.Equals(folder, _folders[fileIndex], StringComparison.OrdinalIgnoreCase) ? (ushort)code : null;
+        return string.Equals(folder, folders[fileIndex], StringComparison.OrdinalIgnoreCase) ? (ushort)code : null;
     }
 
     private static ushort? ModelIdOf(string skeletonId)
@@ -266,42 +283,29 @@ public sealed class PapLoadTable
         return end < 0 ? null : Encoding.ASCII.GetString(file, (int)start, end - (int)start);
     }
 
-    private static PapLoadTable? current;
-
-    /// <summary> The table read from the game's files, or null while it has not been read or could not be parsed. </summary>
-    public static PapLoadTable? Current => Volatile.Read(ref current);
-
-    /// <summary>
-    /// Reads the table and derives the fallback chains, off the frame thread. Until this has run,
-    /// <see cref="EmotePathHelper"/> only knows each skeleton itself.
-    /// </summary>
-    public static void Warm()
+    private static PapLoadTable? Load()
     {
-        if (Volatile.Read(ref current) != null)
-            return;
-
         try
         {
             if (NoireService.DataManager.GetFile(GamePath)?.Data is not { Length: > 0 } bytes)
             {
                 NoireLogger.LogWarning($"Failed to read '{GamePath}'. Animation paths use the drawn skeleton only", LogPrefix);
-                return;
+                return null;
             }
 
-            if (Parse(bytes) is not { } table)
+            if (Parse(bytes, NoireService.DataManager.FileExists) is not { } table)
             {
                 NoireLogger.LogWarning($"Unknown layout for '{GamePath}' ({bytes.Length} bytes). Animation paths use the drawn skeleton only", LogPrefix);
-                return;
+                return null;
             }
 
-            table.BuildFallbackOrders(NoireService.DataManager.FileExists);
-
-            Volatile.Write(ref current, table);
             NoireLogger.LogDebug($"Read {table.FileCount} animation files for {table.HumanSkeletons.Count} human skeletons.", LogPrefix);
+            return table;
         }
         catch (Exception ex)
         {
             NoireLogger.LogError(ex, $"Failed to read '{GamePath}'. Animation paths use the drawn skeleton only", LogPrefix);
+            return null;
         }
     }
 }
